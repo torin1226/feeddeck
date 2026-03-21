@@ -5,7 +5,7 @@
 // the adapter interface so it can be swapped or supplemented.
 // ============================================================
 
-import { execFile, spawn } from 'child_process'
+import { execFile, execFileSync, spawn } from 'child_process'
 import { promisify } from 'util'
 import { SourceAdapter } from './base.js'
 
@@ -48,8 +48,7 @@ export class YtDlpAdapter extends SourceAdapter {
   isAvailable() {
     if (this.available !== null) return this.available
     try {
-      const { stdout } = require('child_process').execFileSync('yt-dlp', ['--version'], { encoding: 'utf8' })
-      this.version = stdout.trim()
+      this.version = execFileSync('yt-dlp', ['--version'], { encoding: 'utf8', windowsHide: true }).trim()
       this.available = true
     } catch {
       this.available = false

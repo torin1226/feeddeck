@@ -1,23 +1,8 @@
 import express from 'express'
 import cors from 'cors'
-import { execFile, spawn } from 'child_process'
-import { promisify } from 'util'
 import { networkInterfaces } from 'os'
 import { initDatabase, db } from './database.js'
-
-const execFileAsync = promisify(execFile)
-
-// Safe yt-dlp execution — uses execFile (no shell) to prevent command injection
-async function ytdlp(args, options = {}) {
-  const { stdout } = await execFileAsync('yt-dlp', args, {
-    encoding: 'utf8',
-    timeout: options.timeout || 30000,
-    maxBuffer: options.maxBuffer || 50 * 1024 * 1024,
-    windowsHide: true,
-    ...options,
-  })
-  return stdout
-}
+import { registry, ytdlp as ytdlpAdapter, closeAllSources } from './sources/index.js'
 
 // Allowed CDN domains for proxy endpoints (prevents SSRF)
 const ALLOWED_CDN_DOMAINS = [
@@ -61,16 +46,12 @@ app.use(express.json())
 // Health check
 // -----------------------------------------------------------
 app.get('/api/health', async (req, res) => {
-  let ytdlpVersion = null
-  try {
-    ytdlpVersion = (await ytdlp(['--version'], { timeout: 5000 })).trim()
-  } catch {
-    // yt-dlp not installed
-  }
+  const ytdlpAvailable = ytdlpAdapter.isAvailable()
 
   res.json({
     status: 'ok',
-    ytdlp: ytdlpVersion || 'not found',
+    ytdlp: ytdlpAvailable ? (ytdlpAdapter.version || 'available') : 'not found',
+    adapters: registry.adapters.map(a => a.name),
     database: db ? 'connected' : 'disconnected',
   })
 })
@@ -84,22 +65,7 @@ app.get('/api/metadata', async (req, res) => {
   if (!url) return res.status(400).json({ error: 'URL required' })
 
   try {
-    const result = await ytdlp(['--dump-json', '--no-download', url])
-
-    const data = JSON.parse(result)
-
-    const metadata = {
-      id: data.id || crypto.randomUUID(),
-      title: data.title || 'Untitled',
-      thumbnail: data.thumbnail || '',
-      duration: data.duration || 0,
-      tags: data.tags || [],
-      source: data.extractor || new URL(url).hostname,
-      view_count: data.view_count || 0,
-      uploader: data.uploader || '',
-      upload_date: data.upload_date || '',
-      url: url,
-    }
+    const metadata = await registry.extractMetadata(url)
 
     // Save to database
     try {
@@ -120,21 +86,13 @@ app.get('/api/metadata', async (req, res) => {
       console.warn('DB save failed:', dbErr.message)
     }
 
-    res.json(metadata)
+    res.json({ ...metadata, url })
   } catch (err) {
-    console.error('yt-dlp error:', err.message)
-
-    // Parse common errors
-    if (err.message.includes('not found') || err.message.includes('not recognized')) {
-      return res.status(500).json({ error: 'yt-dlp not installed. See SETUP.md' })
-    }
-    if (err.message.includes('Video unavailable') || err.message.includes('Private video')) {
-      return res.status(404).json({ error: 'Video unavailable or private' })
-    }
-    if (err.message.includes('Unsupported URL')) {
-      return res.status(400).json({ error: 'This site is not supported' })
-    }
-
+    console.error('Metadata error:', err.message)
+    const msg = err.message || ''
+    if (msg.includes('not installed')) return res.status(500).json({ error: 'No extraction tools available' })
+    if (msg.includes('unavailable') || msg.includes('Private')) return res.status(404).json({ error: 'Video unavailable or private' })
+    if (msg.includes('Unsupported')) return res.status(400).json({ error: 'This site is not supported' })
     res.status(500).json({ error: 'Failed to extract metadata' })
   }
 })
@@ -162,27 +120,8 @@ app.get('/api/stream-url', async (req, res) => {
   } catch { /* fall through to yt-dlp */ }
 
   try {
-    // Format priority:
-    // 1. PornHub direct MP4 format IDs (480p, 240p, 720p) — clean HTTPS URLs, no HLS
-    // 2. Generic best MP4 ≤480p with HTTPS protocol
-    // 3. Format 18 (YouTube 360p MP4 fallback)
-    // 4. Any MP4, then any format
-    const formatStr = '480p/240p/720p/best[height<=480][protocol=https][ext=mp4][vcodec!*=av01]/best[height<=480][ext=mp4]/18/best[ext=mp4]/best'
-    const stdout = await ytdlp(['-g', '-f', formatStr, url])
-
-    let cdnUrl = stdout.trim().split('\n')[0]
-
-    // If yt-dlp still returned HLS (.m3u8), retry with explicit PornHub MP4 formats
-    if (cdnUrl.includes('.m3u8')) {
-      console.warn('Got HLS URL, retrying with explicit MP4 formats for:', url)
-      try {
-        const mp4Out = await ytdlp(['-g', '-f', '480p/240p/720p/18', url])
-        const mp4Url = mp4Out.trim().split('\n')[0]
-        if (!mp4Url.includes('.m3u8')) {
-          cdnUrl = mp4Url
-        }
-      } catch { /* keep original if retry fails */ }
-    }
+    // Use registry with fallback chain (yt-dlp → cobalt)
+    const cdnUrl = await registry.getStreamUrl(url)
 
     console.log('Resolved stream URL:', cdnUrl.includes('.m3u8') ? 'HLS' : 'MP4', cdnUrl.substring(0, 80))
 
@@ -193,22 +132,21 @@ app.get('/api/stream-url', async (req, res) => {
       ).run(cdnUrl, url)
     } catch { /* cache miss is fine */ }
 
-    // Return the raw CDN URL — phone plays it directly
     res.json({ streamUrl: cdnUrl })
   } catch (err) {
     console.error('Stream URL error:', err.message)
     const msg = err.message || ''
-    if (msg.includes('Video unavailable') || msg.includes('Private video') || msg.includes('been removed')) {
+    if (msg.includes('unavailable') || msg.includes('Private') || msg.includes('removed')) {
       return res.status(404).json({ error: 'Video unavailable or taken down' })
     }
-    if (msg.includes('blocked') || msg.includes('geo') || msg.includes('not available in your country')) {
+    if (msg.includes('blocked') || msg.includes('geo')) {
       return res.status(403).json({ error: 'Video is geo-blocked in your region' })
     }
     if (msg.includes('429') || msg.includes('Too Many') || msg.includes('rate') || msg.includes('throttl')) {
       return res.status(429).json({ error: 'Rate limited — try again in a minute' })
     }
-    if (msg.includes('Unsupported URL')) {
-      return res.status(400).json({ error: 'This site is not supported by yt-dlp' })
+    if (msg.includes('Unsupported')) {
+      return res.status(400).json({ error: 'This site is not supported' })
     }
     res.status(500).json({ error: 'Could not get streaming URL' })
   }
@@ -347,7 +285,7 @@ app.get('/api/videos', (req, res) => {
 // thumbnails/duration immediately without waiting for all results.
 // -----------------------------------------------------------
 app.get('/api/search', (req, res) => {
-  const { q, count = 12 } = req.query
+  const { q, count = 12, site } = req.query
   if (!q) return res.status(400).json({ error: 'Search query required' })
 
   res.writeHead(200, {
@@ -356,56 +294,28 @@ app.get('/api/search', (req, res) => {
     'Connection': 'keep-alive',
   })
 
-  const searchUrl = `https://www.pornhub.com/video/search?search=${encodeURIComponent(q)}`
   const limit = parseInt(count, 10)
-  const child = spawn('yt-dlp', ['--dump-json', '--playlist-end', String(limit), searchUrl])
 
-  // Consume stderr so it doesn't fill the buffer and hang the process
-  child.stderr.on('data', (chunk) => {
-    console.error('[yt-dlp]', chunk.toString().trim())
+  // Use the yt-dlp adapter's streaming search for SSE
+  const stream = ytdlpAdapter.streamSearch(q, { site, limit })
+
+  stream.onVideo((video) => {
+    res.write(`data: ${JSON.stringify({ ...video, durationFormatted: formatDuration(video.duration) })}\n\n`)
   })
 
-  let buffer = ''
-  child.stdout.on('data', (chunk) => {
-    buffer += chunk.toString()
-    const lines = buffer.split('\n')
-    buffer = lines.pop() // hold incomplete last line
-    for (const line of lines) {
-      if (!line.trim()) continue
-      try {
-        const data = JSON.parse(line)
-        const video = {
-          id: data.id,
-          title: data.title,
-          thumbnail: data.thumbnail || data.thumbnails?.[0]?.url || '',
-          duration: data.duration || 0,
-          durationFormatted: formatDuration(data.duration),
-          url: data.webpage_url || data.url || '',
-          source: data.extractor || 'unknown',
-          uploader: data.uploader || '',
-          view_count: data.view_count || 0,
-          tags: data.tags || [],
-        }
-        res.write(`data: ${JSON.stringify(video)}\n\n`)
-      } catch {
-        // skip malformed lines
-      }
-    }
-  })
-
-  child.on('close', () => {
+  stream.onDone(() => {
     res.write('data: [done]\n\n')
     res.end()
   })
 
-  child.on('error', (err) => {
-    console.error('Search spawn error:', err.message)
+  stream.onError((err) => {
+    console.error('Search error:', err.message)
     res.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`)
     res.end()
   })
 
-  // Kill yt-dlp if client disconnects
-  req.on('close', () => child.kill())
+  // Kill if client disconnects
+  req.on('close', () => stream.kill())
 })
 
 // -----------------------------------------------------------
@@ -508,42 +418,22 @@ async function refillCategory(categoryKey) {
 
   console.log(`  🔄 Refilling category: ${categoryKey}`)
 
-  // Build search URL based on mode
-  const searchUrl = cat.mode === 'nsfw'
-    ? `https://www.pornhub.com/video/search?search=${encodeURIComponent(cat.query)}`
-    : `ytsearch12:${cat.query}`
-
   try {
-    const stdout = await ytdlp(
-      ['--dump-json', '--playlist-end', '12', '--no-download', searchUrl],
-      { timeout: 90000 }
-    )
+    // Use registry search with fallback (scraper → yt-dlp)
+    const site = cat.mode === 'nsfw' ? 'pornhub.com' : undefined
+    const videos = await registry.search(cat.query, { site, limit: 12 })
 
-    const lines = stdout.trim().split('\n')
     const insert = db.prepare(`
       INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, tags, fetched_at, expires_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+24 hours'))
     `)
 
     let added = 0
-    for (const line of lines) {
-      if (!line.trim()) continue
+    for (const v of videos) {
       try {
-        const data = JSON.parse(line)
-        insert.run(
-          data.id || crypto.randomUUID(),
-          categoryKey,
-          data.webpage_url || data.url || '',
-          data.title || 'Untitled',
-          data.thumbnail || data.thumbnails?.[0]?.url || '',
-          data.duration || 0,
-          data.extractor || 'unknown',
-          data.uploader || '',
-          data.view_count || 0,
-          JSON.stringify(data.tags || [])
-        )
+        insert.run(v.id, categoryKey, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, JSON.stringify(v.tags || []))
         added++
-      } catch { /* skip malformed */ }
+      } catch { /* skip duplicates */ }
     }
 
     console.log(`  ✅ Added ${added} videos to ${categoryKey}`)
@@ -656,17 +546,10 @@ async function _refillFeedCacheImpl(mode) {
   for (const src of sources) {
     console.log(`  🔄 Refilling feed: ${src.label} (${mode})`)
 
-    const searchUrl = mode === 'nsfw'
-      ? `https://www.pornhub.com/video/search?search=${encodeURIComponent(src.query)}`
-      : src.query // Already in ytsearch format
-
     try {
-      const stdout = await ytdlp(
-        ['--dump-json', '--playlist-end', '20', '--no-download', searchUrl],
-        { timeout: 120000 }
-      )
+      // Use registry search with fallback chain (scraper → yt-dlp)
+      const videos = await registry.search(src.query, { site: src.domain, limit: 20 })
 
-      const lines = stdout.trim().split('\n')
       const insert = db.prepare(`
         INSERT OR IGNORE INTO feed_cache (id, source_domain, mode, url, title, creator, thumbnail, duration, orientation, fetched_at, expires_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+6 hours'))
@@ -674,32 +557,24 @@ async function _refillFeedCacheImpl(mode) {
 
       let added = 0
       const newVideoUrls = []
-      for (const line of lines) {
-        if (!line.trim()) continue
+      for (const v of videos) {
         try {
-          const data = JSON.parse(line)
-          const w = data.width || 1920
-          const h = data.height || 1080
-          const orientation = h > w ? 'vertical' : 'horizontal'
-          const videoUrl = data.webpage_url || data.url || ''
-
           const result = insert.run(
-            data.id || crypto.randomUUID(),
+            v.id,
             src.domain,
             mode,
-            videoUrl,
-            data.title || 'Untitled',
-            data.uploader || data.channel || '',
-            data.thumbnail || data.thumbnails?.[0]?.url || '',
-            data.duration || 0,
-            orientation
+            v.url,
+            v.title,
+            v.uploader,
+            v.thumbnail,
+            v.duration,
+            v.orientation
           )
           added++
-          // Track newly inserted videos (changes > 0 means it wasn't a duplicate)
-          if (result.changes > 0 && videoUrl) {
-            newVideoUrls.push(videoUrl)
+          if (result.changes > 0 && v.url) {
+            newVideoUrls.push(v.url)
           }
-        } catch { /* skip malformed */ }
+        } catch { /* skip duplicates */ }
       }
       // Update last_fetched timestamp
       db.prepare('UPDATE sources SET last_fetched = datetime(\'now\') WHERE domain = ?').run(src.domain)
@@ -724,7 +599,6 @@ async function _refillFeedCacheImpl(mode) {
 // -----------------------------------------------------------
 const STREAM_RESOLVE_CONCURRENCY = 3
 async function _preResolveStreamUrls(videoUrls) {
-  const formatStr = '480p/240p/720p/best[height<=480][protocol=https][ext=mp4][vcodec!*=av01]/best[height<=480][ext=mp4]/18/best[ext=mp4]/best'
   const updateStmt = db.prepare(
     `UPDATE feed_cache SET stream_url = ?, expires_at = datetime('now', '+2 hours') WHERE url = ?`
   )
@@ -736,18 +610,8 @@ async function _preResolveStreamUrls(videoUrls) {
     const batch = videoUrls.slice(i, i + STREAM_RESOLVE_CONCURRENCY)
     const results = await Promise.allSettled(
       batch.map(async (url) => {
-        const stdout = await ytdlp(['-g', '-f', formatStr, url], { timeout: 30000 })
-        let cdnUrl = stdout.trim().split('\n')[0]
-
-        // If HLS returned, retry with explicit MP4 formats
-        if (cdnUrl.includes('.m3u8')) {
-          try {
-            const mp4Out = await ytdlp(['-g', '-f', '480p/240p/720p/18', url], { timeout: 20000 })
-            const mp4Url = mp4Out.trim().split('\n')[0]
-            if (!mp4Url.includes('.m3u8')) cdnUrl = mp4Url
-          } catch { /* keep original */ }
-        }
-
+        // Use registry with fallback chain (yt-dlp → cobalt)
+        const cdnUrl = await registry.getStreamUrl(url)
         updateStmt.run(cdnUrl, url)
         return cdnUrl
       })
@@ -810,6 +674,11 @@ process.on('unhandledRejection', (reason) => {
   // Log but don't crash — transient network errors in background tasks
   // (feed refill, category refresh) shouldn't take down the server
   console.error('\n[WARN] Unhandled rejection:', reason)
+})
+process.on('SIGTERM', async () => {
+  console.log('\nShutting down...')
+  await closeAllSources()
+  process.exit(0)
 })
 
 // -----------------------------------------------------------
