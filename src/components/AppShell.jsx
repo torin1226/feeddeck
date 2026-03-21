@@ -1,0 +1,78 @@
+import { Routes, Route, useLocation } from 'react-router-dom'
+import useKeyboard from '../hooks/useKeyboard'
+import useDeviceStore from '../stores/deviceStore'
+import FloatingQueue from './FloatingQueue'
+import HomePage from '../pages/HomePage'
+import LibraryPage from '../pages/LibraryPage'
+import FeedPage from '../pages/FeedPage'
+
+// ============================================================
+// AppShell
+// Root layout with routing + shared elements (FloatingQueue,
+// global keyboard shortcuts). Supports mobile preview mode
+// (Ctrl+M) that wraps the app in a phone-sized frame.
+// ============================================================
+
+export default function AppShell() {
+  useKeyboard()
+  const location = useLocation()
+  const isFeed = location.pathname === '/feed'
+  const mobilePreview = useDeviceStore(s => s.mobilePreview)
+  const toggleMobilePreview = useDeviceStore(s => s.toggleMobilePreview)
+
+  const content = (
+    <>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/library" element={<LibraryPage />} />
+        <Route path="/feed" element={<FeedPage />} />
+      </Routes>
+
+      {/* Global overlays — hide FloatingQueue on feed (immersive) */}
+      {!isFeed && <FloatingQueue />}
+    </>
+  )
+
+  return (
+    <>
+      {mobilePreview ? (
+        <div className="h-screen w-screen bg-[#111] flex items-center justify-center">
+          {/* Phone frame */}
+          <div className="relative rounded-[2.5rem] border-[4px] border-[#333] shadow-2xl shadow-black/60 overflow-hidden"
+            style={{ width: 390, height: 844 }}>
+            {/* Notch */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[120px] h-[28px] bg-black rounded-b-2xl z-[9999]" />
+            {/* App content — mobile-frame class overrides h-dvh to use frame height */}
+            <div className="mobile-frame w-full h-full overflow-hidden" style={{ position: 'relative' }}>
+              {content}
+            </div>
+          </div>
+          {/* Device label */}
+          <div className="absolute bottom-6 text-white/30 text-xs font-mono">
+            iPhone 14 Pro — 390 x 844 &middot; Ctrl+M to exit
+          </div>
+        </div>
+      ) : (
+        content
+      )}
+
+      {/* Mobile preview toggle button — fixed, always visible */}
+      <button
+        onClick={toggleMobilePreview}
+        title="Toggle mobile preview (Ctrl+M)"
+        className={`fixed z-[9999] bottom-4 right-4 w-10 h-10 rounded-full flex items-center justify-center
+          cursor-pointer transition-all shadow-lg
+          ${mobilePreview
+            ? 'bg-accent text-black hover:bg-accent/80'
+            : 'bg-surface-overlay border border-surface-border text-text-secondary hover:text-text-primary hover:border-text-muted'
+          }`}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="7" y="2" width="10" height="20" rx="2" />
+          <line x1="12" y1="18" x2="12" y2="18.01" strokeWidth="3" />
+        </svg>
+      </button>
+    </>
+  )
+}
