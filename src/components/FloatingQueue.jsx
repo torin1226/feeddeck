@@ -194,13 +194,13 @@ export default function FloatingQueue() {
           <ul className="py-1">
             {queue.map((item, index) => (
               <QueueRow
-                key={item.queueId}
+                key={item.id}
                 item={item}
                 index={index}
                 isCurrent={index === currentIndex}
                 isSFW={isSFW}
                 showDropIndicator={dragOverIdx === index}
-                onRemove={() => removeFromQueue(item.queueId)}
+                onRemove={() => removeFromQueue(item.id)}
                 onDragStart={(e) => handleDragStart(e, index)}
                 onDragOver={(e) => handleDragOver(e, index)}
                 onDragLeave={handleDragLeave}
@@ -248,7 +248,7 @@ function QueueRow({
   const sfw = getSFWData(item.id)
   const thumb = isSFW ? sfw.thumbnail : item.thumbnail
   const title = isSFW ? sfw.title : item.title
-  const duration = isSFW ? sfw.duration : (item.durationFormatted || '0:00')
+  const duration = isSFW ? sfw.duration : (item.duration_formatted || item.durationFormatted || '0:00')
 
   return (
     <li

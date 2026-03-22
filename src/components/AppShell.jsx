@@ -1,7 +1,9 @@
 import { Routes, Route, useLocation } from 'react-router-dom'
 import useKeyboard from '../hooks/useKeyboard'
+import useQueueSync from '../hooks/useQueueSync'
 import useDeviceStore from '../stores/deviceStore'
 import FloatingQueue from './FloatingQueue'
+import OfflineBanner from './OfflineBanner'
 import HomePage from '../pages/HomePage'
 import LibraryPage from '../pages/LibraryPage'
 import FeedPage from '../pages/FeedPage'
@@ -16,6 +18,7 @@ import SettingsPage from '../pages/SettingsPage'
 
 export default function AppShell() {
   useKeyboard()
+  useQueueSync()
   const location = useLocation()
   const isFeed = location.pathname === '/feed'
   const mobilePreview = useDeviceStore(s => s.mobilePreview)
@@ -32,6 +35,7 @@ export default function AppShell() {
 
       {/* Global overlays — hide FloatingQueue on feed (immersive) */}
       {!isFeed && <FloatingQueue />}
+      <OfflineBanner />
     </>
   )
 

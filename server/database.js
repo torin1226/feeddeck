@@ -120,6 +120,19 @@ export function initDatabase() {
       FOREIGN KEY (source_domain) REFERENCES sources(domain)
     );
 
+    -- Queue (synced across devices via API)
+    CREATE TABLE IF NOT EXISTS queue (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      position INTEGER NOT NULL,
+      video_url TEXT NOT NULL,
+      title TEXT,
+      thumbnail TEXT,
+      duration INTEGER DEFAULT 0,
+      duration_formatted TEXT DEFAULT '0:00',
+      added_at DATETIME DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_queue_position ON queue(position);
+
     -- Indexes for common queries
     CREATE INDEX IF NOT EXISTS idx_videos_added ON videos(added_at DESC);
     CREATE INDEX IF NOT EXISTS idx_videos_source ON videos(source);

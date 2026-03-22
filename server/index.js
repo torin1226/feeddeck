@@ -763,6 +763,94 @@ app.post('/api/feed/source-feedback', (req, res) => {
 })
 
 // -----------------------------------------------------------
+// Queue CRUD (3.1 Queue Sync)
+// All mutations return the full updated queue so clients stay in sync.
+// -----------------------------------------------------------
+
+function getFullQueue() {
+  return db.prepare('SELECT id, position, video_url, title, thumbnail, duration, duration_formatted, added_at FROM queue ORDER BY position ASC').all()
+}
+
+function reindexQueue() {
+  const items = db.prepare('SELECT id FROM queue ORDER BY position ASC').all()
+  const update = db.prepare('UPDATE queue SET position = ? WHERE id = ?')
+  items.forEach((item, i) => update.run(i, item.id))
+}
+
+// GET /api/queue — return ordered queue
+app.get('/api/queue', (req, res) => {
+  try {
+    res.json({ queue: getFullQueue() })
+  } catch (err) {
+    logger.error('Queue fetch error', { error: err.message })
+    res.status(500).json({ error: 'Failed to fetch queue' })
+  }
+})
+
+// POST /api/queue — add video to end (or at a specific position)
+app.post('/api/queue', express.json(), (req, res) => {
+  const { video_url, title, thumbnail, duration, duration_formatted, position } = req.body || {}
+  if (!video_url) return res.status(400).json({ error: 'video_url required' })
+
+  try {
+    const maxPos = db.prepare('SELECT COALESCE(MAX(position), -1) as maxPos FROM queue').get().maxPos
+    const insertPos = position !== undefined ? position : maxPos + 1
+
+    // If inserting at a specific position, shift items down
+    if (position !== undefined) {
+      db.prepare('UPDATE queue SET position = position + 1 WHERE position >= ?').run(insertPos)
+    }
+
+    db.prepare(
+      'INSERT INTO queue (id, position, video_url, title, thumbnail, duration, duration_formatted) VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?, ?, ?)'
+    ).run(insertPos, video_url, title || '', thumbnail || '', duration || 0, duration_formatted || '0:00')
+
+    res.json({ queue: getFullQueue() })
+  } catch (err) {
+    logger.error('Queue add error', { error: err.message })
+    res.status(500).json({ error: 'Failed to add to queue' })
+  }
+})
+
+// PUT /api/queue — full reorder from ordered array of IDs
+app.put('/api/queue', express.json(), (req, res) => {
+  const { order } = req.body || {}
+  if (!Array.isArray(order)) return res.status(400).json({ error: 'order array required' })
+
+  try {
+    const update = db.prepare('UPDATE queue SET position = ? WHERE id = ?')
+    order.forEach((id, i) => update.run(i, id))
+    res.json({ queue: getFullQueue() })
+  } catch (err) {
+    logger.error('Queue reorder error', { error: err.message })
+    res.status(500).json({ error: 'Failed to reorder queue' })
+  }
+})
+
+// DELETE /api/queue/:id — remove single item, reindex
+app.delete('/api/queue/:id', (req, res) => {
+  try {
+    db.prepare('DELETE FROM queue WHERE id = ?').run(req.params.id)
+    reindexQueue()
+    res.json({ queue: getFullQueue() })
+  } catch (err) {
+    logger.error('Queue remove error', { error: err.message })
+    res.status(500).json({ error: 'Failed to remove from queue' })
+  }
+})
+
+// DELETE /api/queue — clear all
+app.delete('/api/queue', (req, res) => {
+  try {
+    db.prepare('DELETE FROM queue').run()
+    res.json({ queue: [] })
+  } catch (err) {
+    logger.error('Queue clear error', { error: err.message })
+    res.status(500).json({ error: 'Failed to clear queue' })
+  }
+})
+
+// -----------------------------------------------------------
 // Async refill: fetch new videos for the feed cache
 // -----------------------------------------------------------
 const feedRefillInFlight = new Set()

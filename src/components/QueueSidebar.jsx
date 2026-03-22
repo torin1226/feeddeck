@@ -1,6 +1,5 @@
 import useModeStore from '../stores/modeStore'
 import useQueueStore from '../stores/queueStore'
-import useLibraryStore from '../stores/libraryStore'
 import { getSFWData } from '../data/socialData'
 
 // ============================================================
@@ -13,12 +12,6 @@ import { getSFWData } from '../data/socialData'
 export default function QueueSidebar() {
   const { isSFW } = useModeStore()
   const { queue, removeFromQueue, clearQueue } = useQueueStore()
-  const { videos } = useLibraryStore()
-
-  // Resolve video objects from queue IDs
-  const queueVideos = queue
-    .map((id) => videos.find((v) => v.id === id))
-    .filter(Boolean)
 
   return (
     <aside className="w-72 border-l border-surface-border bg-surface-raised flex flex-col h-full">
@@ -26,16 +19,16 @@ export default function QueueSidebar() {
       <div className="flex items-center justify-between px-4 py-3 border-b border-surface-border">
         <h3 className="text-sm font-semibold text-text-primary">
           Queue
-          {queueVideos.length > 0 && (
+          {queue.length > 0 && (
             <span className="text-text-muted font-normal ml-1.5">
-              ({queueVideos.length})
+              ({queue.length})
             </span>
           )}
         </h3>
-        {queueVideos.length > 0 && (
+        {queue.length > 0 && (
           <button
             onClick={clearQueue}
-            className="text-xs text-text-muted hover:text-text-primary transition-colors"
+            className="text-xs text-text-muted hover:text-text-primary transition-colors cursor-pointer"
           >
             Clear
           </button>
@@ -44,7 +37,7 @@ export default function QueueSidebar() {
 
       {/* Queue items */}
       <div className="flex-1 overflow-y-auto">
-        {queueVideos.length === 0 ? (
+        {queue.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
             <span className="text-3xl mb-3">📋</span>
             <p className="text-sm text-text-muted">
@@ -53,13 +46,13 @@ export default function QueueSidebar() {
           </div>
         ) : (
           <ul className="py-1">
-            {queueVideos.map((video, index) => (
+            {queue.map((item, index) => (
               <QueueItem
-                key={video.id}
-                video={video}
+                key={item.id}
+                item={item}
                 index={index}
                 isSFW={isSFW}
-                onRemove={() => removeFromQueue(video.id)}
+                onRemove={() => removeFromQueue(item.id)}
               />
             ))}
           </ul>
@@ -72,11 +65,11 @@ export default function QueueSidebar() {
 // -----------------------------------------------------------
 // Single queue item row
 // -----------------------------------------------------------
-function QueueItem({ video, index, isSFW, onRemove }) {
-  const sfw = getSFWData(video.id)
-  const thumb = isSFW ? sfw.thumbnail : video.thumbnail
-  const title = isSFW ? sfw.title : video.title
-  const duration = isSFW ? sfw.duration : video.durationFormatted
+function QueueItem({ item, index, isSFW, onRemove }) {
+  const sfw = getSFWData(item.id)
+  const thumb = isSFW ? sfw.thumbnail : item.thumbnail
+  const title = isSFW ? sfw.title : item.title
+  const duration = isSFW ? sfw.duration : (item.duration_formatted || '0:00')
 
   return (
     <li className="group flex items-center gap-3 px-4 py-2 hover:bg-surface-overlay transition-colors">
