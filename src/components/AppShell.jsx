@@ -5,6 +5,7 @@ import FloatingQueue from './FloatingQueue'
 import HomePage from '../pages/HomePage'
 import LibraryPage from '../pages/LibraryPage'
 import FeedPage from '../pages/FeedPage'
+import SettingsPage from '../pages/SettingsPage'
 
 // ============================================================
 // AppShell
@@ -26,6 +27,7 @@ export default function AppShell() {
         <Route path="/" element={<HomePage />} />
         <Route path="/library" element={<LibraryPage />} />
         <Route path="/feed" element={<FeedPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Routes>
 
       {/* Global overlays — hide FloatingQueue on feed (immersive) */}

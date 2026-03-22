@@ -244,7 +244,7 @@ function FeaturedCard({ item, index, cardRef, overlayRef, videoRef, isActive, on
       <div
         className="absolute inset-0 z-[1] rounded-2xl transition-opacity duration-500"
         style={{
-          background: 'rgba(10,10,11,0.55)',
+          background: 'var(--color-gradient-mid)',
           opacity: isActive ? 0 : 1,
         }}
       />
@@ -253,7 +253,7 @@ function FeaturedCard({ item, index, cardRef, overlayRef, videoRef, isActive, on
       <div
         className="absolute inset-0 z-[2] transition-opacity duration-400"
         style={{
-          background: 'linear-gradient(to top, rgba(10,10,11,0.95) 0%, rgba(10,10,11,0.3) 50%, transparent 100%)',
+          background: 'linear-gradient(to top, var(--color-gradient-solid) 0%, var(--color-gradient-light) 50%, transparent 100%)',
           opacity: isActive ? 1 : 0,
         }}
       />
@@ -273,7 +273,7 @@ function FeaturedCard({ item, index, cardRef, overlayRef, videoRef, isActive, on
           {item.featuredTagline}
         </div>
         <div className="flex items-center gap-2.5">
-          <button className="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-[#0a0a0b] rounded-full text-[13px] font-bold hover:bg-gray-200 hover:scale-[1.03] transition-all">
+          <button className="inline-flex items-center gap-2 px-5 py-2.5 bg-text-primary text-surface rounded-full text-[13px] font-bold hover:opacity-90 hover:scale-[1.03] transition-all">
             &#9654; &nbsp;Stream now
           </button>
           <button className="w-9 h-9 rounded-full bg-white/10 border border-white/20 text-white text-lg flex items-center justify-center hover:bg-white/20 transition-colors">

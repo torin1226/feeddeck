@@ -2,6 +2,7 @@ import { useState } from 'react'
 import ModeToggle from './ModeToggle'
 import AddVideoModal from './AddVideoModal'
 import useModeStore from '../stores/modeStore'
+import useThemeStore from '../stores/themeStore'
 
 // ============================================================
 // Header
@@ -11,6 +12,7 @@ import useModeStore from '../stores/modeStore'
 
 export default function Header({ onSearch, onSearchSubmit }) {
   const { isSFW } = useModeStore()
+  const { theme, toggleTheme } = useThemeStore()
   const [showAdd, setShowAdd] = useState(false)
   const [query, setQuery] = useState('')
 
@@ -72,6 +74,15 @@ export default function Header({ onSearch, onSearchSubmit }) {
                 <span className="hidden sm:block">Add</span>
               </button>
             )}
+
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-lg text-text-secondary hover:text-text-primary
+                hover:bg-surface-overlay transition-colors"
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {theme === 'dark' ? '☀' : '🌙'}
+            </button>
 
             <ModeToggle />
           </div>

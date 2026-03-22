@@ -12,6 +12,7 @@
 // ============================================================
 
 import { SourceAdapter } from './base.js'
+import { logger } from '../logger.js'
 
 // Lazy import: puppeteer is only needed when this adapter is used
 let puppeteer = null
@@ -359,7 +360,7 @@ export class ScraperAdapter extends SourceAdapter {
       if (results[i].status === 'fulfilled') {
         videos.push(...results[i].value)
       } else {
-        console.warn(`  ⚠️  Scraper search failed on ${sites[i]}: ${results[i].reason?.message}`)
+        logger.warn(`Scraper search failed on ${sites[i]}`, { error: results[i].reason?.message })
       }
     }
 

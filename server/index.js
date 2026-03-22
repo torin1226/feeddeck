@@ -3,6 +3,7 @@ import cors from 'cors'
 import { networkInterfaces } from 'os'
 import { initDatabase, db } from './database.js'
 import { registry, ytdlp as ytdlpAdapter, scraper as scraperAdapter, closeAllSources } from './sources/index.js'
+import { logger } from './logger.js'
 
 // Allowed CDN domains for proxy endpoints (prevents SSRF)
 const ALLOWED_CDN_DOMAINS = [
@@ -83,12 +84,12 @@ app.get('/api/metadata', async (req, res) => {
         metadata.source
       )
     } catch (dbErr) {
-      console.warn('DB save failed:', dbErr.message)
+      logger.warn('DB save failed', { error: dbErr.message })
     }
 
     res.json({ ...metadata, url })
   } catch (err) {
-    console.error('Metadata error:', err.message)
+    logger.error('Metadata error', { error: err.message })
     const msg = err.message || ''
     if (msg.includes('not installed')) return res.status(500).json({ error: 'No extraction tools available' })
     if (msg.includes('unavailable') || msg.includes('Private')) return res.status(404).json({ error: 'Video unavailable or private' })
@@ -123,7 +124,7 @@ app.get('/api/stream-url', async (req, res) => {
     // Use registry with fallback chain (yt-dlp → cobalt)
     const cdnUrl = await registry.getStreamUrl(url)
 
-    console.log('Resolved stream URL:', cdnUrl.includes('.m3u8') ? 'HLS' : 'MP4', cdnUrl.substring(0, 80))
+    logger.info('Resolved stream URL', { format: cdnUrl.includes('.m3u8') ? 'HLS' : 'MP4', url: cdnUrl.substring(0, 80) })
 
     // Cache the resolved stream URL (expires in 2 hours — PornHub CDN URLs expire ~2hr)
     try {
@@ -134,7 +135,7 @@ app.get('/api/stream-url', async (req, res) => {
 
     res.json({ streamUrl: cdnUrl })
   } catch (err) {
-    console.error('Stream URL error:', err.message)
+    logger.error('Stream URL error:', { error: err.message })
     const msg = err.message || ''
     if (msg.includes('unavailable') || msg.includes('Private') || msg.includes('removed')) {
       return res.status(404).json({ error: 'Video unavailable or taken down' })
@@ -196,7 +197,7 @@ app.get('/api/proxy-stream', async (req, res) => {
     nodeStream.on('error', () => { if (!res.writableEnded) res.end() })
     res.on('close', () => { nodeStream.destroy() })
   } catch (err) {
-    console.error('Proxy stream error:', err.message)
+    logger.error('Proxy stream error:', { error: err.message })
     if (!res.headersSent) res.status(500).send('Stream proxy failed')
   }
 })
@@ -254,7 +255,7 @@ app.get('/api/hls-proxy', async (req, res) => {
       res.on('close', () => { nodeStream.destroy() })
     }
   } catch (err) {
-    console.error('HLS proxy error:', err.message)
+    logger.error('HLS proxy error:', { error: err.message })
     if (!res.headersSent) res.status(500).send('HLS proxy failed')
   }
 })
@@ -273,7 +274,7 @@ app.get('/api/videos', (req, res) => {
     }))
     res.json({ videos })
   } catch (err) {
-    console.error('DB read error:', err.message)
+    logger.error('DB read error:', { error: err.message })
     res.json({ videos: [] })
   }
 })
@@ -309,7 +310,7 @@ app.get('/api/search', (req, res) => {
   })
 
   stream.onError((err) => {
-    console.error('Search error:', err.message)
+    logger.error('Search error:', { error: err.message })
     res.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`)
     res.end()
   })
@@ -340,7 +341,7 @@ app.get('/api/search/multi', async (req, res) => {
       })),
     })
   } catch (err) {
-    console.error('Multi-site search error:', err.message)
+    logger.error('Multi-site search error:', { error: err.message })
     res.status(500).json({ error: 'Multi-site search failed' })
   }
 })
@@ -367,7 +368,7 @@ app.get('/api/trending', async (req, res) => {
       })),
     })
   } catch (err) {
-    console.error('Trending fetch error:', err.message)
+    logger.error('Trending fetch error:', { error: err.message })
     res.status(500).json({ error: `Failed to fetch trending for ${site}` })
   }
 })
@@ -393,7 +394,7 @@ app.get('/api/categories', async (req, res) => {
       })),
     })
   } catch (err) {
-    console.error('Category fetch error:', err.message)
+    logger.error('Category fetch error:', { error: err.message })
     res.status(500).json({ error: 'Failed to fetch category' })
   }
 })
@@ -439,6 +440,120 @@ app.post('/api/sources/:name/reenable', (req, res) => {
 })
 
 // -----------------------------------------------------------
+// GET /api/sources/list?mode=social|nsfw
+// List all feed sources, optionally filtered by mode.
+// -----------------------------------------------------------
+app.get('/api/sources/list', (req, res) => {
+  try {
+    const { mode } = req.query
+    let sources
+    if (mode) {
+      sources = db.prepare('SELECT * FROM sources WHERE mode = ? ORDER BY weight DESC').all(mode)
+    } else {
+      sources = db.prepare('SELECT * FROM sources ORDER BY mode, weight DESC').all()
+    }
+    res.json({ sources })
+  } catch (err) {
+    logger.error('List sources error', { error: err.message })
+    res.status(500).json({ error: 'Failed to list sources' })
+  }
+})
+
+// -----------------------------------------------------------
+// POST /api/sources
+// Add a new feed source. Body: { domain, mode, label, query, weight? }
+// Tests the source with yt-dlp before activating.
+// -----------------------------------------------------------
+app.post('/api/sources', express.json(), async (req, res) => {
+  const { domain, mode, label, query, weight = 1.0 } = req.body
+  if (!domain || !mode || !label || !query) {
+    return res.status(400).json({ error: 'Required: domain, mode, label, query' })
+  }
+  if (!['social', 'nsfw'].includes(mode)) {
+    return res.status(400).json({ error: 'mode must be social or nsfw' })
+  }
+
+  // Check if already exists
+  const existing = db.prepare('SELECT domain FROM sources WHERE domain = ?').get(domain)
+  if (existing) {
+    return res.status(409).json({ error: `Source ${domain} already exists` })
+  }
+
+  // Test the source with a quick search to verify it works
+  try {
+    logger.info(`Testing new source: ${domain}`, { query })
+    const testResults = await registry.search(query, { site: domain, limit: 3 })
+    if (testResults.length === 0) {
+      return res.status(422).json({ error: `Source test returned 0 results for "${query}" on ${domain}` })
+    }
+
+    // Insert into database
+    db.prepare(
+      'INSERT INTO sources (domain, mode, label, query, weight, active) VALUES (?, ?, ?, ?, ?, 1)'
+    ).run(domain, mode, label, query, weight)
+
+    logger.info(`Added new source: ${label} (${domain})`)
+    res.json({
+      source: { domain, mode, label, query, weight, active: 1 },
+      testResults: testResults.length,
+    })
+  } catch (err) {
+    logger.error('Add source error', { error: err.message, domain })
+    res.status(500).json({ error: `Source test failed: ${err.message}` })
+  }
+})
+
+// -----------------------------------------------------------
+// PUT /api/sources/:domain
+// Update a source's settings. Body: { label?, query?, weight?, active?, fetch_interval? }
+// -----------------------------------------------------------
+app.put('/api/sources/:domain', express.json(), (req, res) => {
+  const { domain } = req.params
+  const existing = db.prepare('SELECT * FROM sources WHERE domain = ?').get(domain)
+  if (!existing) {
+    return res.status(404).json({ error: `Source ${domain} not found` })
+  }
+
+  const { label, query, weight, active, fetch_interval } = req.body
+  const updates = []
+  const values = []
+
+  if (label !== undefined) { updates.push('label = ?'); values.push(label) }
+  if (query !== undefined) { updates.push('query = ?'); values.push(query) }
+  if (weight !== undefined) { updates.push('weight = ?'); values.push(weight) }
+  if (active !== undefined) { updates.push('active = ?'); values.push(active ? 1 : 0) }
+  if (fetch_interval !== undefined) { updates.push('fetch_interval = ?'); values.push(fetch_interval) }
+
+  if (updates.length === 0) {
+    return res.status(400).json({ error: 'No fields to update' })
+  }
+
+  values.push(domain)
+  db.prepare(`UPDATE sources SET ${updates.join(', ')} WHERE domain = ?`).run(...values)
+
+  const updated = db.prepare('SELECT * FROM sources WHERE domain = ?').get(domain)
+  res.json({ source: updated })
+})
+
+// -----------------------------------------------------------
+// DELETE /api/sources/:domain
+// Remove a feed source. Also cleans up its feed_cache entries.
+// -----------------------------------------------------------
+app.delete('/api/sources/:domain', (req, res) => {
+  const { domain } = req.params
+  const existing = db.prepare('SELECT * FROM sources WHERE domain = ?').get(domain)
+  if (!existing) {
+    return res.status(404).json({ error: `Source ${domain} not found` })
+  }
+
+  db.prepare('DELETE FROM feed_cache WHERE source_domain = ?').run(domain)
+  db.prepare('DELETE FROM sources WHERE domain = ?').run(domain)
+
+  logger.info(`Deleted source: ${existing.label} (${domain})`)
+  res.json({ deleted: domain })
+})
+
+// -----------------------------------------------------------
 // GET /api/homepage?mode=social|nsfw
 // Returns cached videos grouped by category.
 // Falls back to placeholder data if cache is empty.
@@ -481,7 +596,7 @@ app.get('/api/homepage', (req, res) => {
       for (const cat of result) {
         if (cat.videos.length < 8) {
           refillCategory(cat.key).catch(err =>
-            console.error('Refill error:', err.message)
+            logger.error('Refill error:', { error: err.message })
           )
         }
       }
@@ -489,7 +604,7 @@ app.get('/api/homepage', (req, res) => {
 
     res.json({ categories: result, needsRefill })
   } catch (err) {
-    console.error('Homepage error:', err.message)
+    logger.error('Homepage error:', { error: err.message })
     res.status(500).json({ error: 'Failed to load homepage' })
   }
 })
@@ -517,14 +632,14 @@ app.post('/api/homepage/viewed', (req, res) => {
       if (unviewed.n < 8) {
         // Trigger async refill (fire-and-forget)
         refillCategory(video.category_key).catch(err =>
-          console.error('Refill error:', err.message)
+          logger.error('Refill error:', { error: err.message })
         )
       }
     }
 
     res.json({ ok: true })
   } catch (err) {
-    console.error('Mark viewed error:', err.message)
+    logger.error('Mark viewed error:', { error: err.message })
     res.status(500).json({ error: 'Failed to mark as viewed' })
   }
 })
@@ -536,7 +651,7 @@ async function refillCategory(categoryKey) {
   const cat = db.prepare('SELECT query, mode FROM categories WHERE key = ?').get(categoryKey)
   if (!cat) return
 
-  console.log(`  🔄 Refilling category: ${categoryKey}`)
+  logger.info(`  🔄 Refilling category: ${categoryKey}`)
 
   try {
     // Use registry search with fallback (scraper → yt-dlp)
@@ -556,9 +671,9 @@ async function refillCategory(categoryKey) {
       } catch { /* skip duplicates */ }
     }
 
-    console.log(`  ✅ Added ${added} videos to ${categoryKey}`)
+    logger.info(`  ✅ Added ${added} videos to ${categoryKey}`)
   } catch (err) {
-    console.error(`  ❌ Refill failed for ${categoryKey}:`, err.message)
+    logger.error(`  ❌ Refill failed for ${categoryKey}:`, { error: err.message })
   }
 }
 
@@ -598,13 +713,13 @@ app.get('/api/feed/next', (req, res) => {
 
     if (unviewedCount.n < 20) {
       refillFeedCache(mode).catch(err =>
-        console.error('Feed refill error:', err.message)
+        logger.error('Feed refill error:', { error: err.message })
       )
     }
 
     res.json({ videos: formatted })
   } catch (err) {
-    console.error('Feed next error:', err.message)
+    logger.error('Feed next error:', { error: err.message })
     res.status(500).json({ error: 'Failed to load feed', videos: [] })
   }
 })
@@ -621,7 +736,7 @@ app.post('/api/feed/watched', (req, res) => {
     db.prepare('UPDATE feed_cache SET watched = 1 WHERE id = ?').run(id)
     res.json({ ok: true })
   } catch (err) {
-    console.error('Feed watched error:', err.message)
+    logger.error('Feed watched error:', { error: err.message })
     res.status(500).json({ error: 'Failed to mark watched' })
   }
 })
@@ -642,7 +757,7 @@ app.post('/api/feed/source-feedback', (req, res) => {
     }
     res.json({ ok: true })
   } catch (err) {
-    console.error('Source feedback error:', err.message)
+    logger.error('Source feedback error:', { error: err.message })
     res.status(500).json({ error: 'Failed to update source' })
   }
 })
@@ -664,7 +779,7 @@ async function _refillFeedCacheImpl(mode) {
   if (sources.length === 0) return
 
   for (const src of sources) {
-    console.log(`  🔄 Refilling feed: ${src.label} (${mode})`)
+    logger.info(`  🔄 Refilling feed: ${src.label} (${mode})`)
 
     try {
       // Use registry search with fallback chain (scraper → yt-dlp)
@@ -698,15 +813,15 @@ async function _refillFeedCacheImpl(mode) {
       }
       // Update last_fetched timestamp
       db.prepare('UPDATE sources SET last_fetched = datetime(\'now\') WHERE domain = ?').run(src.domain)
-      console.log(`  ✅ Added ${added} feed videos from ${src.label}`)
+      logger.info(`  ✅ Added ${added} feed videos from ${src.label}`)
 
       // Pre-resolve stream URLs for newly added videos (2.8 Tier 1)
       if (newVideoUrls.length > 0) {
-        console.log(`  🔗 Pre-resolving stream URLs for ${newVideoUrls.length} new videos...`)
+        logger.info(`  🔗 Pre-resolving stream URLs for ${newVideoUrls.length} new videos...`)
         await _preResolveStreamUrls(newVideoUrls)
       }
     } catch (err) {
-      console.error(`  ❌ Feed refill failed for ${src.label}:`, err.message)
+      logger.error(`  ❌ Feed refill failed for ${src.label}:`, { error: err.message })
     }
   }
 }
@@ -743,7 +858,7 @@ async function _preResolveStreamUrls(videoUrls) {
     }
   }
 
-  console.log(`  🔗 Stream URLs resolved: ${resolved} OK, ${failed} failed`)
+  logger.info(`  🔗 Stream URLs resolved: ${resolved} OK, ${failed} failed`)
 }
 
 // -----------------------------------------------------------
@@ -764,11 +879,11 @@ function startScheduledFeedRefill() {
 
       for (const src of stale) {
         refillFeedCache(src.mode).catch(err =>
-          console.error(`Scheduled refill error (${src.label}):`, err.message)
+          logger.error(`Scheduled refill error (${src.label}):`, { error: err.message })
         )
       }
     } catch (err) {
-      console.error('Scheduled refill check error:', err.message)
+      logger.error('Scheduled refill check error:', { error: err.message })
     }
   }, CHECK_INTERVAL)
 }
@@ -788,7 +903,7 @@ function startScheduledTrendingRefresh() {
     const site = sites[siteIndex % sites.length]
     siteIndex++
 
-    console.log(`  📡 Scheduled trending refresh: ${site}`)
+    logger.info(`  📡 Scheduled trending refresh: ${site}`)
 
     try {
       const videos = await scraperAdapter.fetchTrending({ site, limit: 20 })
@@ -806,9 +921,9 @@ function startScheduledTrendingRefresh() {
         } catch { /* skip duplicates */ }
       }
 
-      console.log(`  ✅ Trending refresh: added ${added} videos from ${site}`)
+      logger.info(`  ✅ Trending refresh: added ${added} videos from ${site}`)
     } catch (err) {
-      console.error(`  ❌ Trending refresh failed for ${site}:`, err.message)
+      logger.error(`  ❌ Trending refresh failed for ${site}:`, { error: err.message })
     }
   }, TRENDING_INTERVAL)
 }
@@ -827,16 +942,16 @@ function formatDuration(seconds) {
 // Process-level crash handlers — log reason before dying
 // -----------------------------------------------------------
 process.on('uncaughtException', (err) => {
-  console.error('\n[CRASH] Uncaught exception:', err)
+  logger.error('Uncaught exception', { error: err.message, stack: err.stack })
   process.exit(1)
 })
 process.on('unhandledRejection', (reason) => {
   // Log but don't crash — transient network errors in background tasks
   // (feed refill, category refresh) shouldn't take down the server
-  console.error('\n[WARN] Unhandled rejection:', reason)
+  logger.warn('Unhandled rejection', { reason: String(reason) })
 })
 process.on('SIGTERM', async () => {
-  console.log('\nShutting down...')
+  logger.info('Shutting down...')
   await closeAllSources()
   process.exit(0)
 })
@@ -847,7 +962,7 @@ process.on('SIGTERM', async () => {
 initDatabase()
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  📡 Server running at http://localhost:${PORT}`)
+  logger.info(`\n  📡 Server running at http://localhost:${PORT}`)
 
   // Print local network URL for mobile testing
   try {
@@ -855,13 +970,13 @@ app.listen(PORT, '0.0.0.0', () => {
     for (const name of Object.keys(nets)) {
       for (const net of nets[name]) {
         if (net.family === 'IPv4' && !net.internal) {
-          console.log(`     Network: http://${net.address}:${PORT}`)
+          logger.info(`     Network: http://${net.address}:${PORT}`)
         }
       }
     }
   } catch {}
 
-  console.log(`     Health check: http://localhost:${PORT}/api/health\n`)
+  logger.info(`     Health check: http://localhost:${PORT}/api/health\n`)
   startScheduledFeedRefill()
   startScheduledTrendingRefresh()
 })

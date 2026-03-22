@@ -6,6 +6,8 @@
 // as a single point of failure.
 // ============================================================
 
+import { logger } from '../logger.js'
+
 const MAX_CONSECUTIVE_FAILURES = 5
 const DISABLE_DURATION_MS = 5 * 60 * 1000 // 5 minutes
 
@@ -50,7 +52,7 @@ export class SourceRegistry {
       }
     }
 
-    console.log(`  📎 Registered adapter: ${adapter.name} (${adapter.supportedDomains.join(', ')})`)
+    logger.info(`Registered adapter: ${adapter.name}`, { domains: adapter.supportedDomains })
   }
 
   // Record a successful operation for an adapter
@@ -74,7 +76,7 @@ export class SourceRegistry {
     // Auto-disable after too many consecutive failures
     if (s.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES && !s.disabledUntil) {
       s.disabledUntil = new Date(Date.now() + DISABLE_DURATION_MS).toISOString()
-      console.warn(`  🚫 ${adapterName} auto-disabled for ${DISABLE_DURATION_MS / 1000}s after ${s.consecutiveFailures} consecutive failures`)
+      logger.warn(`Adapter auto-disabled: ${adapterName}`, { cooldownSec: DISABLE_DURATION_MS / 1000, consecutiveFailures: s.consecutiveFailures })
     }
   }
 
@@ -86,7 +88,7 @@ export class SourceRegistry {
       // Cooldown expired, re-enable
       s.disabledUntil = null
       s.consecutiveFailures = 0
-      console.log(`  ✅ ${adapterName} re-enabled after cooldown`)
+      logger.info(`Adapter re-enabled after cooldown: ${adapterName}`)
       return false
     }
     return true
@@ -139,7 +141,7 @@ export class SourceRegistry {
       } catch (err) {
         this.recordFailure(adapter.name, err.message)
         errors.push({ adapter: adapter.name, error: err.message })
-        console.warn(`  ⚠️  ${adapter.name} failed for ${capability}: ${err.message}`)
+        logger.warn(`${adapter.name} failed for ${capability}`, { error: err.message })
       }
     }
 
@@ -161,7 +163,7 @@ export class SourceRegistry {
         return result
       } catch (err) {
         this.recordFailure(specific.name, err.message)
-        console.warn(`  ⚠️  ${specific.name} metadata failed, trying fallbacks: ${err.message}`)
+        logger.warn(`${specific.name} metadata failed, trying fallbacks`, { error: err.message })
       }
     }
 
@@ -181,7 +183,7 @@ export class SourceRegistry {
         return result
       } catch (err) {
         this.recordFailure(specific.name, err.message)
-        console.warn(`  ⚠️  ${specific.name} stream URL failed, trying fallbacks: ${err.message}`)
+        logger.warn(`${specific.name} stream URL failed, trying fallbacks`, { error: err.message })
       }
     }
 

@@ -1,6 +1,7 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import useHomeStore from '../../stores/homeStore'
 import useModeStore from '../../stores/modeStore'
+import useThemeStore from '../../stores/themeStore'
 
 // ============================================================
 // HomeHeader
@@ -13,6 +14,7 @@ export default function HomeHeader() {
   const location = useLocation()
   const { theatreMode } = useHomeStore()
   const { isSFW, toggleMode } = useModeStore()
+  const { theme, toggleTheme } = useThemeStore()
 
   const navItems = [
     { label: 'Home', path: '/' },
@@ -24,7 +26,7 @@ export default function HomeHeader() {
     <header
       className="fixed top-0 left-0 right-0 z-[200] h-14 flex items-center justify-between px-10"
       style={{
-        background: 'linear-gradient(to bottom, rgba(10,10,11,0.9) 0%, transparent 100%)',
+        background: `linear-gradient(to bottom, var(--color-surface) 0%, transparent 100%)`,
       }}
     >
       {/* Logo */}
@@ -51,6 +53,20 @@ export default function HomeHeader() {
 
       {/* Right side */}
       <div className="flex items-center gap-3.5">
+        <button
+          onClick={() => navigate('/settings')}
+          className="p-2 rounded-lg text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
+          title="Settings"
+        >
+          ⚙
+        </button>
+        <button
+          onClick={toggleTheme}
+          className="p-2 rounded-lg text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {theme === 'dark' ? '☀' : '🌙'}
+        </button>
         <button
           onClick={toggleMode}
           title={isSFW ? 'Switch to full library' : 'Switch to Social mode'}

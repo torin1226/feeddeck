@@ -211,7 +211,7 @@ export default function HeroSection() {
         className="absolute inset-0 transition-opacity duration-500"
         style={{
           background:
-            'linear-gradient(to top, #0a0a0b 0%, rgba(10,10,11,0.7) 30%, rgba(10,10,11,0.15) 65%, transparent 100%)',
+            'linear-gradient(to top, var(--color-surface) 0%, var(--color-gradient-mid) 30%, var(--color-gradient-faint) 65%, transparent 100%)',
           opacity: theatreMode ? 0.3 : 1,
         }}
       />
@@ -219,7 +219,7 @@ export default function HeroSection() {
         className="absolute inset-0 transition-opacity duration-500"
         style={{
           background:
-            'linear-gradient(to right, rgba(10,10,11,0.92) 0%, rgba(10,10,11,0.55) 40%, transparent 75%)',
+            'linear-gradient(to right, var(--color-gradient-solid) 0%, var(--color-gradient-mid) 40%, transparent 75%)',
           opacity: theatreMode ? 0.2 : 1,
         }}
       />
@@ -325,7 +325,7 @@ export default function HeroSection() {
           ease-[cubic-bezier(0.25,0.46,0.45,0.94)]
           ${theatreMode ? 'translate-y-[30px] opacity-0 pointer-events-none' : ''}`}
         style={{
-          background: 'linear-gradient(to top, #0a0a0b 0%, transparent 100%)',
+          background: 'linear-gradient(to top, var(--color-surface) 0%, transparent 100%)',
         }}
       >
         <HeroCarousel />

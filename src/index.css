@@ -2,24 +2,63 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   Theme CSS Variables
+   Dark theme is the default (Netflix-minimal aesthetic).
+   Light theme activates when html has class="light".
+   ============================================================ */
+:root {
+  --color-surface: #0a0a0b;
+  --color-surface-raised: #141416;
+  --color-surface-overlay: #1c1c1f;
+  --color-surface-border: #2a2a2e;
+  --color-text-primary: #e5e5e5;
+  --color-text-secondary: #a1a1a6;
+  --color-text-muted: #6b6b70;
+  --color-scrollbar-track: #0a0a0b;
+  --color-scrollbar-thumb: #2a2a2e;
+  --color-scrollbar-hover: #3a3a3e;
+  --color-gradient-solid: rgba(10, 10, 11, 0.95);
+  --color-gradient-mid: rgba(10, 10, 11, 0.55);
+  --color-gradient-light: rgba(10, 10, 11, 0.3);
+  --color-gradient-faint: rgba(10, 10, 11, 0.15);
+}
+
+.light {
+  --color-surface: #f8f8fa;
+  --color-surface-raised: #ffffff;
+  --color-surface-overlay: #f0f0f3;
+  --color-surface-border: #d4d4d8;
+  --color-text-primary: #18181b;
+  --color-text-secondary: #52525b;
+  --color-text-muted: #a1a1aa;
+  --color-scrollbar-track: #f8f8fa;
+  --color-scrollbar-thumb: #d4d4d8;
+  --color-scrollbar-hover: #a1a1aa;
+  --color-gradient-solid: rgba(248, 248, 250, 0.95);
+  --color-gradient-mid: rgba(248, 248, 250, 0.55);
+  --color-gradient-light: rgba(248, 248, 250, 0.3);
+  --color-gradient-faint: rgba(248, 248, 250, 0.15);
+}
+
 /* Smooth scrolling everywhere */
 html {
   scroll-behavior: smooth;
 }
 
-/* Custom scrollbar (dark theme) */
+/* Custom scrollbar (theme-aware) */
 ::-webkit-scrollbar {
   width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0a0a0b;
+  background: var(--color-scrollbar-track);
 }
 ::-webkit-scrollbar-thumb {
-  background: #2a2a2e;
+  background: var(--color-scrollbar-thumb);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #3a3a3e;
+  background: var(--color-scrollbar-hover);
 }
 
 /* Card entrance animation for streaming search results */

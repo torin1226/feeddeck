@@ -4,14 +4,15 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
         surface: {
-          DEFAULT: '#0a0a0b',
-          raised: '#141416',
-          overlay: '#1c1c1f',
-          border: '#2a2a2e',
+          DEFAULT: 'var(--color-surface)',
+          raised: 'var(--color-surface-raised)',
+          overlay: 'var(--color-surface-overlay)',
+          border: 'var(--color-surface-border)',
         },
         accent: {
           DEFAULT: '#e50914',
@@ -19,9 +20,9 @@ export default {
           muted: '#e5091433',
         },
         text: {
-          primary: '#e5e5e5',
-          secondary: '#a1a1a6',
-          muted: '#6b6b70',
+          primary: 'var(--color-text-primary)',
+          secondary: 'var(--color-text-secondary)',
+          muted: 'var(--color-text-muted)',
         },
         sfw: {
           DEFAULT: '#f59e0b',

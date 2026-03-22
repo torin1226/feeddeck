@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { existsSync, mkdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { logger } from './logger.js'
 
 // ============================================================
 // Database Setup
@@ -177,6 +178,6 @@ export function initDatabase() {
     }
   } catch {}
 
-  console.log('  📦 Database initialized at', DB_PATH)
+  logger.info('Database initialized', { path: DB_PATH })
   return db
 }

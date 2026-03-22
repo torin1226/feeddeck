@@ -134,7 +134,7 @@ Environment=PORT=3000
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=$FEEDDECK_DIR/server
+ReadWritePaths=$FEEDDECK_DIR/data
 ReadWritePaths=$HOME/backups
 
 # Logging
@@ -165,7 +165,7 @@ cat > "$BACKUP_SCRIPT" <<'BACKUP_EOF'
 # Keeps the last 14 days of backups
 
 BACKUP_DIR="$HOME/backups"
-DB_PATH="$HOME/feeddeck/server/feeddeck.db"
+DB_PATH="$HOME/feeddeck/data/library.db"
 DATE=$(date +%Y%m%d_%H%M%S)
 
 mkdir -p "$BACKUP_DIR"
