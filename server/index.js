@@ -2,7 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import { networkInterfaces } from 'os'
 import { initDatabase, db } from './database.js'
-import { registry, ytdlp as ytdlpAdapter, closeAllSources } from './sources/index.js'
+import { registry, ytdlp as ytdlpAdapter, scraper as scraperAdapter, closeAllSources } from './sources/index.js'
 
 // Allowed CDN domains for proxy endpoints (prevents SSRF)
 const ALLOWED_CDN_DOMAINS = [
@@ -316,6 +316,126 @@ app.get('/api/search', (req, res) => {
 
   // Kill if client disconnects
   req.on('close', () => stream.kill())
+})
+
+// -----------------------------------------------------------
+// GET /api/search/multi?q=...&limit=10
+// Multi-site search — hits all configured scraper sites in
+// parallel and returns combined results. Great for NSFW
+// discovery where the same query may yield different results
+// on different sites.
+// -----------------------------------------------------------
+app.get('/api/search/multi', async (req, res) => {
+  const { q, limit = 10 } = req.query
+  if (!q) return res.status(400).json({ error: 'Search query required' })
+
+  try {
+    const videos = await scraperAdapter.searchAll(q, { limit: parseInt(limit, 10) })
+    res.json({
+      query: q,
+      count: videos.length,
+      videos: videos.map(v => ({
+        ...v,
+        durationFormatted: formatDuration(v.duration),
+      })),
+    })
+  } catch (err) {
+    console.error('Multi-site search error:', err.message)
+    res.status(500).json({ error: 'Multi-site search failed' })
+  }
+})
+
+// -----------------------------------------------------------
+// GET /api/trending?site=pornhub.com&limit=20
+// Returns trending videos from a specific site.
+// Supported sites: pornhub.com, xvideos.com, spankbang.com
+// -----------------------------------------------------------
+app.get('/api/trending', async (req, res) => {
+  const { site = 'pornhub.com', limit = 20 } = req.query
+
+  try {
+    const videos = await scraperAdapter.fetchTrending({
+      site,
+      limit: parseInt(limit, 10),
+    })
+    res.json({
+      site,
+      count: videos.length,
+      videos: videos.map(v => ({
+        ...v,
+        durationFormatted: formatDuration(v.duration),
+      })),
+    })
+  } catch (err) {
+    console.error('Trending fetch error:', err.message)
+    res.status(500).json({ error: `Failed to fetch trending for ${site}` })
+  }
+})
+
+// -----------------------------------------------------------
+// GET /api/categories?site=pornhub.com&url=...&limit=20
+// Fetches videos from a specific category page URL.
+// -----------------------------------------------------------
+app.get('/api/categories', async (req, res) => {
+  const { url, limit = 20 } = req.query
+  if (!url) return res.status(400).json({ error: 'Category URL required' })
+
+  try {
+    const videos = await scraperAdapter.fetchCategory(url, {
+      limit: parseInt(limit, 10),
+    })
+    res.json({
+      url,
+      count: videos.length,
+      videos: videos.map(v => ({
+        ...v,
+        durationFormatted: formatDuration(v.duration),
+      })),
+    })
+  } catch (err) {
+    console.error('Category fetch error:', err.message)
+    res.status(500).json({ error: 'Failed to fetch category' })
+  }
+})
+
+// -----------------------------------------------------------
+// GET /api/sources/health
+// Reports status of all registered source adapters.
+// Useful for monitoring which adapters are available and
+// catching failures before they affect users.
+// -----------------------------------------------------------
+app.get('/api/sources/health', (req, res) => {
+  const stats = registry.getStats()
+  const adapters = registry.listAdapters().map(adapter => ({
+    name: adapter.name,
+    available: typeof adapter.isAvailable === 'function' ? adapter.isAvailable() : true,
+    disabled: registry.isDisabled(adapter.name),
+    capabilities: adapter.capabilities,
+    supportedDomains: adapter.supportedDomains || [],
+    version: adapter.version || null,
+    stats: stats[adapter.name] || null,
+  }))
+
+  const allHealthy = adapters.every(a => a.available && !a.disabled)
+
+  res.json({
+    status: allHealthy ? 'healthy' : 'degraded',
+    adapters,
+  })
+})
+
+// -----------------------------------------------------------
+// POST /api/sources/:name/reenable
+// Manually re-enable a disabled adapter after consecutive failures.
+// -----------------------------------------------------------
+app.post('/api/sources/:name/reenable', (req, res) => {
+  const { name } = req.params
+  const success = registry.reenableAdapter(name)
+  if (success) {
+    res.json({ message: `${name} re-enabled` })
+  } else {
+    res.status(404).json({ error: `Adapter '${name}' not found` })
+  }
 })
 
 // -----------------------------------------------------------
@@ -654,6 +774,46 @@ function startScheduledFeedRefill() {
 }
 
 // -----------------------------------------------------------
+// Scheduled trending/category refresh: periodically fetch
+// trending content from all NSFW sites and populate homepage
+// cache. Rotates through sites to spread load.
+// -----------------------------------------------------------
+function startScheduledTrendingRefresh() {
+  const TRENDING_INTERVAL = 30 * 60_000 // Every 30 minutes
+  const sites = scraperAdapter.supportedDomains
+
+  let siteIndex = 0
+
+  setInterval(async () => {
+    const site = sites[siteIndex % sites.length]
+    siteIndex++
+
+    console.log(`  📡 Scheduled trending refresh: ${site}`)
+
+    try {
+      const videos = await scraperAdapter.fetchTrending({ site, limit: 20 })
+
+      const insert = db.prepare(`
+        INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, tags, fetched_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+24 hours'))
+      `)
+
+      let added = 0
+      for (const v of videos) {
+        try {
+          insert.run(v.id, 'nsfw-trending', v.url, v.title, v.thumbnail, v.duration, v.source || site, v.uploader, v.view_count, JSON.stringify(v.tags || []))
+          added++
+        } catch { /* skip duplicates */ }
+      }
+
+      console.log(`  ✅ Trending refresh: added ${added} videos from ${site}`)
+    } catch (err) {
+      console.error(`  ❌ Trending refresh failed for ${site}:`, err.message)
+    }
+  }, TRENDING_INTERVAL)
+}
+
+// -----------------------------------------------------------
 // Helper: seconds → "3:45"
 // -----------------------------------------------------------
 function formatDuration(seconds) {
@@ -703,4 +863,5 @@ app.listen(PORT, '0.0.0.0', () => {
 
   console.log(`     Health check: http://localhost:${PORT}/api/health\n`)
   startScheduledFeedRefill()
+  startScheduledTrendingRefresh()
 })

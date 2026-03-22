@@ -81,6 +81,57 @@ const SITE_CONFIGS = {
     thumbnailAttr: ['data-src', 'src'],
     baseUrl: 'https://spankbang.com',
   },
+
+  'redtube.com': {
+    searchUrl: (q) => `https://www.redtube.com/?search=${encodeURIComponent(q)}`,
+    categoryUrl: (cat) => `https://www.redtube.com/category/${encodeURIComponent(cat)}`,
+    trendingUrl: 'https://www.redtube.com/mostviewed?period=today',
+    selectors: {
+      videoCard: '.video-box, li.videoBox',
+      title: '.video-title a, a[title]',
+      thumbnail: 'img.video-thumb, img[data-thumb_url]',
+      duration: '.duration, span.duration',
+      views: '.video-views, span.views',
+      uploader: '.video-uploader a, .uploader a',
+      link: '.video-title a, a.video-thumb-link',
+    },
+    thumbnailAttr: ['data-thumb_url', 'data-src', 'src'],
+    baseUrl: 'https://www.redtube.com',
+  },
+
+  'youporn.com': {
+    searchUrl: (q) => `https://www.youporn.com/search/?query=${encodeURIComponent(q)}`,
+    categoryUrl: (cat) => `https://www.youporn.com/category/${encodeURIComponent(cat)}/`,
+    trendingUrl: 'https://www.youporn.com/most_viewed/?t=t',
+    selectors: {
+      videoCard: '.video-box, .video-listing .video-box',
+      title: '.video-box-title a, a[title]',
+      thumbnail: 'img.video-thumb, img[data-thumbnail]',
+      duration: '.video-duration, span.duration',
+      views: '.video-views, span.views',
+      uploader: '.video-uploader a',
+      link: '.video-box-title a, a.video-thumb-link',
+    },
+    thumbnailAttr: ['data-thumbnail', 'data-src', 'src'],
+    baseUrl: 'https://www.youporn.com',
+  },
+
+  'xhamster.com': {
+    searchUrl: (q) => `https://xhamster.com/search/${encodeURIComponent(q)}`,
+    categoryUrl: (cat) => `https://xhamster.com/categories/${encodeURIComponent(cat)}`,
+    trendingUrl: 'https://xhamster.com/trending',
+    selectors: {
+      videoCard: '.thumb-list__item, .video-thumb',
+      title: 'a.video-thumb-info__name, a[title]',
+      thumbnail: 'img.thumb-image-container__image, img[data-src]',
+      duration: '.thumb-image-container__duration, span.duration',
+      views: '.video-thumb-views, span.views',
+      uploader: '.video-uploader a',
+      link: 'a.video-thumb-info__name, a.video-thumb__image-container',
+    },
+    thumbnailAttr: ['data-src', 'src'],
+    baseUrl: 'https://xhamster.com',
+  },
 }
 
 export class ScraperAdapter extends SourceAdapter {
@@ -168,9 +219,9 @@ export class ScraperAdapter extends SourceAdapter {
         for (const card of cards) {
           if (results.length >= maxResults) break
 
-          // Title
+          // Title — prefer title attribute (more reliable on adult sites), fall back to text content
           const titleEl = card.querySelector(cfg.selectors.title)
-          const title = titleEl?.textContent?.trim() || titleEl?.getAttribute('title') || ''
+          const title = titleEl?.getAttribute('title') || titleEl?.textContent?.trim() || ''
           if (!title) continue
 
           // Link
