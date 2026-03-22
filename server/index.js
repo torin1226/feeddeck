@@ -585,31 +585,30 @@ app.get('/api/recommendations/seed', async (req, res) => {
     }
   } catch { /* preferences table may not have the key */ }
 
-  // Get username
+  // Get username (not required for YouTube which uses cookie-based auth)
   let username
   try {
     const row = db.prepare("SELECT value FROM preferences WHERE key = ?").get(`${platform}_username`)
     username = row?.value
   } catch {}
-  if (!username) {
-    send({ type: 'error', message: `No ${platform} username configured. Set it via PUT /api/recommendations/username` })
-    return res.end()
-  }
 
   // Build URLs to scrape based on platform
   const urls = []
   if (platform === 'pornhub') {
+    if (!username) { send({ type: 'error', message: 'PornHub username required. Set it in the field above.' }); return res.end() }
     urls.push(
       { label: 'Favorites', url: `https://www.pornhub.com/users/${username}/videos/favorites` },
       { label: 'Watched', url: `https://www.pornhub.com/users/${username}/videos/watched` },
       { label: 'Rated', url: `https://www.pornhub.com/users/${username}/videos/rated` },
     )
   } else if (platform === 'youtube') {
+    // YouTube uses cookie auth, no username needed
     urls.push(
       { label: 'Liked Videos', url: 'https://www.youtube.com/playlist?list=LL' },
       { label: 'Watch History', url: 'https://www.youtube.com/feed/history' },
     )
   } else if (platform === 'tiktok') {
+    if (!username) { send({ type: 'error', message: 'TikTok username required. Set it in the field above.' }); return res.end() }
     urls.push(
       { label: 'Liked Videos', url: `https://www.tiktok.com/@${username}/liked` },
     )

@@ -355,7 +355,7 @@ export default function SettingsPage() {
               </div>
               <button
                 onClick={runSeed}
-                disabled={seedRunning || !seedUsername.trim()}
+                disabled={seedRunning || (seedPlatform !== 'youtube' && !seedUsername.trim())}
                 className="px-4 py-2 rounded-lg text-sm bg-accent/90 text-white hover:bg-accent transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
               >
                 {seedRunning ? 'Seeding...' : 'Seed Now'}
