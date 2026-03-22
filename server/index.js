@@ -404,6 +404,115 @@ app.get('/api/videos/watch-later', (req, res) => {
 })
 
 // -----------------------------------------------------------
+// Tag Preferences (3.2)
+// -----------------------------------------------------------
+
+// GET /api/tags/preferences — list all tag preferences
+app.get('/api/tags/preferences', (req, res) => {
+  try {
+    const prefs = db.prepare('SELECT tag, preference FROM tag_preferences ORDER BY tag').all()
+    res.json({ preferences: prefs })
+  } catch (err) {
+    logger.error('Tag preferences fetch error', { error: err.message })
+    res.json({ preferences: [] })
+  }
+})
+
+// PUT /api/tags/preferences — set preference for a tag (liked/disliked)
+app.put('/api/tags/preferences', express.json(), (req, res) => {
+  const { tag, preference } = req.body || {}
+  if (!tag?.trim()) return res.status(400).json({ error: 'tag required' })
+  if (!['liked', 'disliked'].includes(preference)) return res.status(400).json({ error: 'preference must be liked or disliked' })
+  try {
+    db.prepare('INSERT OR REPLACE INTO tag_preferences (tag, preference, updated_at) VALUES (?, ?, datetime(\'now\'))').run(tag.trim().toLowerCase(), preference)
+    res.json({ ok: true })
+  } catch (err) {
+    logger.error('Tag preference set error', { error: err.message })
+    res.status(500).json({ error: 'Failed to set preference' })
+  }
+})
+
+// DELETE /api/tags/preferences/:tag — remove a tag preference
+app.delete('/api/tags/preferences/:tag', (req, res) => {
+  try {
+    db.prepare('DELETE FROM tag_preferences WHERE tag = ?').run(req.params.tag)
+    res.json({ ok: true })
+  } catch (err) {
+    logger.error('Tag preference delete error', { error: err.message })
+    res.status(500).json({ error: 'Failed to delete preference' })
+  }
+})
+
+// GET /api/tags/popular — list most common tags across all videos
+app.get('/api/tags/popular', (req, res) => {
+  try {
+    const rows = db.prepare('SELECT tags FROM videos WHERE tags IS NOT NULL AND tags != \'[]\'').all()
+    const tagCounts = {}
+    for (const row of rows) {
+      try {
+        const tags = JSON.parse(row.tags)
+        for (const tag of tags) {
+          const t = tag.toLowerCase().trim()
+          if (t) tagCounts[t] = (tagCounts[t] || 0) + 1
+        }
+      } catch {}
+    }
+    const popular = Object.entries(tagCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 50)
+      .map(([tag, count]) => ({ tag, count }))
+    res.json({ tags: popular })
+  } catch (err) {
+    logger.error('Popular tags error', { error: err.message })
+    res.json({ tags: [] })
+  }
+})
+
+// -----------------------------------------------------------
+// Basic Recommendations (3.3)
+// Rule-based scoring: +2 liked tag, -5 disliked tag, +1 preferred source
+// -----------------------------------------------------------
+
+app.get('/api/discover', (req, res) => {
+  const { limit = 20 } = req.query
+  try {
+    // Get tag preferences
+    const prefs = db.prepare('SELECT tag, preference FROM tag_preferences').all()
+    const liked = new Set(prefs.filter(p => p.preference === 'liked').map(p => p.tag))
+    const disliked = new Set(prefs.filter(p => p.preference === 'disliked').map(p => p.tag))
+
+    // Get all unwatched videos
+    const videos = db.prepare('SELECT * FROM videos WHERE watch_count = 0 OR watch_count IS NULL ORDER BY added_at DESC').all()
+
+    // Score each video
+    const scored = videos.map(v => {
+      let score = 0
+      try {
+        const tags = JSON.parse(v.tags || '[]')
+        for (const tag of tags) {
+          const t = tag.toLowerCase().trim()
+          if (liked.has(t)) score += 2
+          if (disliked.has(t)) score -= 5
+        }
+      } catch {}
+      // Bonus for favorited
+      if (v.favorite) score += 1
+      // Bonus for highly rated
+      if (v.rating >= 4) score += 1
+      return { ...v, score, tags: v.tags ? JSON.parse(v.tags) : [], durationFormatted: formatDuration(v.duration) }
+    })
+
+    // Sort by score descending, then by added_at
+    scored.sort((a, b) => b.score - a.score)
+
+    res.json({ videos: scored.slice(0, parseInt(limit)) })
+  } catch (err) {
+    logger.error('Discover error', { error: err.message })
+    res.json({ videos: [] })
+  }
+})
+
+// -----------------------------------------------------------
 // Playlist CRUD
 // -----------------------------------------------------------
 

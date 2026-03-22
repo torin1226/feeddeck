@@ -120,6 +120,13 @@ export function initDatabase() {
       FOREIGN KEY (source_domain) REFERENCES sources(domain)
     );
 
+    -- Tag preferences (liked/disliked tags for recommendations)
+    CREATE TABLE IF NOT EXISTS tag_preferences (
+      tag TEXT PRIMARY KEY,
+      preference TEXT NOT NULL CHECK(preference IN ('liked', 'disliked')),
+      updated_at DATETIME DEFAULT (datetime('now'))
+    );
+
     -- Playlists
     CREATE TABLE IF NOT EXISTS playlists (
       id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),

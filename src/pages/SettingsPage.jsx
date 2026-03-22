@@ -19,18 +19,26 @@ export default function SettingsPage() {
   const [addError, setAddError] = useState('')
   const [addLoading, setAddLoading] = useState(false)
 
+  // Tag preferences
+  const [tagPrefs, setTagPrefs] = useState([])
+  const [newTag, setNewTag] = useState('')
+  const [newTagPref, setNewTagPref] = useState('liked')
+
   const fetchSources = useCallback(async () => {
     try {
-      const [srcRes, healthRes] = await Promise.all([
+      const [srcRes, healthRes, tagRes] = await Promise.all([
         fetch(`${API}/sources/list`),
         fetch(`${API}/sources/health`),
+        fetch(`${API}/tags/preferences`),
       ])
       const srcData = await srcRes.json()
       const healthData = await healthRes.json()
+      const tagData = await tagRes.json()
       setSources(srcData.sources || [])
       setAdapterHealth(healthData)
+      setTagPrefs(tagData.preferences || [])
     } catch (err) {
-      console.error('Failed to load sources:', err)
+      console.error('Failed to load settings:', err)
     } finally {
       setLoading(false)
     }
@@ -77,6 +85,22 @@ export default function SettingsPage() {
     }
   }
 
+  const addTagPref = async () => {
+    if (!newTag.trim()) return
+    await fetch(`${API}/tags/preferences`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tag: newTag.trim(), preference: newTagPref }),
+    })
+    setNewTag('')
+    fetchSources()
+  }
+
+  const removeTagPref = async (tag) => {
+    await fetch(`${API}/tags/preferences/${encodeURIComponent(tag)}`, { method: 'DELETE' })
+    fetchSources()
+  }
+
   return (
     <div className="min-h-screen bg-surface">
       {/* Header */}
@@ -106,6 +130,55 @@ export default function SettingsPage() {
               >
                 {theme === 'dark' ? '☀ Light' : '🌙 Dark'}
               </button>
+            </div>
+          </div>
+        </section>
+
+        {/* Tag Preferences */}
+        <section>
+          <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-3">Tag Preferences</h2>
+          <div className="bg-surface-raised rounded-xl border border-surface-border p-4 space-y-3">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Add a tag..."
+                value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && newTag.trim()) addTagPref() }}
+                className="flex-1 bg-surface-overlay border border-surface-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-muted"
+              />
+              <select
+                value={newTagPref}
+                onChange={(e) => setNewTagPref(e.target.value)}
+                className="bg-surface-overlay border border-surface-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none"
+              >
+                <option value="liked">Liked</option>
+                <option value="disliked">Disliked</option>
+              </select>
+              <button
+                onClick={addTagPref}
+                disabled={!newTag.trim()}
+                className="px-3 py-2 rounded-lg text-sm bg-accent/90 text-white hover:bg-accent transition-colors font-medium disabled:opacity-50"
+              >
+                Add
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {tagPrefs.filter(p => p.preference === 'liked').map(p => (
+                <span key={p.tag} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs bg-green-500/15 text-green-400 border border-green-500/25">
+                  {p.tag}
+                  <button onClick={() => removeTagPref(p.tag)} className="hover:text-white transition-colors cursor-pointer">✕</button>
+                </span>
+              ))}
+              {tagPrefs.filter(p => p.preference === 'disliked').map(p => (
+                <span key={p.tag} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs bg-red-500/15 text-red-400 border border-red-500/25">
+                  {p.tag}
+                  <button onClick={() => removeTagPref(p.tag)} className="hover:text-white transition-colors cursor-pointer">✕</button>
+                </span>
+              ))}
+              {tagPrefs.length === 0 && (
+                <p className="text-text-muted text-sm">No tag preferences set. Add tags you like or dislike to improve recommendations.</p>
+              )}
             </div>
           </div>
         </section>
