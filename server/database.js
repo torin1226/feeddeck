@@ -120,6 +120,26 @@ export function initDatabase() {
       FOREIGN KEY (source_domain) REFERENCES sources(domain)
     );
 
+    -- Playlists
+    CREATE TABLE IF NOT EXISTS playlists (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      name TEXT NOT NULL,
+      created_at DATETIME DEFAULT (datetime('now')),
+      updated_at DATETIME DEFAULT (datetime('now'))
+    );
+
+    -- Playlist items (ordered)
+    CREATE TABLE IF NOT EXISTS playlist_items (
+      id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      playlist_id TEXT NOT NULL,
+      video_id TEXT NOT NULL,
+      position INTEGER NOT NULL,
+      added_at DATETIME DEFAULT (datetime('now')),
+      FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
+      FOREIGN KEY (video_id) REFERENCES videos(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_playlist_items_playlist ON playlist_items(playlist_id, position);
+
     -- Queue (synced across devices via API)
     CREATE TABLE IF NOT EXISTS queue (
       id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -188,6 +208,14 @@ export function initDatabase() {
     }
     if (!colNames.includes('last_fetched')) {
       db.exec("ALTER TABLE sources ADD COLUMN last_fetched DATETIME")
+    }
+  } catch {}
+
+  // Migrate: add watch_later column to videos if missing
+  try {
+    const cols = db.prepare("PRAGMA table_info(videos)").all()
+    if (!cols.some(c => c.name === 'watch_later')) {
+      db.exec("ALTER TABLE videos ADD COLUMN watch_later INTEGER DEFAULT 0")
     }
   } catch {}
 

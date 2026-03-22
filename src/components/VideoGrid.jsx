@@ -12,21 +12,31 @@ import VideoPlayer from './VideoPlayer'
 // Columns: 2 (sm) / 3 (md) / 4 (lg) / 5 (xl)
 // ============================================================
 
-export default function VideoGrid({ searchQuery, remoteQuery }) {
+export default function VideoGrid({ searchQuery, remoteQuery, filter = 'all' }) {
   const { videos } = useLibraryStore()
   const { isSFW } = useModeStore()
   const [activeVideo, setActiveVideo] = useState(null)
 
-  // Filter local library by keystroke query
+  // Filter local library by keystroke query and filter tab
   const filtered = useMemo(() => {
-    if (!searchQuery?.trim()) return videos
-    const q = searchQuery.toLowerCase()
-    return videos.filter((v) =>
-      v.title?.toLowerCase().includes(q) ||
-      v.tags?.some((t) => t.toLowerCase().includes(q)) ||
-      v.source?.toLowerCase().includes(q)
-    )
-  }, [videos, searchQuery])
+    let result = videos
+
+    // Apply filter tab
+    if (filter === 'favorites') result = result.filter(v => v.favorite)
+    else if (filter === 'watchLater') result = result.filter(v => v.watchLater)
+    else if (filter === 'rated') result = result.filter(v => v.rating).sort((a, b) => b.rating - a.rating)
+
+    // Apply search query
+    if (searchQuery?.trim()) {
+      const q = searchQuery.toLowerCase()
+      result = result.filter((v) =>
+        v.title?.toLowerCase().includes(q) ||
+        v.tags?.some((t) => t.toLowerCase().includes(q)) ||
+        v.source?.toLowerCase().includes(q)
+      )
+    }
+    return result
+  }, [videos, searchQuery, filter])
 
   return (
     <>

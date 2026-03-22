@@ -280,6 +280,181 @@ app.get('/api/videos', (req, res) => {
 })
 
 // -----------------------------------------------------------
+// PUT /api/videos/:id/favorite — toggle favorite
+// -----------------------------------------------------------
+app.put('/api/videos/:id/favorite', (req, res) => {
+  try {
+    const row = db.prepare('SELECT favorite FROM videos WHERE id = ?').get(req.params.id)
+    if (!row) return res.status(404).json({ error: 'Video not found' })
+    const newVal = row.favorite ? 0 : 1
+    db.prepare('UPDATE videos SET favorite = ? WHERE id = ?').run(newVal, req.params.id)
+    res.json({ id: req.params.id, favorite: newVal })
+  } catch (err) {
+    logger.error('Toggle favorite error', { error: err.message })
+    res.status(500).json({ error: 'Failed to toggle favorite' })
+  }
+})
+
+// -----------------------------------------------------------
+// PUT /api/videos/:id/rating — set rating (1-5 or null to clear)
+// -----------------------------------------------------------
+app.put('/api/videos/:id/rating', express.json(), (req, res) => {
+  const { rating } = req.body || {}
+  if (rating !== null && (rating < 1 || rating > 5)) {
+    return res.status(400).json({ error: 'Rating must be 1-5 or null' })
+  }
+  try {
+    const row = db.prepare('SELECT id FROM videos WHERE id = ?').get(req.params.id)
+    if (!row) return res.status(404).json({ error: 'Video not found' })
+    db.prepare('UPDATE videos SET rating = ? WHERE id = ?').run(rating, req.params.id)
+    res.json({ id: req.params.id, rating })
+  } catch (err) {
+    logger.error('Set rating error', { error: err.message })
+    res.status(500).json({ error: 'Failed to set rating' })
+  }
+})
+
+// -----------------------------------------------------------
+// PUT /api/videos/:id/watch-later — toggle watch later
+// -----------------------------------------------------------
+app.put('/api/videos/:id/watch-later', (req, res) => {
+  try {
+    const row = db.prepare('SELECT watch_later FROM videos WHERE id = ?').get(req.params.id)
+    if (!row) return res.status(404).json({ error: 'Video not found' })
+    const newVal = row.watch_later ? 0 : 1
+    db.prepare('UPDATE videos SET watch_later = ? WHERE id = ?').run(newVal, req.params.id)
+    res.json({ id: req.params.id, watch_later: newVal })
+  } catch (err) {
+    logger.error('Toggle watch later error', { error: err.message })
+    res.status(500).json({ error: 'Failed to toggle watch later' })
+  }
+})
+
+// -----------------------------------------------------------
+// GET /api/videos/favorites — return all favorited videos
+// -----------------------------------------------------------
+app.get('/api/videos/favorites', (req, res) => {
+  try {
+    const rows = db.prepare('SELECT * FROM videos WHERE favorite = 1 ORDER BY added_at DESC').all()
+    const videos = rows.map(row => ({ ...row, tags: row.tags ? JSON.parse(row.tags) : [], durationFormatted: formatDuration(row.duration) }))
+    res.json({ videos })
+  } catch (err) {
+    logger.error('Favorites fetch error', { error: err.message })
+    res.json({ videos: [] })
+  }
+})
+
+// -----------------------------------------------------------
+// GET /api/videos/watch-later — return watch later list
+// -----------------------------------------------------------
+app.get('/api/videos/watch-later', (req, res) => {
+  try {
+    const rows = db.prepare('SELECT * FROM videos WHERE watch_later = 1 ORDER BY added_at DESC').all()
+    const videos = rows.map(row => ({ ...row, tags: row.tags ? JSON.parse(row.tags) : [], durationFormatted: formatDuration(row.duration) }))
+    res.json({ videos })
+  } catch (err) {
+    logger.error('Watch later fetch error', { error: err.message })
+    res.json({ videos: [] })
+  }
+})
+
+// -----------------------------------------------------------
+// Playlist CRUD
+// -----------------------------------------------------------
+
+// GET /api/playlists — list all playlists with item counts
+app.get('/api/playlists', (req, res) => {
+  try {
+    const playlists = db.prepare(`
+      SELECT p.*, COUNT(pi.id) as item_count
+      FROM playlists p LEFT JOIN playlist_items pi ON p.id = pi.playlist_id
+      GROUP BY p.id ORDER BY p.updated_at DESC
+    `).all()
+    res.json({ playlists })
+  } catch (err) {
+    logger.error('Playlists fetch error', { error: err.message })
+    res.json({ playlists: [] })
+  }
+})
+
+// POST /api/playlists — create playlist
+app.post('/api/playlists', express.json(), (req, res) => {
+  const { name } = req.body || {}
+  if (!name?.trim()) return res.status(400).json({ error: 'name required' })
+  try {
+    const id = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('hex')
+    db.prepare('INSERT INTO playlists (id, name) VALUES (?, ?)').run(id, name.trim())
+    res.json({ playlist: { id, name: name.trim(), item_count: 0 } })
+  } catch (err) {
+    logger.error('Playlist create error', { error: err.message })
+    res.status(500).json({ error: 'Failed to create playlist' })
+  }
+})
+
+// DELETE /api/playlists/:id — delete playlist and its items
+app.delete('/api/playlists/:id', (req, res) => {
+  try {
+    db.prepare('DELETE FROM playlist_items WHERE playlist_id = ?').run(req.params.id)
+    db.prepare('DELETE FROM playlists WHERE id = ?').run(req.params.id)
+    res.json({ ok: true })
+  } catch (err) {
+    logger.error('Playlist delete error', { error: err.message })
+    res.status(500).json({ error: 'Failed to delete playlist' })
+  }
+})
+
+// GET /api/playlists/:id/items — get playlist items with video details
+app.get('/api/playlists/:id/items', (req, res) => {
+  try {
+    const items = db.prepare(`
+      SELECT pi.id as item_id, pi.position, pi.added_at as item_added_at,
+             v.id, v.url, v.title, v.thumbnail, v.duration, v.source, v.favorite, v.rating
+      FROM playlist_items pi
+      JOIN videos v ON pi.video_id = v.id
+      WHERE pi.playlist_id = ?
+      ORDER BY pi.position ASC
+    `).all(req.params.id)
+    const videos = items.map(row => ({ ...row, durationFormatted: formatDuration(row.duration) }))
+    res.json({ videos })
+  } catch (err) {
+    logger.error('Playlist items fetch error', { error: err.message })
+    res.json({ videos: [] })
+  }
+})
+
+// POST /api/playlists/:id/items — add video to playlist
+app.post('/api/playlists/:id/items', express.json(), (req, res) => {
+  const { video_id } = req.body || {}
+  if (!video_id) return res.status(400).json({ error: 'video_id required' })
+  try {
+    const maxPos = db.prepare('SELECT COALESCE(MAX(position), -1) as p FROM playlist_items WHERE playlist_id = ?').get(req.params.id).p
+    const itemId = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('hex')
+    db.prepare('INSERT INTO playlist_items (id, playlist_id, video_id, position) VALUES (?, ?, ?, ?)').run(itemId, req.params.id, video_id, maxPos + 1)
+    db.prepare('UPDATE playlists SET updated_at = datetime(\'now\') WHERE id = ?').run(req.params.id)
+    res.json({ ok: true, item_id: itemId })
+  } catch (err) {
+    logger.error('Playlist add item error', { error: err.message })
+    res.status(500).json({ error: 'Failed to add to playlist' })
+  }
+})
+
+// DELETE /api/playlists/:id/items/:itemId — remove item from playlist
+app.delete('/api/playlists/:id/items/:itemId', (req, res) => {
+  try {
+    db.prepare('DELETE FROM playlist_items WHERE id = ? AND playlist_id = ?').run(req.params.itemId, req.params.id)
+    // Reindex positions
+    const items = db.prepare('SELECT id FROM playlist_items WHERE playlist_id = ? ORDER BY position').all(req.params.id)
+    const update = db.prepare('UPDATE playlist_items SET position = ? WHERE id = ?')
+    items.forEach((item, i) => update.run(i, item.id))
+    db.prepare('UPDATE playlists SET updated_at = datetime(\'now\') WHERE id = ?').run(req.params.id)
+    res.json({ ok: true })
+  } catch (err) {
+    logger.error('Playlist remove item error', { error: err.message })
+    res.status(500).json({ error: 'Failed to remove from playlist' })
+  }
+})
+
+// -----------------------------------------------------------
 // GET /api/search?q=...&count=12
 // SSE stream — emits one JSON video object per event as yt-dlp
 // fetches full metadata for each result. Client gets real

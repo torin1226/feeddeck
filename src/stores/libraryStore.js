@@ -36,6 +36,7 @@ const useLibraryStore = create(
               watchCount: 0,
               rating: null,
               favorite: false,
+              watchLater: false,
               views: video.views || '',
               channel: video.channel || '',
             },
@@ -54,7 +55,7 @@ const useLibraryStore = create(
       },
 
       // -----------------------------------------------------------
-      // Toggle favorite
+      // Toggle favorite (optimistic local + server sync)
       // -----------------------------------------------------------
       toggleFavorite: (id) => {
         set((state) => ({
@@ -62,10 +63,11 @@ const useLibraryStore = create(
             v.id === id ? { ...v, favorite: !v.favorite } : v
           ),
         }))
+        fetch(`/api/videos/${id}/favorite`, { method: 'PUT' }).catch(() => {})
       },
 
       // -----------------------------------------------------------
-      // Set rating (1-5)
+      // Set rating (1-5) — optimistic local + server sync
       // -----------------------------------------------------------
       setRating: (id, rating) => {
         set((state) => ({
@@ -73,6 +75,23 @@ const useLibraryStore = create(
             v.id === id ? { ...v, rating } : v
           ),
         }))
+        fetch(`/api/videos/${id}/rating`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rating }),
+        }).catch(() => {})
+      },
+
+      // -----------------------------------------------------------
+      // Toggle watch later — optimistic local + server sync
+      // -----------------------------------------------------------
+      toggleWatchLater: (id) => {
+        set((state) => ({
+          videos: state.videos.map((v) =>
+            v.id === id ? { ...v, watchLater: !v.watchLater } : v
+          ),
+        }))
+        fetch(`/api/videos/${id}/watch-later`, { method: 'PUT' }).catch(() => {})
       },
 
       // -----------------------------------------------------------

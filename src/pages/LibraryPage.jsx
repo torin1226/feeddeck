@@ -11,12 +11,20 @@ import DebugPanel from '../components/DebugPanel'
 // Mounted at /library route.
 // ============================================================
 
+const FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'favorites', label: 'Favorites' },
+  { key: 'watchLater', label: 'Watch Later' },
+  { key: 'rated', label: 'Top Rated' },
+]
+
 export default function LibraryPage() {
   const isSFW = useModeStore((s) => s.isSFW)
   const { loadFromServer, seedDemoData } = useLibraryStore()
   const [searchQuery, setSearchQuery] = useState('')
   const [remoteQuery, setRemoteQuery] = useState('')
   const [debugOpen, setDebugOpen] = useState(false)
+  const [filter, setFilter] = useState('all')
 
   // Ctrl+Shift+D toggles debug panel
   useEffect(() => {
@@ -50,9 +58,26 @@ export default function LibraryPage() {
         onSearchSubmit={setRemoteQuery}
       />
 
+      {/* Filter tabs */}
+      <div className="flex gap-1 px-4 md:px-6 pt-3 pb-1 bg-surface border-b border-surface-border">
+        {FILTERS.map(f => (
+          <button
+            key={f.key}
+            onClick={() => setFilter(f.key)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
+              filter === f.key
+                ? 'bg-accent/15 text-accent border border-accent/30'
+                : 'text-text-secondary hover:text-text-primary hover:bg-surface-overlay'
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <main className="flex-1 overflow-y-auto">
-          <VideoGrid searchQuery={searchQuery} remoteQuery={remoteQuery} />
+          <VideoGrid searchQuery={searchQuery} remoteQuery={remoteQuery} filter={filter} />
         </main>
       </div>
 
