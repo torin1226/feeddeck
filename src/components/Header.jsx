@@ -76,7 +76,7 @@ export default function Header({ onSearch, onSearchSubmit }) {
                 placeholder="Search videos..."
                 className="w-full bg-surface-overlay border border-surface-border rounded-lg
                   px-4 py-2 text-sm text-text-primary placeholder:text-text-muted
-                  focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgba(229,9,20,0.5)] focus-visible:outline-offset-2 focus:border-text-muted transition-colors"
+                  focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgba(244,63,94,0.5)] focus-visible:outline-offset-2 focus:border-text-muted transition-colors"
               />
               {query && (
                 <button

@@ -8,20 +8,20 @@
    Light theme activates when html has class="light".
    ============================================================ */
 :root {
-  --color-surface: #0a0a0b;
+  --color-surface: #111113;
   --color-surface-raised: #141416;
   --color-surface-overlay: #1c1c1f;
   --color-surface-border: #2a2a2e;
   --color-text-primary: #e5e5e5;
   --color-text-secondary: #a1a1a6;
   --color-text-muted: #8a8a90;
-  --color-scrollbar-track: #0a0a0b;
+  --color-scrollbar-track: #111113;
   --color-scrollbar-thumb: #2a2a2e;
   --color-scrollbar-hover: #3a3a3e;
-  --color-gradient-solid: rgba(10, 10, 11, 0.95);
-  --color-gradient-mid: rgba(10, 10, 11, 0.55);
-  --color-gradient-light: rgba(10, 10, 11, 0.3);
-  --color-gradient-faint: rgba(10, 10, 11, 0.15);
+  --color-gradient-solid: rgba(17, 17, 19, 0.95);
+  --color-gradient-mid: rgba(17, 17, 19, 0.55);
+  --color-gradient-light: rgba(17, 17, 19, 0.3);
+  --color-gradient-faint: rgba(17, 17, 19, 0.15);
 }
 
 .light {
@@ -43,7 +43,7 @@
 
 /* Global focus-visible styles for keyboard accessibility */
 *:focus-visible {
-  outline: 2px solid rgba(229, 9, 20, 0.5);
+  outline: 2px solid rgba(244, 63, 94, 0.5);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -63,7 +63,7 @@
   padding: 8px 16px;
   background: var(--color-surface-raised);
   color: var(--color-text-primary);
-  border: 2px solid rgba(229, 9, 20, 0.5);
+  border: 2px solid rgba(244, 63, 94, 0.5);
   border-radius: 8px;
   font-size: 14px;
   font-weight: 600;
@@ -116,8 +116,8 @@ html {
 
 /* Pulse animation for floating queue pill when item is added */
 @keyframes queuePulse {
-  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(229, 9, 20, 0); }
-  50% { transform: scale(1.1); box-shadow: 0 0 0 4px rgba(229, 9, 20, 0.3); }
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(244, 63, 94, 0); }
+  50% { transform: scale(1.1); box-shadow: 0 0 0 4px rgba(244, 63, 94, 0.3); }
 }
 .animate-queue-pulse {
   animation: queuePulse 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);

@@ -77,7 +77,7 @@ export default function HomeHeader() {
           title={isSFW ? 'Switch to full library' : 'Switch to Social mode'}
           className={`px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition-all tracking-wide ${
             isSFW
-              ? 'bg-amber-500/[0.12] border border-amber-500/35 text-amber-400 hover:bg-amber-500/[0.22]'
+              ? 'bg-amber-500/[0.06] border border-amber-500/25 text-amber-400 hover:bg-amber-500/[0.12]'
               : 'bg-surface-overlay border border-surface-border text-text-secondary hover:text-text-primary hover:border-text-muted'
           }`}
         >

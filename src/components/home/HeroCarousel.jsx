@@ -165,7 +165,7 @@ function CarouselCard({ item, isActive, onClick }) {
       onClick={onClick}
       className={`flex-none w-[230px] h-[130px] rounded-lg overflow-hidden cursor-pointer
         relative transition-all duration-250 ease-out border-2 bg-overlay
-        ${isActive ? 'border-accent shadow-[0_0_0_1px_#e50914,0_8px_32px_rgba(229,9,20,0.25)]' : 'border-transparent'}
+        ${isActive ? 'border-accent shadow-[0_0_0_1px_#f43f5e,0_8px_32px_rgba(244,63,94,0.25)]' : 'border-transparent'}
         hover:scale-[1.03] hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgba(0,0,0,0.4)]`}
     >
       <img
