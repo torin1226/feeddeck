@@ -1,4 +1,7 @@
 # FeedDeck Backlog
+<!-- COWORK TEST: pineapple-rocket-42 -->
+
+**Repo:** https://github.com/torin1226/feeddeck (private)
 
 This is the single source of truth for all project tasks. Claude Code and Cowork read from and update this file directly.
 
