@@ -152,12 +152,27 @@ export default function HeroSection() {
       style={theatreMode ? {} : { height: '100vh', minHeight: '540px' }}
     >
       {/* Background image with Ken Burns */}
-      <div
-        className={`absolute inset-0 bg-cover bg-center bg-no-repeat origin-center transition-[background-image] duration-500 ${
-          previewing ? 'animate-kenburns' : ''
-        }`}
-        style={{ backgroundImage: `url(${heroItem.thumbnail})` }}
-      />
+      {/* Hero thumbnail — uses object-contain to avoid cropping + blurred fill behind for letterbox */}
+      <div className="absolute inset-0">
+        {/* Blurred scaled-up copy as background fill */}
+        <img
+          src={heroItem.thumbnail}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-40"
+        />
+        {/* Sharp centered image */}
+        <img
+          src={heroItem.thumbnail}
+          alt=""
+          className={`absolute inset-0 w-full h-full object-contain transition-[src] duration-500 ${
+            previewing ? 'animate-kenburns' : ''
+          }`}
+        />
+        {/* Vignette overlay to blend edges into background */}
+        <div className="absolute inset-0" style={{
+          background: `radial-gradient(ellipse at center, transparent 50%, var(--color-surface) 100%)`
+        }} />
+      </div>
 
       {/* Video element for theatre mode */}
       {theatreMode && streamUrl && (

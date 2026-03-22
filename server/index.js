@@ -105,24 +105,26 @@ app.get('/api/metadata', async (req, res) => {
 // Returns { streamUrl } pointing to /api/proxy-stream for playback.
 // -----------------------------------------------------------
 app.get('/api/stream-url', async (req, res) => {
-  const { url } = req.query
+  const { url, format } = req.query
   if (!url) return res.status(400).json({ error: 'URL required' })
 
-  // Check feed_cache for a cached stream URL
-  try {
-    const cached = db.prepare(
-      `SELECT stream_url FROM feed_cache
-       WHERE url = ? AND stream_url IS NOT NULL`
-    ).get(url)
+  // Check feed_cache for a cached stream URL (skip cache if specific format requested)
+  if (!format) {
+    try {
+      const cached = db.prepare(
+        `SELECT stream_url FROM feed_cache
+         WHERE url = ? AND stream_url IS NOT NULL`
+      ).get(url)
 
-    if (cached?.stream_url) {
-      return res.json({ streamUrl: cached.stream_url })
-    }
-  } catch { /* fall through to yt-dlp */ }
+      if (cached?.stream_url) {
+        return res.json({ streamUrl: cached.stream_url })
+      }
+    } catch { /* fall through to yt-dlp */ }
+  }
 
   try {
     // Use registry with fallback chain (yt-dlp → cobalt)
-    const cdnUrl = await registry.getStreamUrl(url)
+    const cdnUrl = await registry.getStreamUrl(url, format ? { format } : undefined)
 
     logger.info('Resolved stream URL', { format: cdnUrl.includes('.m3u8') ? 'HLS' : 'MP4', url: cdnUrl.substring(0, 80) })
 
@@ -152,6 +154,49 @@ app.get('/api/stream-url', async (req, res) => {
     res.status(500).json({ error: 'Could not get streaming URL' })
   }
 })
+
+// -----------------------------------------------------------
+// GET /api/stream-formats?url=... — list available quality options
+// Runs yt-dlp -F and returns a simplified list of formats.
+// -----------------------------------------------------------
+app.get('/api/stream-formats', async (req, res) => {
+  const { url } = req.query
+  if (!url) return res.status(400).json({ error: 'URL required' })
+
+  try {
+    const { execFile } = await import('child_process')
+    const { promisify } = await import('util')
+    const execFileAsync = promisify(execFile)
+
+    const { stdout } = await execFileAsync('yt-dlp', [
+      '-j', '--no-warnings', '--no-playlist', url
+    ], { timeout: 30000 })
+
+    const info = JSON.parse(stdout)
+    const formats = (info.formats || [])
+      .filter(f => f.vcodec !== 'none' && f.ext === 'mp4')
+      .map(f => ({
+        format_id: f.format_id,
+        quality: f.height ? `${f.height}p` : f.format_note || f.format_id,
+        height: f.height || 0,
+        filesize: f.filesize || f.filesize_approx || 0,
+        fps: f.fps || 0,
+      }))
+      .sort((a, b) => a.height - b.height)
+      // Dedupe by height
+      .filter((f, i, arr) => i === 0 || f.height !== arr[i - 1].height)
+
+    res.json({ formats, title: info.title })
+  } catch (err) {
+    logger.error('Stream formats error', { error: err.message })
+    res.status(500).json({ error: 'Could not list formats' })
+  }
+})
+
+// -----------------------------------------------------------
+// GET /api/stream-url?url=...&format=...
+// When format is specified, resolve that specific format's URL.
+// -----------------------------------------------------------
 
 // -----------------------------------------------------------
 // GET /api/proxy-stream?url=...
