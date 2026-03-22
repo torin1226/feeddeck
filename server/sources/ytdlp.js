@@ -176,6 +176,10 @@ export class YtDlpAdapter extends SourceAdapter {
 
     const child = spawn('yt-dlp', ['--dump-json', '--playlist-end', String(limit), searchUrl])
 
+    // Kill subprocess after 60s to prevent resource leaks
+    const timeout = setTimeout(() => { try { child.kill('SIGTERM') } catch {} }, 60000)
+    child.on('close', () => clearTimeout(timeout))
+
     return {
       child,
       onVideo: (callback) => {

@@ -4,6 +4,7 @@ import { networkInterfaces } from 'os'
 import { existsSync, writeFileSync, unlinkSync, statSync, readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
+import { randomBytes } from 'crypto'
 import { initDatabase, db } from './database.js'
 import { registry, ytdlp as ytdlpAdapter, scraper as scraperAdapter, closeAllSources } from './sources/index.js'
 import { logger } from './logger.js'
@@ -603,7 +604,7 @@ app.post('/api/playlists', express.json(), (req, res) => {
   const { name } = req.body || {}
   if (!name?.trim()) return res.status(400).json({ error: 'name required' })
   try {
-    const id = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('hex')
+    const id = randomBytes(16).toString('hex')
     db.prepare('INSERT INTO playlists (id, name) VALUES (?, ?)').run(id, name.trim())
     res.json({ playlist: { id, name: name.trim(), item_count: 0 } })
   } catch (err) {
@@ -649,7 +650,7 @@ app.post('/api/playlists/:id/items', express.json(), (req, res) => {
   if (!video_id) return res.status(400).json({ error: 'video_id required' })
   try {
     const maxPos = db.prepare('SELECT COALESCE(MAX(position), -1) as p FROM playlist_items WHERE playlist_id = ?').get(req.params.id).p
-    const itemId = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('hex')
+    const itemId = randomBytes(16).toString('hex')
     db.prepare('INSERT INTO playlist_items (id, playlist_id, video_id, position) VALUES (?, ?, ?, ?)').run(itemId, req.params.id, video_id, maxPos + 1)
     db.prepare('UPDATE playlists SET updated_at = datetime(\'now\') WHERE id = ?').run(req.params.id)
     res.json({ ok: true, item_id: itemId })
@@ -1047,12 +1048,24 @@ async function refillCategory(categoryKey) {
   const cat = db.prepare('SELECT query, mode FROM categories WHERE key = ?').get(categoryKey)
   if (!cat) return
 
+  // Build a personalized query by mixing in liked tag preferences
+  let query = cat.query
+  try {
+    const likedTags = db.prepare(
+      "SELECT tag FROM tag_preferences WHERE preference = 'liked' ORDER BY RANDOM() LIMIT 2"
+    ).all().map(r => r.tag)
+    if (likedTags.length > 0) {
+      query = `${cat.query} ${likedTags.join(' ')}`
+      logger.info(`  🎯 Personalized query for ${categoryKey}: "${query}" (base: "${cat.query}", tags: ${likedTags.join(', ')})`)
+    }
+  } catch { /* tag_preferences may not exist yet — use base query */ }
+
   logger.info(`  🔄 Refilling category: ${categoryKey}`)
 
   try {
     // Use registry search with fallback (scraper → yt-dlp)
     const site = cat.mode === 'nsfw' ? 'pornhub.com' : undefined
-    const videos = await registry.search(cat.query, { site, limit: 12 })
+    const videos = await registry.search(query, { site, limit: 12 })
 
     const insert = db.prepare(`
       INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, tags, fetched_at, expires_at)
@@ -1297,12 +1310,27 @@ async function _refillFeedCacheImpl(mode) {
 
   if (sources.length === 0) return
 
+  // Get liked tags for personalization
+  let likedTags = []
+  try {
+    likedTags = db.prepare(
+      "SELECT tag FROM tag_preferences WHERE preference = 'liked'"
+    ).all().map(r => r.tag)
+  } catch { /* tag_preferences may not exist yet */ }
+
   for (const src of sources) {
     logger.info(`  🔄 Refilling feed: ${src.label} (${mode})`)
 
     try {
+      // Personalize query by mixing in random liked tags
+      let query = src.query
+      if (likedTags.length > 0) {
+        const picked = likedTags.sort(() => Math.random() - 0.5).slice(0, 2)
+        query = `${src.query} ${picked.join(' ')}`
+        logger.info(`  🎯 Personalized feed query: "${query}"`)
+      }
       // Use registry search with fallback chain (scraper → yt-dlp)
-      const videos = await registry.search(src.query, { site: src.domain, limit: 20 })
+      const videos = await registry.search(query, { site: src.domain, limit: 20 })
 
       const insert = db.prepare(`
         INSERT OR IGNORE INTO feed_cache (id, source_domain, mode, url, title, creator, thumbnail, duration, orientation, tags, fetched_at, expires_at)

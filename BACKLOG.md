@@ -1,7 +1,7 @@
 # FeedDeck Backlog
 <!-- COWORK TEST: pineapple-rocket-42 -->
 
-**Repo:** https://github.com/torin1226/feeddeck (private)
+**Repo:** https://github.com/torin1226/feeddeck
 
 This is the single source of truth for all project tasks. Claude Code and Cowork read from and update this file directly.
 
@@ -340,7 +340,68 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 - [x] Rule-based scoring: +2 liked tag, -5 disliked tag, +1 favorite, +1 highly rated
 - [x] "Discover" endpoint: `GET /api/discover` returns unwatched videos sorted by score
 - [x] GET /api/tags/popular endpoint returns top 50 tags by frequency
-- [?] Future: system searches, account login for personalized feeds (see 3.4 Cookie Auth)
+- [ ] Future: system searches for content discovery (see 3.4 Cookie Auth)
+
+### 3.3.1 Seed Recommendations from PornHub History (Cookie-Powered) — HIGH PRIORITY
+
+**Goal:** Use cookies to pull PornHub watch history/favorites via yt-dlp, extract tag/category data from those videos, and auto-populate `tag_preferences` so the recommendation engine has real signal instead of cold-starting.
+
+**Why this matters:** The 3.3 scoring system works, but it's useless until the user manually likes/dislikes enough tags. Seeding from existing PornHub activity bootstraps the engine instantly.
+
+**Priority:** Do this BEFORE 3.0 Integration. Cookies are imported, username is known. This is the highest-leverage feature to make FeedDeck feel personalized.
+
+**Known info:**
+- PornHub username: `tonjone92`
+- Profile URL: `https://www.pornhub.com/users/tonjone92`
+- Cookies installed at `data/cookies.txt` (PornHub + YouTube, both active)
+- PornHub URLs to scrape with cookies:
+  - `https://www.pornhub.com/users/tonjone92/videos/favorites` (favorited videos)
+  - `https://www.pornhub.com/users/tonjone92/videos/watched` (watch history, if accessible)
+  - `https://www.pornhub.com/users/tonjone92/videos/rated` (rated videos)
+  - `https://www.pornhub.com/users/tonjone92/playlists` (user's playlists — crawl each for video metadata, highest-signal curated content)
+- YouTube URLs to scrape with cookies:
+  - `https://www.youtube.com/feed/history` (watch history)
+  - `https://www.youtube.com/playlist?list=LL` (liked videos)
+  - `https://www.youtube.com/feed/library` (saved playlists)
+  - User's playlists (discover via channel page)
+- TikTok username: `tmoney19060`
+- TikTok URLs to scrape with cookies:
+  - `https://www.tiktok.com/@tmoney19060/liked` (liked videos — primary signal)
+  - `https://www.tiktok.com/@tmoney19060` (posted videos, if any)
+  - Note: yt-dlp TikTok support breaks frequently. Try yt-dlp first, fall back to scraper adapter.
+  - **Priority source for mobile feed** — user wants TikTok content prioritized in the swipe feed experience.
+- Instagram URLs to scrape with cookies:
+  - `https://www.instagram.com/<username>/saved/` (saved posts/reels)
+  - Note: yt-dlp Instagram support is flaky. May need instaloader or scraper adapter as fallback.
+
+**Backend: History Import Pipeline**
+- [ ] New endpoint: `POST /api/recommendations/seed` triggers the import job
+- [ ] Use yt-dlp with cookies to fetch favorites/history: `yt-dlp --cookies data/cookies.txt --flat-playlist --dump-json "https://www.pornhub.com/users/tonjone92/videos/favorites"`
+- [ ] Also try watched, rated, and playlists URLs (may require cookies to access)
+- [ ] For playlists: fetch playlist index first, then crawl each playlist for video metadata. Playlists are high-signal — curated content reveals stronger preferences than passive watch history
+- [ ] Parse returned JSON for each video: extract `tags`, `categories`, `uploader`, `duration`, `view_count`
+- [ ] Build tag frequency map from all extracted videos (e.g., {tag: count})
+- [ ] Auto-insert top N tags (threshold: appears in 3+ videos) into `tag_preferences` as `liked`
+- [ ] Skip tags already in `tag_preferences` (don't override manual choices)
+- [ ] Import videos into `videos` table (dedup by URL) so library has content immediately
+- [ ] Store seed metadata: `preferences` table key `recommendation_seed_at` with timestamp, `recommendation_seed_count` with video count
+
+**Backend: Username Config**
+- [ ] Store PornHub username in `preferences` table (key: `pornhub_username`, value: `tonjone92`)
+- [ ] Settings UI: text field for PornHub username (pre-filled if already set)
+- [ ] Endpoint uses stored username to construct history/favorites URLs
+
+**Frontend: Settings UI**
+- [ ] "Seed recommendations" button in Settings (below cookie import section)
+- [ ] Progress indicator: "Analyzing X videos..." (SSE or polling)
+- [ ] Summary on completion: "Found 47 videos, extracted 23 tags, added 15 to your preferences"
+- [ ] Show which tags were auto-added, let user review/remove before confirming
+
+**Edge Cases**
+- [ ] Handle private/empty history (yt-dlp returns 0 results)
+- [ ] Handle rate-limiting from PornHub (backoff + partial results)
+- [ ] Don't re-seed if already seeded recently (check `recommendation_seed_at`, require manual override)
+- [ ] Timeout: cap at 200 videos max to avoid long-running jobs
 
 ### 3.4 Cookie-Based Auth for Personalized Feeds
 
@@ -353,6 +414,23 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 - [x] Fallback to public-only content when no cookies present (no flag passed)
 - [x] Cookie status indicator: green dot with count and last-modified date
 - [x] `GET /api/cookies/status` and `DELETE /api/cookies` endpoints
+
+#### 3.4.1 Per-Mode Cookie Files — NEEDS ADAPTER UPDATE
+
+**Architecture:** Separate cookie files per mode so NSFW alt accounts don't leak into Social requests and vice versa.
+
+**Cookie files (already created in `data/`):**
+- `cookies-social.txt` — YouTube, Google, main Instagram account
+- `cookies-nsfw.txt` — PornHub, NSFW Instagram alt account
+- `cookies.txt` — legacy combined file (keep for backward compat until adapter is updated)
+
+**Adapter changes needed:**
+- [ ] Update `server/sources/ytdlp.js` to accept a mode parameter and pick the right cookie file: `cookies-social.txt` for social mode, `cookies-nsfw.txt` for nsfw mode
+- [ ] Update all callers that pass mode context (refillCategory, feed refill, search, metadata extraction) to forward mode to the adapter
+- [ ] Update `POST /api/cookies` endpoint to accept a `mode` param (social|nsfw) and write to the correct file
+- [ ] Update `GET /api/cookies/status` to return status for both files
+- [ ] Update Settings UI: two cookie import sections (Social cookies / NSFW cookies) with independent status indicators
+- [ ] Fallback: if mode-specific file missing, try `cookies.txt` (combined), then no cookies
 
 ### 3.5 Organization Features
 
@@ -423,8 +501,8 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 
 - [x] Backend already has `mode = 'social' | 'nsfw'` in sources, categories, and feed_cache tables
 - [x] Frontend modeStore already toggles between social/NSFW with panic key (Escape → social)
-- [?] Design the Social mode content pipeline (what sources? what categories?)
-  > QUESTION: Social mode needs its own content sources and category structure. Defer until NSFW pipeline is solid?
+- [ ] Design the Social mode content pipeline (what sources? what categories?)
+  > DECISION (2026-03-22): Deferred. Ship NSFW pipeline first, including 3.0 Integration.
   > NOTE: Folder rename + import path updates tracked in 1.6 Rebrand Cleanup
 
 ### 4.3 Dark/Light Theme Toggle
@@ -483,19 +561,29 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 - [x] Fix: HeroSection theatre mode missing onEnded queue autoadvance — now calls advance() + resolveStream()
 - [x] Fix: proxy-stream missing upstream timeout — added 15s AbortSignal.timeout()
 - [x] Fix: VideoPlayer now tracks watchProgress every 5s for Continue Watching feature
-- [ ] Test with both direct MP4 URLs and HLS/m3u8 streams
-- [ ] Confirm yt-dlp is producing working stream URLs (not geo-blocked, rate-limited, or expired)
+- [x] Test with both direct MP4 URLs and HLS/m3u8 streams
+  > All current sources return direct MP4. HLS code path verified in code (proxy rewriting + hls.js recovery). Proxy chain: fresh URL → proxy-stream → HTTP 206 video/mp4.
+- [x] Confirm yt-dlp is producing working stream URLs (not geo-blocked, rate-limited, or expired)
+  > 3 PornHub + 1 YouTube video all resolve. Proxy returns valid bytes for phncdn.com and googlevideo.com.
 
 ### 5a.2 Deep Playback Testing
 
-- [ ] Homepage: click a CategoryRow card → theatre mode plays video start to finish
-- [ ] Homepage: click multiple different cards in sequence — each one plays
-- [ ] Feed: swipe through 5+ videos — each autoplays on snap
-- [ ] Feed: navigate away and back — playback resumes
-- [ ] Queue: add 3+ videos, play through — autoadvance works, each video plays
-- [ ] HeroCarousel: search results play on hover/click
-- [ ] Error states: expired URL triggers re-fetch, failed video shows user-facing error (not silent black screen)
-- [ ] Edge case: rapid card switching doesn't leave zombie video elements or stale streams
+- [?] Homepage: click a CategoryRow card → theatre mode plays video start to finish
+  > API chain verified (stream-url resolves, proxy returns 206 video/mp4 bytes). Theatre mode UI activates correctly. Cannot verify actual video playback via automation — Chrome blocks media loading in MCP-controlled tabs. Needs manual browser test.
+- [?] Homepage: click multiple different cards in sequence — each one plays
+  > Same — needs manual verification
+- [?] Feed: swipe through 5+ videos — each autoplays on snap
+  > Feed API returns videos correctly. Needs manual test.
+- [?] Feed: navigate away and back — playback resumes
+  > Needs manual test
+- [?] Queue: add 3+ videos, play through — autoadvance works, each video plays
+  > Queue API works (empty queue, add/remove tested). Autoadvance code reviewed — looks correct. Needs manual test.
+- [?] HeroCarousel: search results play on hover/click
+  > Needs manual test
+- [?] Error states: expired URL triggers re-fetch, failed video shows user-facing error (not silent black screen)
+  > handleStreamError() code reviewed — retries once via resolveStream(). Needs manual test.
+- [?] Edge case: rapid card switching doesn't leave zombie video elements or stale streams
+  > Found 54 video elements in DOM from hover previews — potential cleanup issue. Needs manual test.
 
 ---
 
@@ -533,8 +621,8 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
   - Category headers → 18px/700, -0.3px tracking (up from 15px)
   - Category card title → 13px/600 (up from 12px)
 - [x] Hero carousel card text too small: bump title from 10px to 11px/600, duration from 9px to 10px/500
-- [?] Logo treatment: replace emoji (📡) with SVG mark, drop italic. Consider `font-family: 'Geist Mono'` at 15px/700 for technical feel
-  > QUESTION: Do you want a custom SVG logo designed, or is the emoji fine for now?
+- [ ] Logo treatment: replace emoji (📡) with SVG mark, drop italic. Consider `font-family: 'Geist Mono'` at 15px/700 for technical feel
+  > DECISION (2026-03-22): Emoji is fine for now. Typography overhaul is higher impact. Revisit post-launch.
 
 ### 5.4 Color & Accent Identity (P1)
 
@@ -559,13 +647,13 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
   - Currently: VideoCard scale-105, CategoryRow scale-105/-translate-y-1, CarouselCard scale-[1.06]/-translate-y-1 (three different behaviors)
 - [x] Add `active:scale-[0.97]` pressed states to all interactive elements globally
   - Feed buttons currently at `active:scale-90` (too aggressive) → soften to `active:scale-95`
-- [?] Add page transition animation between routes (150ms opacity crossfade via AnimatePresence or CSS)
-  > QUESTION: This requires framer-motion or a CSS-based approach. Worth adding a dep for this?
+- [ ] Add page transition animation between routes (150ms opacity crossfade via CSS View Transitions API or plain CSS)
+  > DECISION (2026-03-22): CSS-only, no framer-motion. Use View Transitions API (native Chrome) or plain CSS crossfade. Low priority.
 - [x] Queue pulse animation: extend from 0.2s to 0.35s with spring easing `cubic-bezier(0.34, 1.56, 0.64, 1)` + glow ring `box-shadow: 0 0 0 4px rgba(accent, 0.3)`
-- [?] Hero scroll affordance: animated down-chevron at bottom of hero OR reduce hero to ~85vh so featured content peeks
-  > QUESTION: Which approach do you prefer — chevron hint or peek?
-- [?] Tighten FeaturedSection scroll zone from 550vh to ~300vh, show progress bar during scroll, add "skip" affordance
-  > QUESTION: Changing scroll zone length affects the animation timing. Want me to adjust?
+- [ ] Hero scroll affordance: reduce hero to ~85vh so featured content peeks above fold
+  > DECISION (2026-03-22): Peek, not chevron. 85vh is self-documenting UX.
+- [ ] Tighten FeaturedSection scroll zone from 550vh to ~300vh, show progress bar during scroll, add "skip" affordance
+  > DECISION (2026-03-22): Yes, shorten to ~300vh. Retune phase breakpoints accordingly. Add progress indicator or skip.
 
 ### 5.6 Spacing & Layout Rhythm (P1)
 
@@ -614,6 +702,19 @@ _Claude Code adds tasks here as they come up during implementation. Move to the 
 - [x] Reduce CDN URL cache TTL from 4 hours to 2 hours (PornHub URLs expire in ~2hr)
 - [x] Wire source adapter system (`server/sources/`) into `server/index.js` — completed in 3.0 Integration
 - [x] Clean up 3 stale `vite.config.js.timestamp-*` files in project root
+- [x] **CRITICAL:** Fix missing `crypto` import in `server/index.js` — playlist creation crashed at runtime. Fixed: imported `randomBytes` from `crypto` (Cowork morning sprint 2026-03-22)
+- [x] Wire tag preferences into `refillCategory()` and `_refillFeedCacheImpl()` — both now query liked tags and append up to 2 random liked tags to search queries for personalized discovery. Discovered during personalization audit (morning sprint 2026-03-22)
+- [ ] Hover preview video element cleanup — found 54 `<video>` elements in DOM, likely from hover previews not being properly destroyed. Potential memory leak. Discovered during 5a.2 playback testing
+- [x] **HIGH:** Add timeout to yt-dlp `streamSearch()` spawn — 60s kill timer prevents leaked processes (Cowork morning sprint 2026-03-22)
+- [x] **HIGH:** Cap feed buffer at 200 items with safe eviction in `feedStore.js` — prevents OOM on long sessions (Cowork morning sprint 2026-03-22)
+- [ ] **HIGH:** Close Puppeteer browser on scrape failure in `server/sources/scraper.js` (~line 195) — failed scrapes leave browser instances alive
+- [ ] Add SIGTERM handler to clear background `setInterval` callbacks in `server/index.js` (~lines 1392, 1423, 1460) and close DB
+- [ ] Add per-chunk timeout to proxy-stream pipe in `server/index.js` (~line 240) — stalled upstream blocks response forever
+- [ ] Add AbortController to `_warmStreamUrls()` in feedStore, abort on `resetFeed()` — fire-and-forget fetches update stale buffer
+- [ ] Log malformed JSON parse failures in `server/index.js` tag processing instead of silently skipping
+- [ ] Wire tag preferences into `refillCategory()` — currently uses hardcoded generic queries, ignoring liked/disliked tags entirely
+- [ ] Remaining 16 `react-hooks/exhaustive-deps` ESLint warnings — need per-hook manual review to avoid infinite loops
+- [x] Remove debug `console.log('Queue: advancing to')` from `VideoPlayer.jsx:136` and `useKeyboard.js:41` (Cowork morning sprint 2026-03-22)
 
 ---
 

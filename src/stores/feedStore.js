@@ -88,7 +88,21 @@ const useFeedStore = create((set, get) => ({
       if (videos.length === 0) {
         set({ exhausted: true, loading: false })
       } else {
-        set(s => ({ buffer: [...s.buffer, ...videos], loading: false }))
+        set(s => {
+          const MAX_BUFFER = 200
+          const newBuffer = [...s.buffer, ...videos]
+          // Evict oldest items if buffer grows too large, keeping currentIndex valid
+          if (newBuffer.length > MAX_BUFFER) {
+            const trimCount = newBuffer.length - MAX_BUFFER
+            const safeToTrim = Math.min(trimCount, Math.max(0, s.currentIndex - 10))
+            return {
+              buffer: newBuffer.slice(safeToTrim),
+              currentIndex: s.currentIndex - safeToTrim,
+              loading: false,
+            }
+          }
+          return { buffer: newBuffer, loading: false }
+        })
         // Eagerly warm stream URLs for newly fetched videos
         _warmStreamUrls(videos)
       }

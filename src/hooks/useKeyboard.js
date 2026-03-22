@@ -38,7 +38,7 @@ export default function useKeyboard() {
           if (vid) break // Let VideoPlayer handle it
           e.preventDefault()
           const next = useQueueStore.getState().advance()
-          if (next) console.log('Queue: advancing to', next.id)
+          // next video loaded via queue store
           break
         }
 

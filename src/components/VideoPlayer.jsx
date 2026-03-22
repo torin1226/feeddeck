@@ -133,7 +133,7 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
   const handleNext = () => {
     const nextItem = advance()
     if (nextItem) {
-      console.log('Queue: advancing to', nextItem.id)
+      // Queue auto-advance triggered
       onPlayVideo?.(nextItem)
     }
   }
