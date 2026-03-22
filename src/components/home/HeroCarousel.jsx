@@ -34,32 +34,33 @@ export default function HeroCarousel() {
     [carouselItems]
   )
 
-  // Generate fake search results (matches mockup behavior)
-  const doSearch = useCallback(
-    (q) => {
-      if (!savedItems) setSavedItems([...carouselItems])
+  const [searching, setSearching] = useState(false)
 
-      // Seed a deterministic-ish set of results from query
-      const seed = q.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
-      const results = Array.from({ length: 18 }, (_, i) => {
-        const id = 700 + (seed % 200) + i
-        return {
-          id: `search-${id}`,
-          title: `${q} – Result ${i + 1}`,
-          thumbnailSm: `https://picsum.photos/seed/${id}/320/180`,
-          thumbnail: `https://picsum.photos/seed/${id}/1280/720`,
-          duration: `${Math.floor(Math.random() * 30)}:${Math.floor(Math.random() * 60)
-            .toString()
-            .padStart(2, '0')}`,
-          views: `${Math.floor(Math.random() * 9000) + 500}`,
-          uploader: 'SearchTV',
-          daysAgo: Math.floor(Math.random() * 30) + 1,
-          desc: 'Search result.',
-          genre: 'Search',
-          rating: (7 + Math.random() * 2.5).toFixed(1),
-        }
-      })
-      setSearchResults(results)
+  // Real search via multi-site API
+  const doSearch = useCallback(
+    async (q) => {
+      if (!savedItems) setSavedItems([...carouselItems])
+      setSearching(true)
+      try {
+        const res = await fetch(`/api/search/multi?q=${encodeURIComponent(q)}&limit=20`)
+        const data = await res.json()
+        const results = (data.results || []).map(v => ({
+          id: v.id || v.url,
+          url: v.url,
+          title: v.title,
+          thumbnail: v.thumbnail,
+          thumbnailSm: v.thumbnail,
+          duration: v.duration ? `${Math.floor(v.duration / 60)}:${String(v.duration % 60).padStart(2, '0')}` : '',
+          views: v.view_count ? `${Math.floor(v.view_count / 1000)}K` : '',
+          uploader: v.uploader || v.source || '',
+          source: v.source || '',
+        }))
+        setSearchResults(results.length > 0 ? results : null)
+      } catch {
+        setSearchResults(null)
+      } finally {
+        setSearching(false)
+      }
     },
     [carouselItems, savedItems]
   )
@@ -113,7 +114,7 @@ export default function HeroCarousel() {
           )}
         </div>
         <div className="text-[11px] font-semibold text-text-muted uppercase tracking-wider flex items-center gap-2 mt-2">
-          <span>{searchResults ? `Results for \u201C${query}\u201D` : 'Up Next'}</span>
+          <span>{searching ? 'Searching...' : searchResults ? `Results for \u201C${query}\u201D` : 'Up Next'}</span>
           {searchResults && (
             <span className="bg-accent/20 text-accent rounded px-1.5 py-0.5 text-[10px] tracking-wide">
               {searchResults.length} found
