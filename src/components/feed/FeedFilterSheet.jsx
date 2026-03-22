@@ -9,7 +9,7 @@ import useModeStore from '../../stores/modeStore'
 // ============================================================
 
 export default function FeedFilterSheet({ onClose }) {
-  const { filters, setFilters, resetFeed, initFeed } = useFeedStore()
+  const { filters, setFilters, resetFeed } = useFeedStore()
   const isSFW = useModeStore(s => s.isSFW)
 
   // Local state mirrors store filters for editing before apply

@@ -12,7 +12,7 @@ import useThemeStore from '../../stores/themeStore'
 export default function HomeHeader() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { theatreMode } = useHomeStore()
+  const { _theatreMode } = useHomeStore()
   const { isSFW, toggleMode } = useModeStore()
   const { theme, toggleTheme } = useThemeStore()
 

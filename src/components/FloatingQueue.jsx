@@ -27,7 +27,6 @@ export default function FloatingQueue() {
     removeFromQueue,
     reorder,
     clearQueue,
-    setCurrentIndex,
   } = useQueueStore()
 
   // Register collapse callback so Escape key can close the panel
@@ -234,7 +233,7 @@ export default function FloatingQueue() {
 // -------------------------------------------------------
 function QueueRow({
   item,
-  index,
+  _index,
   isCurrent,
   isSFW,
   showDropIndicator,

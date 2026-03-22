@@ -91,10 +91,10 @@ const useHomeStore = create((set, get) => ({
     const carouselItems = genItems(24)
 
     idCounter = 900
-    const featuredItems = genItems(7).map((item, i) => ({
+    const featuredItems = genItems(7).map((item, _i) => ({
       ...item,
-      featuredLabel: featuredLabels[i % featuredLabels.length],
-      featuredTagline: featuredTaglines[i % featuredTaglines.length],
+      featuredLabel: featuredLabels[_i % featuredLabels.length],
+      featuredTagline: featuredTaglines[_i % featuredTaglines.length],
     }))
 
     const categoryDefs = [
@@ -125,7 +125,7 @@ const useHomeStore = create((set, get) => ({
       const data = await res.json()
 
       // Map API videos to the shape components expect
-      const mapVideo = (v, i) => ({
+      const mapVideo = (v, _i) => ({
         id: v.id,
         title: v.title || 'Untitled',
         thumbnail: v.thumbnail || `https://picsum.photos/seed/${v.id}/1280/720`,

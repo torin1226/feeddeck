@@ -35,7 +35,7 @@ function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
 
 export default function useFeaturedScroll({
   zoneRef,
-  stickyRef,
+  _stickyRef,
   cardsRef,
   chromeRef,
   overlayRef,
@@ -69,9 +69,7 @@ export default function useFeaturedScroll({
 
   function computeScale() {
     const vw = window.innerWidth
-    const vh = window.innerHeight
     const cardW = vw * 0.62
-    const cardH = 380
     fullbleedScale.current = vw / cardW
   }
 
@@ -119,7 +117,7 @@ export default function useFeaturedScroll({
     })
   }
 
-  function startAutoAdvance() {
+  function _startAutoAdvance() {
     stopAutoAdvance()
     autoIntervalRef.current = setInterval(() => {
       callbacksRef.current.advanceFeatured?.()

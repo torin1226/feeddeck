@@ -55,7 +55,7 @@ const useModeStore = create(
       onRehydrateStorage: () => {
         // Set SFW immediately on page load
         setDocumentMeta(true)
-        return (state) => {
+        return () => {
           // After hydration, state has the persisted value
           // but we already set SFW visually — App.jsx handles the restore
         }

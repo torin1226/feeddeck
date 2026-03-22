@@ -10,7 +10,7 @@ import { persist } from 'zustand/middleware'
 
 const useLibraryStore = create(
   persist(
-    (set, get) => ({
+    (set) => ({
       // State
       videos: [],
       loading: false,

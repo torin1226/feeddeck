@@ -114,7 +114,7 @@ const useQueueStore = create((set, get) => ({
   // -----------------------------------------------------------
   removeFromQueue: async (id) => {
     // Also accept queueId for backwards compat
-    const { queue, currentIndex } = get()
+    const { queue } = get()
     const item = queue.find(q => q.id === id || q.queueId === id)
     const removeId = item?.id || id
 

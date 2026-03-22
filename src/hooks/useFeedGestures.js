@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect } from 'react'
 
 // ============================================================
 // useFeedGestures
@@ -10,7 +10,6 @@ import { useRef, useEffect, useCallback } from 'react'
 const SWIPE_THRESHOLD = 50     // px minimum for horizontal swipe
 const SWIPE_ANGLE_MAX = 30     // degrees — must be clearly horizontal
 const DOUBLE_TAP_MS = 300      // max time between taps
-const LONG_PRESS_MS = 800      // min hold time for long-press (500ms was too sensitive during scrolling)
 
 export default function useFeedGestures({
   containerRef,

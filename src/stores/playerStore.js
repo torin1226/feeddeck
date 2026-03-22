@@ -32,8 +32,8 @@ const usePlayerStore = create((set, get) => ({
   setDuration: (d) => set({ duration: d }),
 
   // Resolve a stream URL for the active video via the backend
-  // retryCount tracks auto-refresh attempts for stale URLs
-  resolveStream: async (videoUrl, retryCount = 0) => {
+  // retryCount tracks auto-refresh attempts for stale URLs (currently unused)
+  resolveStream: async (videoUrl, _retryCount = 0) => {
     if (!videoUrl) return
     set({ streamLoading: true, streamError: null })
     try {
