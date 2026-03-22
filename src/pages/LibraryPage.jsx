@@ -1,30 +1,34 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import useModeStore from '../stores/modeStore'
 import useLibraryStore from '../stores/libraryStore'
-import Header from '../components/Header'
-import VideoGrid from '../components/VideoGrid'
+import HomeHeader from '../components/home/HomeHeader'
+import VideoCard from '../components/VideoCard'
+import VideoPlayer from '../components/VideoPlayer'
 import DebugPanel from '../components/DebugPanel'
 
 // ============================================================
 // LibraryPage
-// The original app layout — header, video grid, debug panel.
-// Mounted at /library route.
+// First-class page matching homepage visual language.
+// Tabs: All, Favorites, Watch History, Watch Later, Top Rated
+// Continue Watching row at top with resume progress indicators.
 // ============================================================
 
-const FILTERS = [
+const TABS = [
   { key: 'all', label: 'All' },
   { key: 'favorites', label: 'Favorites' },
+  { key: 'history', label: 'Watch History' },
   { key: 'watchLater', label: 'Watch Later' },
   { key: 'rated', label: 'Top Rated' },
 ]
 
 export default function LibraryPage() {
+  const navigate = useNavigate()
   const isSFW = useModeStore((s) => s.isSFW)
-  const { loadFromServer, seedDemoData } = useLibraryStore()
-  const [searchQuery, setSearchQuery] = useState('')
-  const [remoteQuery, setRemoteQuery] = useState('')
+  const { videos, loadFromServer, seedDemoData } = useLibraryStore()
+  const [activeTab, setActiveTab] = useState('all')
+  const [activeVideo, setActiveVideo] = useState(null)
   const [debugOpen, setDebugOpen] = useState(false)
-  const [filter, setFilter] = useState('all')
 
   // Ctrl+Shift+D toggles debug panel
   useEffect(() => {
@@ -48,37 +52,125 @@ export default function LibraryPage() {
     })
   }, [])
 
+  // Continue Watching — videos with progress between 5% and 95%
+  const continueWatching = useMemo(() => {
+    return videos
+      .filter((v) => v.watchProgress > 0.05 && v.watchProgress < 0.95)
+      .sort((a, b) => new Date(b.lastWatched || 0) - new Date(a.lastWatched || 0))
+      .slice(0, 20)
+  }, [videos])
+
+  // Filtered videos based on active tab
+  const filtered = useMemo(() => {
+    switch (activeTab) {
+      case 'favorites':
+        return videos.filter((v) => v.favorite)
+      case 'history':
+        return videos
+          .filter((v) => v.lastWatched)
+          .sort((a, b) => new Date(b.lastWatched) - new Date(a.lastWatched))
+      case 'watchLater':
+        return videos.filter((v) => v.watchLater)
+      case 'rated':
+        return videos
+          .filter((v) => v.rating)
+          .sort((a, b) => b.rating - a.rating)
+      default:
+        return videos
+    }
+  }, [videos, activeTab])
+
+  // Tab counts for badges
+  const counts = useMemo(() => ({
+    all: videos.length,
+    favorites: videos.filter((v) => v.favorite).length,
+    history: videos.filter((v) => v.lastWatched).length,
+    watchLater: videos.filter((v) => v.watchLater).length,
+    rated: videos.filter((v) => v.rating).length,
+  }), [videos])
+
   return (
-    <div className="h-screen overflow-hidden bg-surface text-text-primary flex flex-col font-sans">
-      <Header
-        onSearch={(q) => {
-          setSearchQuery(q)
-          if (!q) setRemoteQuery('')
-        }}
-        onSearchSubmit={setRemoteQuery}
-      />
+    <div className="min-h-screen bg-surface text-text-primary font-sans">
+      <HomeHeader />
 
-      {/* Filter tabs */}
-      <div className="flex gap-1 px-4 md:px-6 pt-3 pb-1 bg-surface border-b border-surface-border">
-        {FILTERS.map(f => (
-          <button
-            key={f.key}
-            onClick={() => setFilter(f.key)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors cursor-pointer ${
-              filter === f.key
-                ? 'bg-accent/15 text-accent border border-accent/30'
-                : 'text-text-secondary hover:text-text-primary hover:bg-surface-overlay'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
+      {/* Video player overlay */}
+      {activeVideo && (
+        <VideoPlayer
+          video={activeVideo}
+          onClose={() => setActiveVideo(null)}
+          onPlayVideo={setActiveVideo}
+        />
+      )}
 
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        <main className="flex-1 overflow-y-auto">
-          <VideoGrid searchQuery={searchQuery} remoteQuery={remoteQuery} filter={filter} />
-        </main>
+      {/* Page content — below fixed header */}
+      <div className="pt-14">
+        {/* Page title area */}
+        <div className="px-10 pt-8 pb-2">
+          <h1 className="font-display text-[28px] font-bold tracking-[-0.5px] mb-1">
+            Your Library
+          </h1>
+          <p className="text-sm text-text-muted">
+            {videos.length} {videos.length === 1 ? 'video' : 'videos'} saved
+          </p>
+        </div>
+
+        {/* Tab bar */}
+        <div className="px-10 pt-3 pb-1 border-b border-surface-border">
+          <div className="flex gap-1">
+            {TABS.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`px-4 py-2 rounded-full text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeTab === tab.key
+                    ? 'bg-accent/15 text-accent border border-accent/30'
+                    : 'text-text-secondary hover:text-text-primary hover:bg-surface-overlay'
+                }`}
+              >
+                {tab.label}
+                {counts[tab.key] > 0 && (
+                  <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                    activeTab === tab.key
+                      ? 'bg-accent/20 text-accent'
+                      : 'bg-surface-overlay text-text-muted'
+                  }`}>
+                    {counts[tab.key]}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Continue Watching row — only show on All tab when there are items */}
+        {activeTab === 'all' && continueWatching.length > 0 && (
+          <ContinueWatchingRow items={continueWatching} onPlay={setActiveVideo} />
+        )}
+
+        {/* Main grid */}
+        <div className="px-10 py-6">
+          {filtered.length === 0 ? (
+            <LibraryEmptyState tab={activeTab} onNavigate={navigate} />
+          ) : (
+            <>
+              {/* Section header */}
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-[14px] font-semibold tracking-wider uppercase text-text-secondary">
+                  {TABS.find((t) => t.key === activeTab)?.label}
+                </h2>
+                <span className="text-[11px] text-text-muted">
+                  {filtered.length} {filtered.length === 1 ? 'video' : 'videos'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {filtered.map((video) => (
+                  <VideoCard key={video.id} video={video} onClick={setActiveVideo} />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {isSFW && (
@@ -89,6 +181,161 @@ export default function LibraryPage() {
       )}
 
       <DebugPanel open={debugOpen} onClose={() => setDebugOpen(false)} />
+    </div>
+  )
+}
+
+// ============================================================
+// ContinueWatchingRow
+// Horizontal scroll row with resume progress bars on each card.
+// Matches homepage CategoryRow visual language.
+// ============================================================
+function ContinueWatchingRow({ items, onPlay }) {
+  return (
+    <div className="px-10 pt-6 pb-2">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3.5">
+        <h3 className="font-display text-[18px] font-bold tracking-[-0.3px]">
+          Continue Watching
+        </h3>
+        <span className="text-[11px] font-semibold text-accent opacity-75 cursor-pointer uppercase tracking-wider hover:opacity-100 transition-opacity">
+          See all &rarr;
+        </span>
+      </div>
+
+      {/* Scrollable row */}
+      <div
+        className="flex gap-3 overflow-x-auto pb-1.5 scrollbar-none"
+        style={{
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+          WebkitMaskImage: 'linear-gradient(to right, black 88%, transparent 100%)',
+          maskImage: 'linear-gradient(to right, black 88%, transparent 100%)',
+        }}
+      >
+        {items.map((item) => (
+          <ContinueWatchingCard key={item.id} item={item} onClick={() => onPlay(item)} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// ContinueWatchingCard
+// Card with thumbnail, title, and a progress bar showing
+// how far the user got through the video.
+// ============================================================
+function ContinueWatchingCard({ item, onClick }) {
+  const progress = Math.round((item.watchProgress || 0) * 100)
+
+  return (
+    <div
+      onClick={onClick}
+      className="flex-none w-[220px] rounded-[10px] overflow-hidden bg-raised
+        cursor-pointer relative transition-all duration-[220ms] ease-out
+        hover:scale-[1.03] hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgba(0,0,0,0.4)]"
+    >
+      {/* Thumbnail */}
+      <div className="relative">
+        <img
+          src={item.thumbnail}
+          alt={item.title}
+          loading="lazy"
+          className="w-full h-[124px] object-cover block bg-overlay"
+        />
+        {/* Resume overlay */}
+        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+          <div className="w-11 h-11 rounded-full bg-white/90 flex items-center justify-center text-black text-lg shadow-lg">
+            ▶
+          </div>
+        </div>
+        {/* Duration badge */}
+        <span className="absolute top-[100px] right-[7px] bg-black/80 text-[10px] font-semibold px-1.5 py-0.5 rounded z-[3]">
+          {item.durationFormatted || '0:00'}
+        </span>
+        {/* Progress bar */}
+        <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/10">
+          <div
+            className="h-full bg-accent rounded-r-sm transition-all"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Info */}
+      <div className="p-2.5 pt-2">
+        <div className="text-[13px] font-semibold leading-tight line-clamp-2 mb-0.5">
+          {item.title}
+        </div>
+        <div className="text-[11px] text-text-muted">
+          {progress}% watched
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// LibraryEmptyState
+// Contextual empty state per tab with actionable CTAs.
+// ============================================================
+function LibraryEmptyState({ tab, onNavigate }) {
+  const states = {
+    all: {
+      icon: '📂',
+      title: 'Start building your library',
+      desc: 'Add videos from the feed, search, or paste URLs directly.',
+      cta: 'Browse Feed',
+      action: () => onNavigate('/feed'),
+    },
+    favorites: {
+      icon: '♡',
+      title: 'No favorites yet',
+      desc: 'Heart videos you love and they\'ll show up here.',
+      cta: null,
+    },
+    history: {
+      icon: '⏱',
+      title: 'No watch history',
+      desc: 'Videos you watch will appear here so you can pick up where you left off.',
+      cta: 'Browse Feed',
+      action: () => onNavigate('/feed'),
+    },
+    watchLater: {
+      icon: '🔖',
+      title: 'Watch Later is empty',
+      desc: 'Save videos to watch later and find them all in one place.',
+      cta: null,
+    },
+    rated: {
+      icon: '★',
+      title: 'No rated videos',
+      desc: 'Rate videos to build your personal rankings.',
+      cta: null,
+    },
+  }
+
+  const s = states[tab] || states.all
+
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <span className="text-5xl mb-4 opacity-60">{s.icon}</span>
+      <h3 className="font-display text-lg font-semibold text-text-primary mb-2">
+        {s.title}
+      </h3>
+      <p className="text-sm text-text-muted max-w-sm mb-5">
+        {s.desc}
+      </p>
+      {s.cta && (
+        <button
+          onClick={s.action}
+          className="px-5 py-2.5 rounded-full bg-accent text-white text-sm font-semibold
+            hover:bg-accent-hover transition-colors"
+        >
+          {s.cta}
+        </button>
+      )}
     </div>
   )
 }

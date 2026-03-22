@@ -113,16 +113,22 @@ app.get('/api/stream-url', async (req, res) => {
   const { url, format } = req.query
   if (!url) return res.status(400).json({ error: 'URL required' })
 
-  // Check feed_cache for a cached stream URL (skip cache if specific format requested)
+  // Check feed_cache for a cached, non-expired stream URL (skip cache if specific format requested)
   if (!format) {
     try {
       const cached = db.prepare(
-        `SELECT stream_url FROM feed_cache
+        `SELECT stream_url, expires_at FROM feed_cache
          WHERE url = ? AND stream_url IS NOT NULL`
       ).get(url)
 
       if (cached?.stream_url) {
-        return res.json({ streamUrl: cached.stream_url })
+        // Only serve from cache if not expired (or no expiry set)
+        const notExpired = !cached.expires_at || new Date(cached.expires_at + 'Z') > new Date()
+        if (notExpired) {
+          return res.json({ streamUrl: cached.stream_url })
+        }
+        // Expired — fall through to re-resolve
+        logger.info('Stream URL expired, re-resolving', { url: url.substring(0, 60) })
       }
     } catch { /* fall through to yt-dlp */ }
   }
@@ -230,7 +236,8 @@ app.get('/api/proxy-stream', async (req, res) => {
       headers['Range'] = req.headers.range
     }
 
-    const upstream = await fetch(url, { headers })
+    // 15s timeout to prevent hanging on slow/dead CDNs
+    const upstream = await fetch(url, { headers, signal: AbortSignal.timeout(15000) })
 
     // Forward status and key headers
     res.status(upstream.status)
@@ -1443,6 +1450,36 @@ function startScheduledTrendingRefresh() {
 }
 
 // -----------------------------------------------------------
+// Proactive stream URL TTL monitoring: re-resolve stream URLs
+// that are about to expire (within 15 minutes) so users never
+// hit stale URLs during playback.
+// -----------------------------------------------------------
+function startStreamUrlTTLMonitor() {
+  const TTL_CHECK_INTERVAL = 5 * 60_000 // Check every 5 minutes
+
+  setInterval(async () => {
+    try {
+      // Find URLs expiring in the next 15 minutes that still have a stream_url
+      const expiring = db.prepare(`
+        SELECT url FROM feed_cache
+        WHERE stream_url IS NOT NULL
+          AND expires_at IS NOT NULL
+          AND expires_at <= datetime('now', '+15 minutes')
+          AND expires_at > datetime('now')
+        LIMIT 10
+      `).all()
+
+      if (expiring.length === 0) return
+
+      logger.info(`  🔄 TTL monitor: ${expiring.length} stream URLs expiring soon, re-resolving...`)
+      await _preResolveStreamUrls(expiring.map(v => v.url))
+    } catch (err) {
+      logger.error('TTL monitor error:', { error: err.message })
+    }
+  }, TTL_CHECK_INTERVAL)
+}
+
+// -----------------------------------------------------------
 // Helper: seconds → "3:45"
 // -----------------------------------------------------------
 function formatDuration(seconds) {
@@ -1493,4 +1530,5 @@ app.listen(PORT, '0.0.0.0', () => {
   logger.info(`     Health check: http://localhost:${PORT}/api/health\n`)
   startScheduledFeedRefill()
   startScheduledTrendingRefresh()
+  startStreamUrlTTLMonitor()
 })

@@ -108,6 +108,17 @@ const useLibraryStore = create(
       },
 
       // -----------------------------------------------------------
+      // Update watch progress (0-1 fraction) for resume support
+      // -----------------------------------------------------------
+      setWatchProgress: (id, progress) => {
+        set((state) => ({
+          videos: state.videos.map((v) =>
+            v.id === id ? { ...v, watchProgress: progress } : v
+          ),
+        }))
+      },
+
+      // -----------------------------------------------------------
       // Load from server (future — for now returns empty)
       // -----------------------------------------------------------
       loadFromServer: async () => {

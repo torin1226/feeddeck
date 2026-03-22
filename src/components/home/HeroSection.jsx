@@ -15,7 +15,7 @@ import HeroCarousel from './HeroCarousel'
 
 export default function HeroSection() {
   const { heroItem, theatreMode, toggleTheatre } = useHomeStore()
-  const { addToQueue, queue } = useQueueStore()
+  const { addToQueue, advance, queue } = useQueueStore()
   const {
     activeVideo, setActiveVideo, isPlaying, setPlaying,
     currentTime, setCurrentTime, duration, setDuration,
@@ -71,7 +71,16 @@ export default function HeroSection() {
 
     const onTime = () => setCurrentTime(vid.currentTime)
     const onDur = () => setDuration(vid.duration)
-    const onEnd = () => setPlaying(false)
+    const onEnd = () => {
+      setPlaying(false)
+      // Queue autoadvance: play next video in queue when current ends
+      const nextItem = advance()
+      if (nextItem) {
+        setActiveVideo(nextItem)
+        if (nextItem.url) resolveStream(nextItem.url)
+        setPlaying(true)
+      }
+    }
 
     vid.addEventListener('timeupdate', onTime)
     vid.addEventListener('loadedmetadata', onDur)

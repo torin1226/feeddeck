@@ -140,8 +140,27 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
 
   const handleEnded = () => {
     setIsPlaying(false)
+    // Mark as fully watched
+    useLibraryStore.getState().setWatchProgress(video.id, 1)
     handleNext()
   }
+
+  // Track watch progress periodically for Continue Watching
+  useEffect(() => {
+    const vid = videoRef.current
+    if (!vid || isSFW) return
+
+    const trackProgress = () => {
+      if (vid.duration > 0) {
+        const progress = vid.currentTime / vid.duration
+        useLibraryStore.getState().setWatchProgress(video.id, progress)
+      }
+    }
+
+    // Update every 5 seconds of playback
+    const interval = setInterval(trackProgress, 5000)
+    return () => clearInterval(interval)
+  }, [video.id, isSFW])
 
   // Video source: nature clip in Social, resolved stream URL in NSFW
   const videoSrc = isSFW ? SFW_VIDEO : (streamUrl || '')

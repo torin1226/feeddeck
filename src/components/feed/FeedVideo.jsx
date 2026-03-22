@@ -63,12 +63,27 @@ function loadSource(vid, url) {
     // Desktop: use hls.js with proxied URL (same-origin, no ORB)
     vid.removeAttribute('src')
     const proxyUrl = `/api/hls-proxy?url=${encodeURIComponent(url)}`
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       _sharedHls = new Hls({ enableWorker: true, lowLatencyMode: false })
       _sharedHls.on(Hls.Events.MANIFEST_PARSED, () => resolve())
       _sharedHls.on(Hls.Events.ERROR, (_, data) => {
-        console.error('HLS error:', data.type, data.details)
-        resolve()
+        console.error('HLS error:', data.type, data.details, data.fatal)
+        if (data.fatal) {
+          // Fatal error — attempt recovery or reject
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            _sharedHls.startLoad() // try to recover network errors
+          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            _sharedHls.recoverMediaError() // try to recover media errors
+          } else {
+            // Unrecoverable — destroy and reject
+            _sharedHls.destroy()
+            _sharedHls = null
+            reject(new Error(`HLS fatal: ${data.details}`))
+            return
+          }
+        }
+        // Non-fatal errors: resolve and let playback continue
+        // (hls.js handles recovery internally for non-fatal)
       })
       _sharedHls.loadSource(proxyUrl)
       _sharedHls.attachMedia(vid)
@@ -192,6 +207,10 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
         vid.muted = true
         vid.play().catch(() => {})
       })
+    }).catch((err) => {
+      if (!cancelled) {
+        setDebugMsg(`HLS load failed: ${err.message}`)
+      }
     })
 
     return () => {
