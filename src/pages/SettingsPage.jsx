@@ -24,19 +24,25 @@ export default function SettingsPage() {
   const [newTag, setNewTag] = useState('')
   const [newTagPref, setNewTagPref] = useState('liked')
 
+  // Cookie auth
+  const [cookieStatus, setCookieStatus] = useState(null)
+
   const fetchSources = useCallback(async () => {
     try {
-      const [srcRes, healthRes, tagRes] = await Promise.all([
+      const [srcRes, healthRes, tagRes, cookieRes] = await Promise.all([
         fetch(`${API}/sources/list`),
         fetch(`${API}/sources/health`),
         fetch(`${API}/tags/preferences`),
+        fetch(`${API}/cookies/status`),
       ])
       const srcData = await srcRes.json()
       const healthData = await healthRes.json()
       const tagData = await tagRes.json()
+      const cookieData = await cookieRes.json()
       setSources(srcData.sources || [])
       setAdapterHealth(healthData)
       setTagPrefs(tagData.preferences || [])
+      setCookieStatus(cookieData)
     } catch (err) {
       console.error('Failed to load settings:', err)
     } finally {
@@ -83,6 +89,29 @@ export default function SettingsPage() {
     } finally {
       setAddLoading(false)
     }
+  }
+
+  const handleCookieUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const text = await file.text()
+    const res = await fetch(`${API}/cookies`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: text,
+    })
+    const data = await res.json()
+    if (res.ok) {
+      fetchSources() // refresh cookie status
+    } else {
+      alert(data.error || 'Failed to import cookies')
+    }
+    e.target.value = '' // reset file input
+  }
+
+  const handleCookieDelete = async () => {
+    await fetch(`${API}/cookies`, { method: 'DELETE' })
+    fetchSources()
   }
 
   const addTagPref = async () => {
@@ -180,6 +209,47 @@ export default function SettingsPage() {
                 <p className="text-text-muted text-sm">No tag preferences set. Add tags you like or dislike to improve recommendations.</p>
               )}
             </div>
+          </div>
+        </section>
+
+        {/* Cookie Auth */}
+        <section>
+          <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-3">Browser Cookies</h2>
+          <div className="bg-surface-raised rounded-xl border border-surface-border p-4">
+            <p className="text-text-muted text-sm mb-3">
+              Import browser cookies to access personalized feeds, subscriptions, and premium content via yt-dlp.
+              Export cookies using a browser extension (e.g. "Get cookies.txt LOCALLY").
+            </p>
+            {cookieStatus?.installed ? (
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-green-500" />
+                    <span className="text-text-primary text-sm font-medium">Cookies installed</span>
+                  </div>
+                  <div className="text-text-muted text-xs mt-1">
+                    {cookieStatus.cookies} cookies · Updated {new Date(cookieStatus.modified).toLocaleDateString()}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <label className="px-3 py-1.5 rounded-lg text-xs border border-surface-border text-text-secondary hover:text-text-primary hover:border-text-muted transition-colors cursor-pointer">
+                    Re-import
+                    <input type="file" accept=".txt" className="hidden" onChange={handleCookieUpload} />
+                  </label>
+                  <button
+                    onClick={handleCookieDelete}
+                    className="px-3 py-1.5 rounded-lg text-xs border border-accent/30 text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm bg-accent/90 text-white hover:bg-accent transition-colors font-medium cursor-pointer">
+                Import cookies.txt
+                <input type="file" accept=".txt" className="hidden" onChange={handleCookieUpload} />
+              </label>
+            )}
           </div>
         </section>
 

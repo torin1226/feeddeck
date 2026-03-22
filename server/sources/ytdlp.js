@@ -7,9 +7,14 @@
 
 import { execFile, execFileSync, spawn } from 'child_process'
 import { promisify } from 'util'
+import { existsSync } from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
 import { SourceAdapter } from './base.js'
 
 const execFileAsync = promisify(execFile)
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const COOKIES_PATH = join(__dirname, '..', '..', 'data', 'cookies.txt')
 
 // yt-dlp supports 1000+ sites, so we don't restrict by domain.
 // It acts as the universal fallback for extraction.
@@ -18,8 +23,13 @@ const YTDLP_SEARCH_TIMEOUT = 120_000
 const MAX_BUFFER = 50 * 1024 * 1024
 
 // Safe yt-dlp execution — uses execFile (no shell) to prevent command injection
+// Automatically passes --cookies flag when cookies.txt exists
 async function ytdlp(args, options = {}) {
-  const { stdout } = await execFileAsync('yt-dlp', args, {
+  const finalArgs = [...args]
+  if (existsSync(COOKIES_PATH)) {
+    finalArgs.unshift('--cookies', COOKIES_PATH)
+  }
+  const { stdout } = await execFileAsync('yt-dlp', finalArgs, {
     encoding: 'utf8',
     timeout: options.timeout || YTDLP_TIMEOUT,
     maxBuffer: options.maxBuffer || MAX_BUFFER,

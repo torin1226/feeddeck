@@ -1,9 +1,14 @@
 import express from 'express'
 import cors from 'cors'
 import { networkInterfaces } from 'os'
+import { existsSync, writeFileSync, unlinkSync, statSync, readFileSync } from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
 import { initDatabase, db } from './database.js'
 import { registry, ytdlp as ytdlpAdapter, scraper as scraperAdapter, closeAllSources } from './sources/index.js'
 import { logger } from './logger.js'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // Allowed CDN domains for proxy endpoints (prevents SSRF)
 const ALLOWED_CDN_DOMAINS = [
@@ -400,6 +405,61 @@ app.get('/api/videos/watch-later', (req, res) => {
   } catch (err) {
     logger.error('Watch later fetch error', { error: err.message })
     res.json({ videos: [] })
+  }
+})
+
+// -----------------------------------------------------------
+// Cookie Auth (3.4) — import browser cookies for yt-dlp
+// -----------------------------------------------------------
+
+const COOKIES_PATH = join(__dirname, '..', 'data', 'cookies.txt')
+
+// POST /api/cookies — upload cookies.txt content
+app.post('/api/cookies', express.text({ limit: '5mb' }), (req, res) => {
+  const content = req.body
+  if (!content || typeof content !== 'string') return res.status(400).json({ error: 'Cookie content required (text/plain)' })
+
+  // Basic validation: Netscape cookie format starts with # or domain lines
+  const lines = content.trim().split('\n')
+  const hasHeader = lines.some(l => l.startsWith('# Netscape') || l.startsWith('# HTTP Cookie'))
+  const hasCookies = lines.some(l => !l.startsWith('#') && l.split('\t').length >= 7)
+
+  if (!hasHeader && !hasCookies) {
+    return res.status(400).json({ error: 'Invalid cookie format. Expected Netscape/Mozilla cookie.txt format.' })
+  }
+
+  try {
+    writeFileSync(COOKIES_PATH, content, 'utf8')
+    const cookieCount = lines.filter(l => !l.startsWith('#') && l.trim() && l.split('\t').length >= 7).length
+    logger.info('Cookies imported', { cookies: cookieCount })
+    res.json({ ok: true, cookies: cookieCount })
+  } catch (err) {
+    logger.error('Cookie import error', { error: err.message })
+    res.status(500).json({ error: 'Failed to save cookies' })
+  }
+})
+
+// GET /api/cookies/status — check if cookies are installed
+app.get('/api/cookies/status', (req, res) => {
+  try {
+    if (!existsSync(COOKIES_PATH)) return res.json({ installed: false })
+    const stat = statSync(COOKIES_PATH)
+    const content = readFileSync(COOKIES_PATH, 'utf8')
+    const cookieCount = content.split('\n').filter(l => !l.startsWith('#') && l.trim() && l.split('\t').length >= 7).length
+    res.json({ installed: true, cookies: cookieCount, size: stat.size, modified: stat.mtime.toISOString() })
+  } catch (err) {
+    res.json({ installed: false, error: err.message })
+  }
+})
+
+// DELETE /api/cookies — remove cookies file
+app.delete('/api/cookies', (req, res) => {
+  try {
+    if (existsSync(COOKIES_PATH)) unlinkSync(COOKIES_PATH)
+    res.json({ ok: true })
+  } catch (err) {
+    logger.error('Cookie delete error', { error: err.message })
+    res.status(500).json({ error: 'Failed to delete cookies' })
   }
 })
 
