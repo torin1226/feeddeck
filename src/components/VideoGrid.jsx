@@ -168,17 +168,23 @@ function SkeletonCard() {
 function EmptyState({ isSFW, hasSearch }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
-      <span className="text-5xl mb-4">📂</span>
+      <span className="text-5xl mb-4">{hasSearch ? '🔍' : '📂'}</span>
       <h3 className="text-lg font-medium text-text-primary mb-2">
-        {hasSearch ? 'No results found' : 'Nothing here yet'}
+        {hasSearch ? 'No results found' : 'Start building your library'}
       </h3>
-      <p className="text-sm text-text-muted max-w-sm">
+      <p className="text-sm text-text-muted max-w-sm mb-4">
         {hasSearch
-          ? 'Try a different search term.'
-          : isSFW
-            ? 'No videos match your search.'
-            : 'Click the + Add button to start building your library.'}
+          ? 'Try a different search term or check your filters.'
+          : 'Add videos from the feed, search, or paste URLs directly.'}
       </p>
+      {!hasSearch && (
+        <a
+          href="/feed"
+          className="px-4 py-2 rounded-full bg-accent text-white text-sm font-medium hover:bg-accent-hover transition-colors"
+        >
+          Browse Feed
+        </a>
+      )}
     </div>
   )
 }

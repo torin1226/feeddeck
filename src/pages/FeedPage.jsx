@@ -230,14 +230,22 @@ export default function FeedPage() {
     return (
       <div className="h-dvh w-full bg-black flex flex-col items-center justify-center gap-3">
         <div className="text-2xl">📡</div>
-        <div className="text-text-muted text-sm">No videos in feed yet</div>
-        <div className="text-text-muted text-xs">Check back once the backend has fetched content</div>
-        <button
-          onClick={() => { useModeStore.getState().toggleMode(); resetFeed(); setTimeout(() => initFeed(), 100) }}
-          className="mt-4 px-4 py-2 rounded-full bg-white/10 text-white text-sm border border-white/20"
-        >
-          Switch to {isSFW ? 'NSFW' : 'Social'} mode
-        </button>
+        <div className="text-text-muted text-sm font-medium">No videos in feed yet</div>
+        <div className="text-text-muted/60 text-xs max-w-[240px] text-center">Add your first source to start discovering videos</div>
+        <div className="flex gap-2 mt-4">
+          <button
+            onClick={() => { import('react-router-dom').then(m => m.default || m).catch(() => {}); window.location.href = '/settings' }}
+            className="px-4 py-2 rounded-full bg-accent text-white text-sm font-medium"
+          >
+            Add Sources
+          </button>
+          <button
+            onClick={() => { useModeStore.getState().toggleMode(); resetFeed(); setTimeout(() => initFeed(), 100) }}
+            className="px-4 py-2 rounded-full bg-white/10 text-white text-sm border border-white/20"
+          >
+            Try {isSFW ? 'NSFW' : 'Social'}
+          </button>
+        </div>
       </div>
     )
   }
