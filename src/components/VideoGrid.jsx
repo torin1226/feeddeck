@@ -67,7 +67,7 @@ export default function VideoGrid({ searchQuery, remoteQuery, filter = 'all' }) 
         {filtered.length === 0 ? (
           <EmptyState isSFW={isSFW} hasSearch={!!searchQuery?.trim()} />
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-5">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {filtered.map((video) => (
               <VideoCard key={video.id} video={video} onClick={setActiveVideo} />
             ))}
@@ -131,7 +131,7 @@ function SearchResults({ query, onPlay }) {
         )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-5">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         {results.map((video, i) => (
           <div
             key={video.id}

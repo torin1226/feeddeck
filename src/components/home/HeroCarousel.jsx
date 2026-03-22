@@ -126,7 +126,7 @@ export default function HeroCarousel() {
       {/* Scrollable card strip */}
       <div
         ref={scrollRef}
-        className="flex gap-2.5 overflow-x-auto px-10 py-1 scrollbar-none"
+        className="flex gap-3 overflow-x-auto px-10 py-1 scrollbar-none"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {displayItems.map((item) => (

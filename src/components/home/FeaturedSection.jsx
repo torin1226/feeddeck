@@ -206,11 +206,11 @@ function FeaturedCard({ item, index, cardRef, overlayRef, videoRef, isActive, on
       className="absolute cursor-pointer overflow-hidden"
       style={{
         width: '62vw',
-        height: '380px',
+        height: 'clamp(320px, 28vw, 420px)',
         left: '50%',
         top: '50%',
         marginLeft: '-31vw',
-        marginTop: '-190px',
+        marginTop: 'calc(clamp(320px, 28vw, 420px) / -2)',
         borderRadius: '0px',
         willChange: 'transform, opacity',
         backfaceVisibility: 'hidden',

@@ -59,7 +59,7 @@ export default function CategoryRow({ category }) {
       {/* Scrollable row */}
       <div
         ref={rowRef}
-        className="flex gap-2.5 overflow-x-auto pb-1.5 scrollbar-none"
+        className="flex gap-3 overflow-x-auto pb-1.5 scrollbar-none"
         style={{
           scrollbarWidth: 'none',
           msOverflowStyle: 'none',
