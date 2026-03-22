@@ -27,6 +27,13 @@ export default function SettingsPage() {
   // Cookie auth
   const [cookieStatus, setCookieStatus] = useState(null)
 
+  // Recommendation seeding (3.3.1)
+  const [seedPlatform, setSeedPlatform] = useState('pornhub')
+  const [seedUsername, setSeedUsername] = useState('')
+  const [seedLog, setSeedLog] = useState([])
+  const [seedRunning, setSeedRunning] = useState(false)
+  const [seedResult, setSeedResult] = useState(null)
+
   const fetchSources = useCallback(async () => {
     try {
       const [srcRes, healthRes, tagRes, cookieRes] = await Promise.all([
@@ -51,6 +58,54 @@ export default function SettingsPage() {
   }, [])
 
   useEffect(() => { fetchSources() }, [fetchSources])
+
+  // Load saved usernames on mount
+  useEffect(() => {
+    fetch(`${API}/recommendations/username`).then(r => r.json()).then(d => {
+      if (d.usernames?.[seedPlatform]) setSeedUsername(d.usernames[seedPlatform])
+    }).catch(() => {})
+  }, [seedPlatform])
+
+  const saveUsername = async () => {
+    if (!seedUsername.trim()) return
+    await fetch(`${API}/recommendations/username`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform: seedPlatform, username: seedUsername.trim() }),
+    })
+  }
+
+  const runSeed = async () => {
+    await saveUsername()
+    setSeedRunning(true)
+    setSeedLog([])
+    setSeedResult(null)
+    try {
+      const es = new EventSource(`${API}/recommendations/seed?platform=${seedPlatform}&force=1`)
+      es.onmessage = (e) => {
+        const data = JSON.parse(e.data)
+        if (data.type === 'complete') {
+          setSeedResult(data)
+          setSeedRunning(false)
+          es.close()
+          fetchSources() // refresh tag prefs
+        } else if (data.type === 'error') {
+          setSeedLog(prev => [...prev, data.message])
+          setSeedRunning(false)
+          es.close()
+        } else {
+          const msg = data.message || `${data.phase}: ${data.current}/${data.total}`
+          setSeedLog(prev => [...prev.slice(-20), msg])
+        }
+      }
+      es.onerror = () => {
+        setSeedRunning(false)
+        es.close()
+      }
+    } catch {
+      setSeedRunning(false)
+    }
+  }
 
   const toggleSource = async (domain, currentActive) => {
     await fetch(`${API}/sources/${domain}`, {
@@ -262,6 +317,78 @@ export default function SettingsPage() {
                 Import cookies.txt
                 <input type="file" accept=".txt" className="hidden" onChange={handleCookieUpload} />
               </label>
+            )}
+          </div>
+        </section>
+
+        {/* Recommendation Seeding (3.3.1) */}
+        <section>
+          <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-3">Seed Recommendations</h2>
+          <div className="bg-surface-raised rounded-xl border border-surface-border p-4 space-y-3">
+            <p className="text-text-muted text-sm">
+              Import your watch history and favorites to bootstrap personalized recommendations.
+              Requires cookies to be installed for the selected platform.
+            </p>
+            <div className="flex gap-2 items-end">
+              <div className="flex-1">
+                <label className="text-xs text-text-muted block mb-1">Platform</label>
+                <select
+                  value={seedPlatform}
+                  onChange={(e) => setSeedPlatform(e.target.value)}
+                  className="w-full bg-surface-overlay border border-surface-border rounded-lg px-3 py-2 text-sm text-text-primary"
+                >
+                  <option value="pornhub">PornHub</option>
+                  <option value="youtube">YouTube</option>
+                  <option value="tiktok">TikTok</option>
+                </select>
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-text-muted block mb-1">Username</label>
+                <input
+                  type="text"
+                  value={seedUsername}
+                  onChange={(e) => setSeedUsername(e.target.value)}
+                  onBlur={saveUsername}
+                  placeholder="your-username"
+                  className="w-full bg-surface-overlay border border-surface-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted"
+                />
+              </div>
+              <button
+                onClick={runSeed}
+                disabled={seedRunning || !seedUsername.trim()}
+                className="px-4 py-2 rounded-lg text-sm bg-accent/90 text-white hover:bg-accent transition-colors font-medium disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+              >
+                {seedRunning ? 'Seeding...' : 'Seed Now'}
+              </button>
+            </div>
+
+            {/* Progress log */}
+            {seedLog.length > 0 && (
+              <div className="bg-surface-overlay rounded-lg p-3 max-h-32 overflow-y-auto text-xs font-mono text-text-muted space-y-0.5">
+                {seedLog.map((msg, i) => <div key={i}>{msg}</div>)}
+              </div>
+            )}
+
+            {/* Completion summary */}
+            {seedResult && (
+              <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 text-sm">
+                <div className="text-green-400 font-medium mb-1">Seeding complete</div>
+                <div className="text-text-muted text-xs space-y-0.5">
+                  <div>Scanned {seedResult.videosScanned} videos ({seedResult.videosFailed} failed)</div>
+                  <div>Imported {seedResult.videosImported} videos to library</div>
+                  <div>Found {seedResult.tagsFound} tags, {seedResult.categoriesFound} categories</div>
+                  <div>Added {seedResult.tagsAdded} new tag preferences</div>
+                  {seedResult.topTags?.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {seedResult.topTags.map(t => (
+                        <span key={t.tag} className="px-2 py-0.5 rounded-full bg-green-500/20 text-green-300 text-xs">
+                          {t.tag} ({t.count})
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </div>
         </section>

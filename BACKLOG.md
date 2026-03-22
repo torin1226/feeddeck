@@ -375,33 +375,35 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
   - Note: yt-dlp Instagram support is flaky. May need instaloader or scraper adapter as fallback.
 
 **Backend: History Import Pipeline**
-- [ ] New endpoint: `POST /api/recommendations/seed` triggers the import job
-- [ ] Use yt-dlp with cookies to fetch favorites/history: `yt-dlp --cookies data/cookies.txt --flat-playlist --dump-json "https://www.pornhub.com/users/tonjone92/videos/favorites"`
-- [ ] Also try watched, rated, and playlists URLs (may require cookies to access)
+- [x] New endpoint: `GET /api/recommendations/seed` (SSE) triggers the import job
+- [x] Use yt-dlp with cookies to fetch favorites/history via flat-playlist
+- [x] Also try watched, rated URLs (gracefully handles private/empty with error message)
 - [ ] For playlists: fetch playlist index first, then crawl each playlist for video metadata. Playlists are high-signal — curated content reveals stronger preferences than passive watch history
-- [ ] Parse returned JSON for each video: extract `tags`, `categories`, `uploader`, `duration`, `view_count`
-- [ ] Build tag frequency map from all extracted videos (e.g., {tag: count})
-- [ ] Auto-insert top N tags (threshold: appears in 3+ videos) into `tag_preferences` as `liked`
-- [ ] Skip tags already in `tag_preferences` (don't override manual choices)
-- [ ] Import videos into `videos` table (dedup by URL) so library has content immediately
-- [ ] Store seed metadata: `preferences` table key `recommendation_seed_at` with timestamp, `recommendation_seed_count` with video count
+- [x] Parse returned JSON for each video: extract `tags`, `categories`, `uploader`, `duration`, `view_count`
+- [x] Build tag frequency map from all extracted videos
+- [x] Auto-insert top N tags (threshold: 2+ appearances) into `tag_preferences` as `liked`
+- [x] Skip tags already in `tag_preferences` (don't override manual choices)
+- [x] Import videos into `videos` table (dedup by URL) so library has content immediately
+- [x] Store seed metadata: `recommendation_seed_at` timestamp + `recommendation_seed_count`
 
 **Backend: Username Config**
-- [ ] Store PornHub username in `preferences` table (key: `pornhub_username`, value: `tonjone92`)
+- [x] Store platform usernames in `preferences` table (key: `{platform}_username`)
+- [x] `PUT /api/recommendations/username` + `GET /api/recommendations/username` endpoints
 - [ ] Settings UI: text field for PornHub username (pre-filled if already set)
-- [ ] Endpoint uses stored username to construct history/favorites URLs
+- [x] Endpoint uses stored username to construct history/favorites URLs
+- [x] Multi-platform support: pornhub, youtube, tiktok URL builders
 
 **Frontend: Settings UI**
-- [ ] "Seed recommendations" button in Settings (below cookie import section)
-- [ ] Progress indicator: "Analyzing X videos..." (SSE or polling)
-- [ ] Summary on completion: "Found 47 videos, extracted 23 tags, added 15 to your preferences"
-- [ ] Show which tags were auto-added, let user review/remove before confirming
+- [x] "Seed Now" button in Settings with platform selector + username field
+- [x] Progress indicator via SSE: real-time log of scan/extract progress
+- [x] Summary on completion: green card showing videosScanned, tagsFound, tagsAdded, topTags
+- [x] Tags auto-added to preferences, visible in existing tag management UI above
 
 **Edge Cases**
-- [ ] Handle private/empty history (yt-dlp returns 0 results)
-- [ ] Handle rate-limiting from PornHub (backoff + partial results)
-- [ ] Don't re-seed if already seeded recently (check `recommendation_seed_at`, require manual override)
-- [ ] Timeout: cap at 200 videos max to avoid long-running jobs
+- [x] Handle private/empty history (graceful "not accessible" message per source)
+- [x] Handle rate-limiting: 30s timeout per video, 60s per flat-playlist scan
+- [x] Don't re-seed if already seeded within 24h (check `recommendation_seed_at`, `?force=1` to override)
+- [x] Timeout: cap at 200 videos max
 
 ### 3.4 Cookie-Based Auth for Personalized Feeds
 

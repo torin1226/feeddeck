@@ -537,6 +537,238 @@ app.get('/api/tags/popular', (req, res) => {
 })
 
 // -----------------------------------------------------------
+// Seed Recommendations from History (3.3.1)
+// Import watch history/favorites via yt-dlp, extract tags,
+// auto-populate tag_preferences for personalization bootstrap.
+// Uses SSE for real-time progress reporting.
+// -----------------------------------------------------------
+
+// Store PornHub username
+app.put('/api/recommendations/username', express.json(), (req, res) => {
+  const { platform, username } = req.body || {}
+  if (!platform || !username?.trim()) return res.status(400).json({ error: 'platform and username required' })
+  try {
+    db.prepare("INSERT OR REPLACE INTO preferences (key, value) VALUES (?, ?)").run(`${platform}_username`, username.trim())
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.get('/api/recommendations/username', (req, res) => {
+  try {
+    const rows = db.prepare("SELECT key, value FROM preferences WHERE key LIKE '%_username'").all()
+    const usernames = {}
+    for (const r of rows) usernames[r.key.replace('_username', '')] = r.value
+    res.json({ usernames })
+  } catch { res.json({ usernames: {} }) }
+})
+
+// SSE endpoint: seed recommendations from platform history
+app.get('/api/recommendations/seed', async (req, res) => {
+  const platform = req.query.platform || 'pornhub'
+  const maxVideos = Math.min(parseInt(req.query.max) || 200, 200)
+
+  // SSE headers
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })
+  const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`)
+
+  // Check re-seed guard
+  try {
+    const lastSeed = db.prepare("SELECT value FROM preferences WHERE key = 'recommendation_seed_at'").get()
+    if (lastSeed && !req.query.force) {
+      const age = Date.now() - new Date(lastSeed.value).getTime()
+      if (age < 24 * 60 * 60 * 1000) {
+        send({ type: 'error', message: `Already seeded ${Math.round(age / 3600000)}h ago. Add ?force=1 to re-seed.` })
+        return res.end()
+      }
+    }
+  } catch { /* preferences table may not have the key */ }
+
+  // Get username
+  let username
+  try {
+    const row = db.prepare("SELECT value FROM preferences WHERE key = ?").get(`${platform}_username`)
+    username = row?.value
+  } catch {}
+  if (!username) {
+    send({ type: 'error', message: `No ${platform} username configured. Set it via PUT /api/recommendations/username` })
+    return res.end()
+  }
+
+  // Build URLs to scrape based on platform
+  const urls = []
+  if (platform === 'pornhub') {
+    urls.push(
+      { label: 'Favorites', url: `https://www.pornhub.com/users/${username}/videos/favorites` },
+      { label: 'Watched', url: `https://www.pornhub.com/users/${username}/videos/watched` },
+      { label: 'Rated', url: `https://www.pornhub.com/users/${username}/videos/rated` },
+    )
+  } else if (platform === 'youtube') {
+    urls.push(
+      { label: 'Liked Videos', url: 'https://www.youtube.com/playlist?list=LL' },
+      { label: 'Watch History', url: 'https://www.youtube.com/feed/history' },
+    )
+  } else if (platform === 'tiktok') {
+    urls.push(
+      { label: 'Liked Videos', url: `https://www.tiktok.com/@${username}/liked` },
+    )
+  }
+
+  send({ type: 'status', message: `Starting ${platform} import for user "${username}"...`, sources: urls.map(u => u.label) })
+
+  // Phase 1: Collect video URLs from all sources via flat-playlist
+  const { execFile } = await import('child_process')
+  const { promisify } = await import('util')
+  const execFileP = promisify(execFile)
+  const cookiesPath = join(__dirname, '..', 'data', 'cookies.txt')
+  const cookiesArgs = existsSync(cookiesPath) ? ['--cookies', cookiesPath] : []
+
+  const allVideoUrls = []
+  for (const src of urls) {
+    send({ type: 'progress', phase: 'scan', source: src.label })
+    try {
+      const { stdout } = await execFileP('yt-dlp', [
+        ...cookiesArgs, '--flat-playlist', '--dump-json', '--no-warnings',
+        '--socket-timeout', '10', src.url
+      ], { encoding: 'utf8', timeout: 60000, maxBuffer: 10 * 1024 * 1024, windowsHide: true })
+
+      const entries = stdout.trim().split('\n').filter(Boolean)
+      for (const line of entries) {
+        try {
+          const d = JSON.parse(line)
+          const url = d.webpage_url || d.url
+          if (url) allVideoUrls.push(url)
+        } catch {}
+      }
+      send({ type: 'status', message: `${src.label}: found ${entries.length} videos` })
+    } catch (err) {
+      send({ type: 'status', message: `${src.label}: ${err.message?.includes('404') || err.message?.includes('Unable') ? 'not accessible (private or empty)' : 'error: ' + err.message?.substring(0, 60)}` })
+    }
+  }
+
+  if (allVideoUrls.length === 0) {
+    send({ type: 'error', message: 'No videos found across all sources. Check that cookies are valid and username is correct.' })
+    return res.end()
+  }
+
+  // Cap at maxVideos
+  const toProcess = allVideoUrls.slice(0, maxVideos)
+  send({ type: 'status', message: `Found ${allVideoUrls.length} videos total. Processing ${toProcess.length} for tag extraction...` })
+
+  // Phase 2: Extract full metadata for each video (tags, categories)
+  const tagFreq = {}
+  const categoryFreq = {}
+  let processed = 0
+  let failed = 0
+  const importedVideos = []
+
+  for (const url of toProcess) {
+    processed++
+    if (processed % 5 === 0 || processed === toProcess.length) {
+      send({ type: 'progress', phase: 'extract', current: processed, total: toProcess.length })
+    }
+    try {
+      const { stdout } = await execFileP('yt-dlp', [
+        ...cookiesArgs, '--dump-json', '--skip-download', '--no-playlist', '--no-warnings',
+        '--socket-timeout', '10', url
+      ], { encoding: 'utf8', timeout: 30000, maxBuffer: 5 * 1024 * 1024, windowsHide: true })
+
+      const meta = JSON.parse(stdout)
+      const tags = meta.tags || []
+      const categories = meta.categories || []
+
+      for (const t of tags) {
+        const key = t.toLowerCase().trim()
+        if (key) tagFreq[key] = (tagFreq[key] || 0) + 1
+      }
+      for (const c of categories) {
+        const key = c.toLowerCase().trim()
+        if (key) categoryFreq[key] = (categoryFreq[key] || 0) + 1
+      }
+
+      // Import video into library
+      importedVideos.push({
+        url: meta.webpage_url || url,
+        title: meta.title,
+        thumbnail: meta.thumbnail,
+        duration: meta.duration,
+        source: meta.webpage_url_domain || platform,
+        uploader: meta.uploader,
+        view_count: meta.view_count,
+        tags: [...tags, ...categories],
+      })
+    } catch {
+      failed++
+    }
+  }
+
+  send({ type: 'status', message: `Extracted tags from ${processed - failed}/${processed} videos (${failed} failed)` })
+
+  // Phase 3: Auto-insert top tags into tag_preferences
+  const existingPrefs = new Set()
+  try {
+    db.prepare('SELECT tag FROM tag_preferences').all().forEach(r => existingPrefs.add(r.tag))
+  } catch {}
+
+  // Tags that appear in 2+ videos (lower threshold since we might have few videos)
+  const threshold = Math.max(2, Math.floor(toProcess.length * 0.1))
+  const topTags = Object.entries(tagFreq)
+    .filter(([, count]) => count >= Math.min(threshold, 2))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 30)
+    .filter(([tag]) => !existingPrefs.has(tag))
+
+  const topCategories = Object.entries(categoryFreq)
+    .filter(([, count]) => count >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 15)
+    .filter(([tag]) => !existingPrefs.has(tag))
+
+  const allNewTags = [...topTags, ...topCategories]
+  let addedTags = 0
+  const insertPref = db.prepare("INSERT OR IGNORE INTO tag_preferences (tag, preference, updated_at) VALUES (?, 'liked', datetime('now'))")
+  for (const [tag] of allNewTags) {
+    try {
+      const result = insertPref.run(tag)
+      if (result.changes > 0) addedTags++
+    } catch {}
+  }
+
+  // Phase 4: Import videos into library (videos table)
+  let addedVideos = 0
+  const insertVideo = db.prepare(`
+    INSERT OR IGNORE INTO videos (url, title, thumbnail, duration, source, tags, added_at)
+    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+  `)
+  for (const v of importedVideos) {
+    try {
+      const result = insertVideo.run(v.url, v.title, v.thumbnail, v.duration, v.source, JSON.stringify(v.tags))
+      if (result.changes > 0) addedVideos++
+    } catch {}
+  }
+
+  // Store seed metadata
+  try {
+    db.prepare("INSERT OR REPLACE INTO preferences (key, value) VALUES ('recommendation_seed_at', datetime('now'))").run()
+    db.prepare("INSERT OR REPLACE INTO preferences (key, value) VALUES ('recommendation_seed_count', ?)").run(String(processed - failed))
+  } catch {}
+
+  const summary = {
+    type: 'complete',
+    videosScanned: processed,
+    videosFailed: failed,
+    videosImported: addedVideos,
+    tagsFound: Object.keys(tagFreq).length,
+    categoriesFound: Object.keys(categoryFreq).length,
+    tagsAdded: addedTags,
+    topTags: allNewTags.slice(0, 10).map(([tag, count]) => ({ tag, count })),
+  }
+  send(summary)
+  res.end()
+})
+
+// -----------------------------------------------------------
 // Basic Recommendations (3.3)
 // Rule-based scoring: +2 liked tag, -5 disliked tag, +1 preferred source
 // -----------------------------------------------------------
