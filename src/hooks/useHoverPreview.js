@@ -37,7 +37,11 @@ export default function useHoverPreview() {
         const data = await res.json()
         if (!data.streamUrl || abort.signal.aborted) return
 
-        videoEl.src = data.streamUrl
+        // Proxy CDN URL to avoid CORS/ORB blocking
+        const cdnUrl = data.streamUrl
+        videoEl.src = cdnUrl.includes('.m3u8')
+          ? `/api/hls-proxy?url=${encodeURIComponent(cdnUrl)}`
+          : `/api/proxy-stream?url=${encodeURIComponent(cdnUrl)}`
         videoEl.muted = true
         videoEl.playsInline = true
         videoEl.loop = true

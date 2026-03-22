@@ -18,7 +18,7 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
   const { isSFW } = useModeStore()
   const { advance, queue } = useQueueStore()
   const { markWatched } = useLibraryStore()
-  const [isPlaying, setIsPlaying] = useState(false)
+  const [_isPlaying, setIsPlaying] = useState(false)
   const [streamUrl, setStreamUrl] = useState(null)
   const [streamLoading, setStreamLoading] = useState(false)
   const [formats, setFormats] = useState([])
@@ -162,8 +162,15 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
     return () => clearInterval(interval)
   }, [video.id, isSFW])
 
-  // Video source: nature clip in Social, resolved stream URL in NSFW
-  const videoSrc = isSFW ? SFW_VIDEO : (streamUrl || '')
+  // Video source: nature clip in Social, proxied CDN URL in NSFW
+  // Proxy all CDN URLs to avoid CORS/ORB blocking (same pattern as FeedVideo)
+  const videoSrc = isSFW
+    ? SFW_VIDEO
+    : streamUrl
+      ? (streamUrl.includes('.m3u8')
+          ? `/api/hls-proxy?url=${encodeURIComponent(streamUrl)}`
+          : `/api/proxy-stream?url=${encodeURIComponent(streamUrl)}`)
+      : ''
 
   return (
     <div className="bg-surface border-b border-surface-border">

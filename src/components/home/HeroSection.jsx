@@ -17,7 +17,7 @@ export default function HeroSection() {
   const { heroItem, theatreMode, toggleTheatre } = useHomeStore()
   const { addToQueue, advance, queue } = useQueueStore()
   const {
-    activeVideo, setActiveVideo, isPlaying, setPlaying,
+    _activeVideo, setActiveVideo, isPlaying, setPlaying,
     currentTime, setCurrentTime, duration, setDuration,
     streamUrl, streamLoading, streamError, resolveStream, handleStreamError,
   } = usePlayerStore()
@@ -183,11 +183,13 @@ export default function HeroSection() {
         }} />
       </div>
 
-      {/* Video element for theatre mode */}
+      {/* Video element for theatre mode — proxy CDN URL to avoid CORS/ORB blocking */}
       {theatreMode && streamUrl && (
         <video
           ref={videoRef}
-          src={streamUrl}
+          src={streamUrl.includes('.m3u8')
+            ? `/api/hls-proxy?url=${encodeURIComponent(streamUrl)}`
+            : `/api/proxy-stream?url=${encodeURIComponent(streamUrl)}`}
           className="absolute inset-0 w-full h-full object-contain z-[1]"
           autoPlay
           playsInline

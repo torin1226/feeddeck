@@ -72,7 +72,11 @@ export default function FeaturedSection() {
       .then(data => {
         if (!cancelled && data.streamUrl && videoElRef.current) {
           const v = videoElRef.current
-          v.src = data.streamUrl
+          // Proxy CDN URL to avoid CORS/ORB blocking
+          const url = data.streamUrl
+          v.src = url.includes('.m3u8')
+            ? `/api/hls-proxy?url=${encodeURIComponent(url)}`
+            : `/api/proxy-stream?url=${encodeURIComponent(url)}`
           v.load()
           v.oncanplay = () => {
             if (!cancelled) v.play().catch(() => {})
