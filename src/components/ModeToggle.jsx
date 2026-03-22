@@ -1,19 +1,33 @@
+import { useState } from 'react'
 import useModeStore from '../stores/modeStore'
 import clsx from 'clsx'
 
 // ============================================================
 // ModeToggle
-// Visual Social/NSFW toggle button.
+// Visual Social/NSFW toggle button with screen reader announcement.
 // ============================================================
 
 export default function ModeToggle() {
   const { isSFW, toggleMode } = useModeStore()
+  const [announcement, setAnnouncement] = useState('')
+
+  const handleToggle = () => {
+    toggleMode()
+    // Announce mode change to screen readers
+    const newMode = isSFW ? 'Full library' : 'Social'
+    setAnnouncement(`Switched to ${newMode} mode`)
+    setTimeout(() => setAnnouncement(''), 1000)
+  }
 
   return (
-    <button
-      onClick={toggleMode}
-      title={isSFW ? 'Switch to full library' : 'Switch to Social mode'}
-      className={clsx(
+    <>
+      {/* Screen reader announcement */}
+      <div aria-live="assertive" className="sr-only">{announcement}</div>
+      <button
+        onClick={handleToggle}
+        title={isSFW ? 'Switch to full library' : 'Switch to Social mode'}
+        aria-label={isSFW ? 'Switch to full library mode' : 'Switch to Social mode'}
+        className={clsx(
         'flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-150',
         isSFW
           ? 'bg-sfw/20 text-sfw border border-sfw/30 hover:bg-sfw/30'
@@ -23,5 +37,6 @@ export default function ModeToggle() {
       <span className="text-base">{isSFW ? '📡' : '▶'}</span>
       <span>{isSFW ? 'Social' : 'FD'}</span>
     </button>
+    </>
   )
 }

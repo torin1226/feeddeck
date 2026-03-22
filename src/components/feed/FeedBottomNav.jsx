@@ -1,23 +1,27 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import useQueueStore from '../../stores/queueStore'
+import useFeedStore from '../../stores/feedStore'
 
 // ============================================================
 // FeedBottomNav
 // Mobile-style bottom tab bar for the feed experience.
-// 4 tabs: Feed, Search, Queue, Settings
+// 4 tabs: Feed, Filter, Queue, Settings
+// Search tab replaced with Filter to open FeedFilterSheet.
 // ============================================================
 
 const tabs = [
   { label: 'Feed', path: '/feed', icon: TabIconFeed },
-  { label: 'Search', path: '/feed/search', icon: TabIconSearch },
-  { label: 'Queue', path: '/feed/queue', icon: TabIconQueue },
-  { label: 'Settings', path: '/feed/settings', icon: TabIconSettings },
+  { label: 'Filter', path: null, action: 'filter', icon: TabIconFilter },
+  { label: 'Queue', path: '/', icon: TabIconQueue },
+  { label: 'Settings', path: '/settings', icon: TabIconSettings },
 ]
 
-export default function FeedBottomNav({ hidden = false }) {
+export default function FeedBottomNav({ hidden = false, onFilterOpen }) {
   const navigate = useNavigate()
   const location = useLocation()
   const queueCount = useQueueStore(s => s.queue.length)
+  const filters = useFeedStore(s => s.filters)
+  const hasActiveFilters = (filters.sources?.length > 0) || (filters.tags?.length > 0)
 
   return (
     <nav className={`fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around
@@ -26,26 +30,39 @@ export default function FeedBottomNav({ hidden = false }) {
       style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 8px)' }}
     >
       {tabs.map(tab => {
-        const isActive = tab.path === '/feed'
-          ? location.pathname === '/feed'
-          : location.pathname.startsWith(tab.path)
+        const isActive = tab.path
+          ? (tab.path === '/feed' ? location.pathname === '/feed' : location.pathname.startsWith(tab.path))
+          : false
+        const isFilterActive = tab.action === 'filter' && hasActiveFilters
         const Icon = tab.icon
 
         return (
           <button
-            key={tab.path}
-            onClick={() => navigate(tab.path)}
+            key={tab.label}
+            onClick={() => {
+              if (tab.action === 'filter') {
+                onFilterOpen?.()
+              } else if (tab.path) {
+                navigate(tab.path)
+              }
+            }}
             className={`flex flex-col items-center gap-0.5 py-2 px-4 cursor-pointer
-              transition-colors ${isActive ? 'text-white' : 'text-white/40'}`}
+              transition-colors ${isActive ? 'text-white' : isFilterActive ? 'text-accent' : 'text-white/40'}`}
           >
             <div className="relative">
-              <Icon active={isActive} />
+              <Icon active={isActive || isFilterActive} />
               {tab.label === 'Queue' && queueCount > 0 && (
-                <span className="absolute -top-1 -right-2 min-w-[16px] h-4 px-1
+                <span
+                  aria-live="polite"
+                  aria-label={`${queueCount} items in queue`}
+                  className="absolute -top-1 -right-2 min-w-[16px] h-4 px-1
                   rounded-full bg-accent text-[10px] font-bold text-black
                   flex items-center justify-center">
                   {queueCount > 99 ? '99+' : queueCount}
                 </span>
+              )}
+              {tab.action === 'filter' && hasActiveFilters && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-accent" />
               )}
             </div>
             <span className="text-[10px] font-medium">{tab.label}</span>
@@ -68,12 +85,11 @@ function TabIconFeed({ active }) {
   )
 }
 
-function TabIconSearch({ active }) {
+function TabIconFilter({ active }) {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
       strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="11" cy="11" r="7" />
-      <path d="M21 21l-4.35-4.35" />
+      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
     </svg>
   )
 }

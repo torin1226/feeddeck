@@ -1075,22 +1075,57 @@ app.get('/api/feed/next', (req, res) => {
   const mode = req.query.mode === 'nsfw' ? 'nsfw' : 'social'
   const count = Math.min(parseInt(req.query.count, 10) || 10, 30)
 
+  // Optional filters
+  const sourcesParam = req.query.sources // comma-separated domains
+  const tagsParam = req.query.tags // comma-separated tags
+
   try {
+    // Build dynamic WHERE clause based on filters
+    let whereExtra = ''
+    const params = [mode]
+
+    if (sourcesParam) {
+      const domains = sourcesParam.split(',').map(s => s.trim()).filter(Boolean)
+      if (domains.length > 0) {
+        whereExtra += ` AND fc.source_domain IN (${domains.map(() => '?').join(',')})`
+        params.push(...domains)
+      }
+    }
+
+    params.push(count)
+
     // Get unwatched videos from cache, ordered by source weight
     // Include stream_url so client doesn't need a second API call
     const videos = db.prepare(`
       SELECT fc.id, fc.url, fc.stream_url AS streamUrl, fc.title, fc.creator AS uploader, fc.thumbnail,
-             fc.duration, fc.orientation, fc.source_domain AS source
+             fc.duration, fc.orientation, fc.source_domain AS source, fc.tags
       FROM feed_cache fc
       LEFT JOIN sources s ON fc.source_domain = s.domain
-      WHERE fc.mode = ? AND fc.watched = 0
+      WHERE fc.mode = ? AND fc.watched = 0${whereExtra}
       ORDER BY COALESCE(s.weight, 1.0) DESC, RANDOM()
       LIMIT ?
-    `).all(mode, count)
+    `).all(...params)
+
+    // Apply tag filter (tags stored as JSON array in feed_cache)
+    // Also matches against title as fallback for videos without tags
+    let filtered = videos
+    if (tagsParam) {
+      const filterTags = tagsParam.split(',').map(t => t.trim().toLowerCase()).filter(Boolean)
+      if (filterTags.length > 0) {
+        filtered = videos.filter(v => {
+          try {
+            const videoTags = JSON.parse(v.tags || '[]').map(t => t.toLowerCase())
+            const titleLower = (v.title || '').toLowerCase()
+            return filterTags.some(ft => videoTags.includes(ft) || titleLower.includes(ft))
+          } catch { return false }
+        })
+      }
+    }
 
     // Format for client (hls.js handles HLS URLs on non-Safari browsers)
-    const formatted = videos.map(v => ({
+    const formatted = filtered.map(v => ({
       ...v,
+      tags: undefined, // Don't send raw tags JSON to client
       durationFormatted: formatDuration(v.duration),
     }))
 
@@ -1263,14 +1298,15 @@ async function _refillFeedCacheImpl(mode) {
       const videos = await registry.search(src.query, { site: src.domain, limit: 20 })
 
       const insert = db.prepare(`
-        INSERT OR IGNORE INTO feed_cache (id, source_domain, mode, url, title, creator, thumbnail, duration, orientation, fetched_at, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+6 hours'))
+        INSERT OR IGNORE INTO feed_cache (id, source_domain, mode, url, title, creator, thumbnail, duration, orientation, tags, fetched_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+6 hours'))
       `)
 
       let added = 0
       const newVideoUrls = []
       for (const v of videos) {
         try {
+          const tags = Array.isArray(v.tags) ? JSON.stringify(v.tags) : (v.tags || '[]')
           const result = insert.run(
             v.id,
             src.domain,
@@ -1280,7 +1316,8 @@ async function _refillFeedCacheImpl(mode) {
             v.uploader,
             v.thumbnail,
             v.duration,
-            v.orientation
+            v.orientation,
+            tags
           )
           added++
           if (result.changes > 0 && v.url) {

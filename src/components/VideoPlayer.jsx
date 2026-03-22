@@ -165,6 +165,7 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
           )}
           <button
             onClick={onClose}
+            aria-label="Close player"
             className="w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors text-sm cursor-pointer"
           >
             ✕

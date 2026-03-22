@@ -55,6 +55,7 @@ export default function TheatreControls() {
         onClick={() => setPlaying(!isPlaying)}
         className="text-text-primary text-lg hover:bg-white/10 rounded-md px-1.5 py-1 transition-colors"
         title={isPlaying ? 'Pause' : 'Play'}
+        aria-label={isPlaying ? 'Pause' : 'Play'}
       >
         {isPlaying ? '\u23F8' : '\u25B6'}
       </button>
@@ -62,6 +63,7 @@ export default function TheatreControls() {
         onClick={() => advance()}
         className="text-text-primary text-lg hover:bg-white/10 rounded-md px-1.5 py-1 transition-colors"
         title="Next"
+        aria-label="Next video"
       >
         &#9197;
       </button>
@@ -87,6 +89,7 @@ export default function TheatreControls() {
       <button
         onClick={toggleTheatre}
         title="Exit theatre"
+        aria-label="Exit theatre mode"
         className="w-7 h-7 rounded-full bg-white/[0.08] text-text-secondary text-[13px]
           flex items-center justify-center hover:bg-white/[0.16] hover:text-text-primary
           transition-all ml-1"

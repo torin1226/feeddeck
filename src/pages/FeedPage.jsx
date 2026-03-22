@@ -8,6 +8,7 @@ import FeedToast from '../components/feed/FeedToast'
 import HeartBurst from '../components/feed/HeartBurst'
 import SourceControlSheet from '../components/feed/SourceControlSheet'
 import FeedBottomNav from '../components/feed/FeedBottomNav'
+import FeedFilterSheet from '../components/feed/FeedFilterSheet'
 import QueueSwipeAnimation from '../components/feed/QueueSwipeAnimation'
 
 // ============================================================
@@ -30,6 +31,11 @@ export default function FeedPage() {
   const [hearts, setHearts] = useState([])
   const [sourceSheet, setSourceSheet] = useState(null)
   const [showSwipeAnim, setShowSwipeAnim] = useState(false)
+
+  // Filter sheet state
+  const [filterOpen, setFilterOpen] = useState(false)
+  const filters = useFeedStore(s => s.filters)
+  const hasActiveFilters = (filters.sources?.length > 0) || (filters.tags?.length > 0)
 
   // Pull-to-refresh state
   const [refreshing, setRefreshing] = useState(false)
@@ -268,6 +274,27 @@ export default function FeedPage() {
         )}
       </div>
 
+      {/* Filter button (top-left) */}
+      {(!immersive || overlayVisible) && (
+        <button
+          onClick={() => setFilterOpen(true)}
+          className={`fixed top-4 left-4 z-50 h-10 rounded-full
+            bg-white/10 backdrop-blur-lg border border-white/20
+            flex items-center justify-center gap-1.5 text-white/70
+            active:scale-95 transition-all px-3
+            ${hasActiveFilters ? 'border-accent/40 text-accent' : ''}`}
+          aria-label="Filter feed"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+          </svg>
+          {hasActiveFilters && (
+            <span className="text-[11px] font-semibold">{filters.sources.length + filters.tags.length}</span>
+          )}
+        </button>
+      )}
+
       {/* Refresh button (top-right, visible when at first video) */}
       {currentIndex === 0 && !refreshing && (
         <button
@@ -279,7 +306,7 @@ export default function FeedPage() {
           className="fixed top-4 right-4 z-50 w-10 h-10 rounded-full
             bg-white/10 backdrop-blur-lg border border-white/20
             flex items-center justify-center text-white/70
-            active:scale-90 transition-transform"
+            active:scale-95 transition-transform"
           aria-label="Refresh feed"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -297,7 +324,7 @@ export default function FeedPage() {
           className={`fixed z-50 w-10 h-10 rounded-full
             bg-white/10 backdrop-blur-lg border border-white/20
             flex items-center justify-center text-white/70
-            active:scale-90 transition-all duration-200
+            active:scale-95 transition-all duration-200
             ${currentIndex === 0 && !refreshing ? 'top-16 right-4' : 'top-4 right-4'}`}
           aria-label={immersive ? 'Exit immersive' : 'Enter immersive'}
         >
@@ -357,7 +384,7 @@ export default function FeedPage() {
       )}
 
       {/* Bottom navigation */}
-      <FeedBottomNav hidden={navHidden || (immersive && !overlayVisible)} />
+      <FeedBottomNav hidden={navHidden || (immersive && !overlayVisible)} onFilterOpen={() => setFilterOpen(true)} />
 
       {/* Source control sheet (long-press) */}
       {sourceSheet && (
@@ -372,6 +399,11 @@ export default function FeedPage() {
             setSourceSheet(null)
           }}
         />
+      )}
+
+      {/* Filter sheet */}
+      {filterOpen && (
+        <FeedFilterSheet onClose={() => setFilterOpen(false)} />
       )}
     </>
   )

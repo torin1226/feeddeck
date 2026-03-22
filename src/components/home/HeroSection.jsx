@@ -271,7 +271,7 @@ export default function HeroSection() {
         </div>
 
         {/* Title */}
-        <h1 className="text-[clamp(28px,4vw,48px)] font-bold tracking-tighter leading-[1.05] mb-2.5 drop-shadow-[0_2px_20px_rgba(0,0,0,0.5)]">
+        <h1 className="font-display text-[clamp(28px,4vw,48px)] font-bold tracking-tighter leading-[1.05] mb-2.5 drop-shadow-[0_2px_20px_rgba(0,0,0,0.5)]">
           {heroItem.title}
         </h1>
 

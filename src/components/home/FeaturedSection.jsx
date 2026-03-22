@@ -109,7 +109,7 @@ export default function FeaturedSection() {
           className="absolute top-[18px] left-0 right-0 px-10 flex items-baseline justify-between z-40 opacity-0 pointer-events-none"
         >
           <div>
-            <span className="text-[22px] font-bold tracking-tight">Featured</span>
+            <span className="text-[14px] font-semibold tracking-wider uppercase text-text-secondary">Featured</span>
             <span className="text-xs text-text-muted font-normal ml-2.5">Handpicked for you</span>
           </div>
           <span className="text-[11px] font-semibold text-accent uppercase tracking-wider cursor-pointer opacity-75 hover:opacity-100 transition-opacity">
@@ -266,7 +266,7 @@ function FeaturedCard({ item, index, cardRef, overlayRef, videoRef, isActive, on
         <div className="text-[10px] font-bold uppercase tracking-[1.4px] text-accent mb-1.5">
           {item.featuredLabel}
         </div>
-        <div className="text-[22px] font-bold tracking-tight leading-tight mb-1.5">
+        <div className="font-display text-[26px] font-bold tracking-[-0.5px] leading-tight mb-1.5">
           {item.title}
         </div>
         <div className="text-[13px] text-text-secondary mb-4">

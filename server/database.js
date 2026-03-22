@@ -226,6 +226,14 @@ export function initDatabase() {
     }
   } catch {}
 
+  // Migrate: add tags column to feed_cache if missing
+  try {
+    const cols = db.prepare("PRAGMA table_info(feed_cache)").all()
+    if (!cols.some(c => c.name === 'tags')) {
+      db.exec("ALTER TABLE feed_cache ADD COLUMN tags TEXT DEFAULT '[]'")
+    }
+  } catch {}
+
   logger.info('Database initialized', { path: DB_PATH })
   return db
 }

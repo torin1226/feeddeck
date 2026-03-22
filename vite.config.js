@@ -12,5 +12,17 @@ export default defineConfig({
         changeOrigin: true,
       }
     }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Split large vendor libs into their own chunks
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-hls': ['hls.js'],
+          'vendor-zustand': ['zustand'],
+        }
+      }
+    }
   }
 })

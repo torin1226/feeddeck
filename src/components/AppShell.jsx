@@ -1,13 +1,16 @@
+import { lazy, Suspense } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import useKeyboard from '../hooks/useKeyboard'
 import useQueueSync from '../hooks/useQueueSync'
 import useDeviceStore from '../stores/deviceStore'
 import FloatingQueue from './FloatingQueue'
 import OfflineBanner from './OfflineBanner'
-import HomePage from '../pages/HomePage'
-import LibraryPage from '../pages/LibraryPage'
-import FeedPage from '../pages/FeedPage'
-import SettingsPage from '../pages/SettingsPage'
+
+// Code-split route-level pages for smaller initial bundle
+const HomePage = lazy(() => import('../pages/HomePage'))
+const LibraryPage = lazy(() => import('../pages/LibraryPage'))
+const FeedPage = lazy(() => import('../pages/FeedPage'))
+const SettingsPage = lazy(() => import('../pages/SettingsPage'))
 
 // ============================================================
 // AppShell
@@ -26,12 +29,23 @@ export default function AppShell() {
 
   const content = (
     <>
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/library" element={<LibraryPage />} />
-        <Route path="/feed" element={<FeedPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-      </Routes>
+      {/* Skip navigation link for keyboard users */}
+      <a href="#main-content" className="skip-nav">Skip to main content</a>
+
+      <main id="main-content">
+        <Suspense fallback={
+          <div className="h-screen w-full flex items-center justify-center bg-surface">
+            <div className="w-8 h-8 border-2 border-text-muted border-t-text-primary rounded-full animate-spin" />
+          </div>
+        }>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/library" element={<LibraryPage />} />
+            <Route path="/feed" element={<FeedPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
+        </Suspense>
+      </main>
 
       {/* Global overlays — hide FloatingQueue on feed (immersive) */}
       {!isFeed && <FloatingQueue />}
@@ -66,6 +80,7 @@ export default function AppShell() {
       <button
         onClick={toggleMobilePreview}
         title="Toggle mobile preview (Ctrl+M)"
+        aria-label="Toggle mobile preview"
         className={`fixed z-[9999] bottom-4 right-4 w-10 h-10 rounded-full flex items-center justify-center
           cursor-pointer transition-all shadow-lg
           ${mobilePreview

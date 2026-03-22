@@ -316,7 +316,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
           <button
             onClick={(e) => { e.stopPropagation(); onSourceControl?.(video) }}
             className="w-10 h-10 rounded-full bg-black/40 backdrop-blur flex items-center justify-center
-              text-white/80 active:scale-90 transition-transform"
+              text-white/80 active:scale-95 transition-transform"
             aria-label="Source controls"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">

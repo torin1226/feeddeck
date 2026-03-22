@@ -79,7 +79,7 @@ export default function AddVideoModal({ onClose }) {
             autoFocus
             className="w-full bg-surface-overlay border border-surface-border rounded-lg
               px-4 py-3 text-sm text-text-primary placeholder:text-text-muted
-              focus:outline-none focus:border-text-muted transition-colors mb-4"
+              focus:border-text-muted transition-colors mb-4"
           />
 
           {error && (

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import useModeStore from './modeStore'
 
 // ============================================================
 // Feed Store
@@ -22,6 +23,10 @@ const useFeedStore = create((set, get) => ({
   watchedIds: new Set(),
   // Whether we've exhausted the feed
   exhausted: false,
+
+  // Feed filters (sources, tags, search)
+  filters: { sources: [], tags: [], searchQuery: '' },
+  setFilters: (filters) => set({ filters }),
 
   // User preferences
   letterbox: false, // false = center-crop (cover), true = letterbox (contain)
@@ -137,10 +142,15 @@ try {
 
 // Helper: fetch a batch of feed videos from backend
 async function fetchFeedBatch(getState) {
-  const { watchedIds, buffer } = getState()
+  const { watchedIds, buffer, filters } = getState()
   const bufferIds = new Set(buffer.map(v => v.id))
-  const mode = (await import('./modeStore.js')).default.getState().isSFW ? 'social' : 'nsfw'
-  const res = await fetch(`/api/feed/next?mode=${mode}&count=${FETCH_COUNT}`)
+  const mode = useModeStore.getState().isSFW ? 'social' : 'nsfw'
+
+  const params = new URLSearchParams({ mode, count: FETCH_COUNT })
+  if (filters.sources?.length > 0) params.set('sources', filters.sources.join(','))
+  if (filters.tags?.length > 0) params.set('tags', filters.tags.join(','))
+
+  const res = await fetch(`/api/feed/next?${params}`)
   if (!res.ok) throw new Error('Feed fetch failed')
   const data = await res.json()
   // Filter out already-watched and already-buffered videos

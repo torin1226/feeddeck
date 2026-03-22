@@ -60,7 +60,7 @@ export default function VideoCard({ video, onClick }) {
             src={display.thumbnail}
             alt=""
             loading="lazy"
-            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+            className="w-full h-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.03]"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-text-muted">
@@ -89,6 +89,7 @@ export default function VideoCard({ video, onClick }) {
             <button
               onClick={() => addToQueue(video)}
               title="Add to queue"
+              aria-label="Add to queue"
               className="w-9 h-9 rounded-full bg-black/70 text-white flex items-center justify-center
                 hover:bg-accent transition-colors text-sm"
             >
@@ -98,6 +99,7 @@ export default function VideoCard({ video, onClick }) {
             <button
               onClick={() => onClick?.(video)}
               title="Play"
+              aria-label="Play video"
               className="w-12 h-12 rounded-full bg-white/90 text-black flex items-center justify-center
                 hover:bg-white transition-colors text-lg shadow-lg"
             >
@@ -107,6 +109,7 @@ export default function VideoCard({ video, onClick }) {
             <button
               onClick={() => toggleFavorite(video.id)}
               title={video.favorite ? 'Remove from favorites' : 'Add to favorites'}
+              aria-label={video.favorite ? 'Remove from favorites' : 'Add to favorites'}
               className={clsx(
                 'w-9 h-9 rounded-full bg-black/70 flex items-center justify-center hover:bg-accent transition-colors text-sm',
                 video.favorite ? 'text-accent' : 'text-white'

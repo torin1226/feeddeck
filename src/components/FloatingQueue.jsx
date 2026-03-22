@@ -215,6 +215,7 @@ export default function FloatingQueue() {
       {/* Collapse chevron at bottom */}
       <button
         onClick={() => setExpanded(false)}
+        aria-label="Collapse queue"
         className="flex items-center justify-center py-2 border-t border-white/10
           text-white/40 hover:text-white/70 transition-colors shrink-0"
       >

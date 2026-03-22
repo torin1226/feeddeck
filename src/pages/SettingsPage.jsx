@@ -135,10 +135,23 @@ export default function SettingsPage() {
       {/* Header */}
       <header className="sticky top-0 z-40 bg-surface/90 backdrop-blur-md border-b border-surface-border">
         <div className="flex items-center gap-4 px-4 md:px-6 h-14">
-          <button onClick={() => navigate(-1)} className="text-text-secondary hover:text-text-primary transition-colors">
-            ← Back
-          </button>
-          <h1 className="font-semibold text-text-primary">Settings</h1>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-lg">{isSFW ? '📡' : '▶'}</span>
+            <span className="font-semibold text-text-primary hidden sm:block">FeedDeck</span>
+          </div>
+          <nav className="hidden md:flex gap-5 shrink-0">
+            {[{ label: 'Home', path: '/' }, { label: 'Feed', path: '/feed' }, { label: 'Library', path: '/library' }].map(item => (
+              <button
+                key={item.path}
+                onClick={() => navigate(item.path)}
+                className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+          <div className="flex-1" />
+          <h1 className="font-semibold text-text-primary text-sm">Settings</h1>
         </div>
       </header>
 
@@ -174,12 +187,12 @@ export default function SettingsPage() {
                 value={newTag}
                 onChange={(e) => setNewTag(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && newTag.trim()) addTagPref() }}
-                className="flex-1 bg-surface-overlay border border-surface-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-muted"
+                className="flex-1 bg-surface-overlay border border-surface-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgba(229,9,20,0.5)] focus-visible:outline-offset-2 focus:border-text-muted"
               />
               <select
                 value={newTagPref}
                 onChange={(e) => setNewTagPref(e.target.value)}
-                className="bg-surface-overlay border border-surface-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none"
+                className="bg-surface-overlay border border-surface-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgba(229,9,20,0.5)] focus-visible:outline-offset-2"
               >
                 <option value="liked">Liked</option>
                 <option value="disliked">Disliked</option>
@@ -274,13 +287,13 @@ export default function SettingsPage() {
                   placeholder="Domain (e.g. xvideos.com)"
                   value={newSource.domain}
                   onChange={(e) => setNewSource(s => ({ ...s, domain: e.target.value }))}
-                  className="bg-surface-overlay border border-surface-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-muted"
+                  className="bg-surface-overlay border border-surface-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgba(229,9,20,0.5)] focus-visible:outline-offset-2 focus:border-text-muted"
                   required
                 />
                 <select
                   value={newSource.mode}
                   onChange={(e) => setNewSource(s => ({ ...s, mode: e.target.value }))}
-                  className="bg-surface-overlay border border-surface-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-text-muted"
+                  className="bg-surface-overlay border border-surface-border rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgba(229,9,20,0.5)] focus-visible:outline-offset-2 focus:border-text-muted"
                 >
                   <option value="nsfw">NSFW</option>
                   <option value="social">Social</option>
@@ -291,7 +304,7 @@ export default function SettingsPage() {
                 placeholder="Label (e.g. XVideos)"
                 value={newSource.label}
                 onChange={(e) => setNewSource(s => ({ ...s, label: e.target.value }))}
-                className="w-full bg-surface-overlay border border-surface-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-muted"
+                className="w-full bg-surface-overlay border border-surface-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgba(229,9,20,0.5)] focus-visible:outline-offset-2 focus:border-text-muted"
                 required
               />
               <input
@@ -299,7 +312,7 @@ export default function SettingsPage() {
                 placeholder="Search query (e.g. trending, popular new)"
                 value={newSource.query}
                 onChange={(e) => setNewSource(s => ({ ...s, query: e.target.value }))}
-                className="w-full bg-surface-overlay border border-surface-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-text-muted"
+                className="w-full bg-surface-overlay border border-surface-border rounded-lg px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgba(229,9,20,0.5)] focus-visible:outline-offset-2 focus:border-text-muted"
                 required
               />
               {addError && <p className="text-accent text-sm">{addError}</p>}

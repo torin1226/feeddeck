@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import ModeToggle from './ModeToggle'
 import AddVideoModal from './AddVideoModal'
 import useModeStore from '../stores/modeStore'
@@ -10,7 +11,15 @@ import useThemeStore from '../stores/themeStore'
 // In Social mode: shows FeedDeck branding.
 // ============================================================
 
+const navItems = [
+  { label: 'Home', path: '/' },
+  { label: 'Feed', path: '/feed' },
+  { label: 'Library', path: '/library' },
+]
+
 export default function Header({ onSearch, onSearchSubmit }) {
+  const navigate = useNavigate()
+  const location = useLocation()
   const { isSFW } = useModeStore()
   const { theme, toggleTheme } = useThemeStore()
   const [showAdd, setShowAdd] = useState(false)
@@ -29,10 +38,30 @@ export default function Header({ onSearch, onSearchSubmit }) {
           {/* Logo / Brand */}
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-lg">{isSFW ? '📡' : '▶'}</span>
-            <span className="font-semibold text-text-primary hidden sm:block">
+            <span className="font-display font-bold text-text-primary hidden sm:block tracking-tight">
               FeedDeck
             </span>
           </div>
+
+          {/* Nav links */}
+          <nav className="hidden md:flex gap-5 shrink-0">
+            {navItems.map(item => (
+              <button
+                key={item.path}
+                onClick={() => navigate(item.path)}
+                className={`text-sm font-medium transition-colors cursor-pointer relative pb-0.5 ${
+                  location.pathname === item.path
+                    ? 'text-text-primary'
+                    : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                {item.label}
+                {location.pathname === item.path && (
+                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-accent rounded-full" />
+                )}
+              </button>
+            ))}
+          </nav>
 
           {/* Search bar */}
           <form onSubmit={handleSearch} className="flex-1 max-w-xl">
@@ -47,7 +76,7 @@ export default function Header({ onSearch, onSearchSubmit }) {
                 placeholder="Search videos..."
                 className="w-full bg-surface-overlay border border-surface-border rounded-lg
                   px-4 py-2 text-sm text-text-primary placeholder:text-text-muted
-                  focus:outline-none focus:border-text-muted transition-colors"
+                  focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgba(229,9,20,0.5)] focus-visible:outline-offset-2 focus:border-text-muted transition-colors"
               />
               {query && (
                 <button
@@ -80,6 +109,7 @@ export default function Header({ onSearch, onSearchSubmit }) {
               className="p-2 rounded-lg text-text-secondary hover:text-text-primary
                 hover:bg-surface-overlay transition-colors"
               title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               {theme === 'dark' ? '☀' : '🌙'}
             </button>

@@ -50,7 +50,7 @@ export default function CategoryRow({ category }) {
     <div className="mb-9">
       {/* Header */}
       <div className="flex items-center justify-between mb-3.5">
-        <h3 className="text-[15px] font-bold tracking-tight">{category.label}</h3>
+        <h3 className="font-display text-[18px] font-bold tracking-[-0.3px]">{category.label}</h3>
         <span className="text-[11px] font-semibold text-accent opacity-75 cursor-pointer uppercase tracking-wider hover:opacity-100 transition-opacity">
           See all &rarr;
         </span>
@@ -78,7 +78,7 @@ export default function CategoryRow({ category }) {
             onMouseLeave={cancelPreview}
             className="cat-card flex-none w-[200px] rounded-[10px] overflow-hidden bg-raised
               cursor-pointer relative transition-all duration-[220ms] ease-out
-              hover:scale-105 hover:-translate-y-1 hover:shadow-[0_16px_40px_rgba(0,0,0,0.6)]"
+              hover:scale-[1.03] hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgba(0,0,0,0.4)]"
           >
             <img
               src={item.thumbnailSm || item.thumbnail}
@@ -104,7 +104,7 @@ export default function CategoryRow({ category }) {
             </span>
             {/* Info */}
             <div className="p-2.5 pt-2">
-              <div className="text-xs font-semibold leading-tight line-clamp-2 mb-0.5">
+              <div className="text-[13px] font-semibold leading-tight line-clamp-2 mb-0.5">
                 {item.title}
               </div>
               <div className="text-[11px] text-text-muted">

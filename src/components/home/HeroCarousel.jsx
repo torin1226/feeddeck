@@ -166,20 +166,20 @@ function CarouselCard({ item, isActive, onClick }) {
       className={`flex-none w-[230px] h-[130px] rounded-lg overflow-hidden cursor-pointer
         relative transition-all duration-250 ease-out border-2 bg-overlay
         ${isActive ? 'border-accent shadow-[0_0_0_1px_#e50914,0_8px_32px_rgba(229,9,20,0.25)]' : 'border-transparent'}
-        hover:scale-[1.06] hover:-translate-y-1`}
+        hover:scale-[1.03] hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgba(0,0,0,0.4)]`}
     >
       <img
         src={item.thumbnailSm || item.thumbnail}
         alt={item.title}
         loading="lazy"
-        className="w-full h-full object-cover transition-transform duration-400 hover:scale-[1.06]"
+        className="w-full h-full object-cover transition-transform duration-300 hover:scale-[1.03]"
       />
       {/* Overlay with title */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/[0.85] via-transparent to-transparent flex flex-col justify-end p-2">
-        <div className="text-[10px] font-semibold text-white truncate leading-tight">
+        <div className="text-[11px] font-semibold text-white truncate leading-tight">
           {item.title}
         </div>
-        <div className="text-[9px] text-white/50 mt-0.5">{item.duration}</div>
+        <div className="text-[10px] font-medium text-white/50 mt-0.5">{item.duration}</div>
       </div>
       {/* Play indicator on active card */}
       {isActive && (

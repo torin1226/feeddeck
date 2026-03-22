@@ -30,7 +30,7 @@ export default function HomeHeader() {
       }}
     >
       {/* Logo */}
-      <div className="text-lg font-bold tracking-tight">
+      <div className="text-lg font-bold tracking-tight font-display">
         &#128225; <em className="not-italic text-accent">Feed</em>Deck
       </div>
 
@@ -40,13 +40,16 @@ export default function HomeHeader() {
           <button
             key={item.path}
             onClick={() => navigate(item.path)}
-            className={`text-sm font-medium transition-colors cursor-pointer ${
+            className={`text-sm font-medium transition-colors cursor-pointer relative pb-0.5 ${
               location.pathname === item.path
                 ? 'text-text-primary'
                 : 'text-text-secondary hover:text-text-primary'
             }`}
           >
             {item.label}
+            {location.pathname === item.path && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-accent rounded-full" />
+            )}
           </button>
         ))}
       </nav>
@@ -57,6 +60,7 @@ export default function HomeHeader() {
           onClick={() => navigate('/settings')}
           className="p-2 rounded-lg text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
           title="Settings"
+          aria-label="Settings"
         >
           ⚙
         </button>
@@ -64,6 +68,7 @@ export default function HomeHeader() {
           onClick={toggleTheme}
           className="p-2 rounded-lg text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
           title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         >
           {theme === 'dark' ? '☀' : '🌙'}
         </button>
