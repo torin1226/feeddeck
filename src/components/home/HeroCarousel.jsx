@@ -175,7 +175,7 @@ function CarouselCard({ item, isActive, onClick }) {
         className="w-full h-full object-cover transition-transform duration-300 hover:scale-[1.03]"
       />
       {/* Overlay with title */}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/[0.85] via-transparent to-transparent flex flex-col justify-end p-2">
+      <div className="absolute inset-0 bg-gradient-to-t from-black/[0.75] via-transparent to-transparent flex flex-col justify-end p-2">
         <div className="text-[11px] font-semibold text-white truncate leading-tight">
           {item.title}
         </div>

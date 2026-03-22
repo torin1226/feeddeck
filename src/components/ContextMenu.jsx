@@ -95,19 +95,22 @@ export default function ContextMenu({ video, position, onClose }) {
         {video.watchLater ? 'Remove from Watch Later' : 'Watch Later'}
       </button>
       <div className="border-t border-white/10 my-1" />
-      <div className="px-4 py-2 flex items-center gap-1">
-        <span className="text-white/50 text-xs mr-1.5">Rate:</span>
-        {[1, 2, 3, 4, 5].map(star => (
-          <button
-            key={star}
-            onClick={() => { setRating(video.id, video.rating === star ? null : star); onClose() }}
-            className={`text-sm transition-colors cursor-pointer ${
-              video.rating >= star ? 'text-amber-400' : 'text-white/25 hover:text-white/50'
-            }`}
-          >
-            ★
-          </button>
-        ))}
+      <div className="px-4 py-2">
+        <span className="text-white/50 text-[10px] uppercase tracking-wider font-semibold block mb-1.5">Rate</span>
+        <div className="flex items-center gap-0.5">
+          {[1, 2, 3, 4, 5].map(star => (
+            <button
+              key={star}
+              onClick={() => { setRating(video.id, video.rating === star ? null : star); onClose() }}
+              aria-label={`Rate ${star} star${star > 1 ? 's' : ''}`}
+              className={`w-7 h-7 flex items-center justify-center text-base transition-colors cursor-pointer rounded ${
+                video.rating >= star ? 'text-amber-400 hover:text-amber-300' : 'text-white/25 hover:text-amber-300'
+              }`}
+            >
+              ★
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   )

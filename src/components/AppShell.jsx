@@ -76,8 +76,8 @@ export default function AppShell() {
         content
       )}
 
-      {/* Mobile preview toggle button — fixed, always visible */}
-      <button
+      {/* Mobile preview toggle button — dev only to avoid conflict with FloatingQueue */}
+      {import.meta.env.DEV && <button
         onClick={toggleMobilePreview}
         title="Toggle mobile preview (Ctrl+M)"
         aria-label="Toggle mobile preview"
@@ -93,7 +93,7 @@ export default function AppShell() {
           <rect x="7" y="2" width="10" height="20" rx="2" />
           <line x1="12" y1="18" x2="12" y2="18.01" strokeWidth="3" />
         </svg>
-      </button>
+      </button>}
     </>
   )
 }
