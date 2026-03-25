@@ -16,6 +16,62 @@ const DB_PATH = join(__dirname, '..', 'data', 'library.db')
 
 export let db = null
 
+// Category seeds from CONTENT_QUERIES.md — real URLs and search queries
+function _seedCategories(database) {
+  const insert = database.prepare('INSERT INTO categories (key, label, query, mode, sort_order) VALUES (?, ?, ?, ?, ?)')
+  const categories = [
+    // NSFW categories (25)
+    ['nsfw_trending',       'Trending',             'https://www.pornhub.com/video?o=tr',                                          'nsfw', 0],
+    ['nsfw_recommended',    'Recommended',          'https://www.pornhub.com/recommended',                                         'nsfw', 1],
+    ['nsfw_hot',            'Hottest',              'https://www.pornhub.com/video?o=ht',                                          'nsfw', 2],
+    ['nsfw_mostviewed',     'Most Viewed',          'https://www.pornhub.com/video?o=mv&t=w',                                      'nsfw', 3],
+    ['nsfw_amateur',        'Amateur',              'https://www.pornhub.com/video/search?search=amateur+homemade&hd=1&o=tr',      'nsfw', 4],
+    ['nsfw_pov',            'POV',                  'https://www.pornhub.com/video/search?search=pov&hd=1&o=tr',                   'nsfw', 5],
+    ['nsfw_solo',           'Solo',                 'https://www.pornhub.com/video/search?search=solo&hd=1&o=tr',                  'nsfw', 6],
+    ['nsfw_realcouples',    'Real Couples',         'https://www.pornhub.com/video/search?search=real+couple&hd=1&o=tr',           'nsfw', 7],
+    ['nsfw_sensual',        'Sensual',              'https://www.pornhub.com/video/search?search=sensual+romantic&hd=1',           'nsfw', 8],
+    ['nsfw_compilation',    'Compilations',         'https://www.pornhub.com/video/search?search=compilation&hd=1&o=mv',           'nsfw', 9],
+    ['nsfw_verified',       'Verified Amateurs',    'https://www.pornhub.com/categories/verified-amateurs',                        'nsfw', 10],
+    ['nsfw_popular_women',  'Popular With Women',   'https://www.pornhub.com/categories/popular-with-women',                       'nsfw', 11],
+    ['nsfw_new',            'Newest',               'https://www.pornhub.com/video?o=cm',                                          'nsfw', 12],
+    ['nsfw_xvideos_best',   'Best of XVideos',      'https://www.xvideos.com/best',                                                'nsfw', 13],
+    ['nsfw_spankbang',      'SpankBang Trending',   'https://spankbang.com/trending',                                              'nsfw', 14],
+    ['nsfw_casting',        'Casting',              'https://www.pornhub.com/video/search?search=casting&hd=1&o=tr',               'nsfw', 15],
+    ['nsfw_massage',        'Massage',              'https://www.pornhub.com/video/search?search=massage&hd=1&o=tr',               'nsfw', 16],
+    ['nsfw_cosplay',        'Cosplay',              'https://www.pornhub.com/video/search?search=cosplay&hd=1&o=tr',               'nsfw', 17],
+    ['nsfw_fitness',        'Fitness',              'https://www.pornhub.com/video/search?search=fit+yoga&hd=1&o=tr',              'nsfw', 18],
+    ['nsfw_asmr',           'ASMR',                 'https://www.pornhub.com/video/search?search=asmr&hd=1&o=tr',                  'nsfw', 19],
+    ['nsfw_redgifs_trend',  'RedGifs Trending',     'https://www.redgifs.com/trending',                                            'nsfw', 20],
+    ['nsfw_redgifs_clips',  'RedGifs Clips',        'https://www.redgifs.com/trending?type=g',                                     'nsfw', 21],
+    ['nsfw_redgifs_amatr',  'RedGifs Amateur',      'https://www.redgifs.com/search?query=amateur&order=trending',                 'nsfw', 22],
+    ['nsfw_redgifs_couple', 'RedGifs Couples',      'https://www.redgifs.com/search?query=couple&order=trending',                  'nsfw', 23],
+    ['nsfw_fikfap_trend',   'FikFap Trending',      'https://fikfap.com/trending',                                                 'nsfw', 24],
+    // Social categories (19)
+    ['social_trending',      'Trending',            'https://www.youtube.com/feed/trending',                                       'social', 0],
+    ['social_subscriptions', 'Your Subscriptions',  'https://www.youtube.com/feed/subscriptions',                                  'social', 1],
+    ['social_shorts',        'Shorts',              'https://www.youtube.com/shorts',                                              'social', 2],
+    ['social_viral',         'Viral This Week',     'ytsearch10:viral videos this week',                                           'social', 3],
+    ['social_tech',          'Tech & Gadgets',      'ytsearch10:best new tech gadgets',                                            'social', 4],
+    ['social_design',        'Design',              'ytsearch10:UI UX design tips',                                                'social', 5],
+    ['social_satisfying',    'Satisfying',          'ytsearch10:satisfying videos compilation',                                    'social', 6],
+    ['social_fails',         'Fails & Funny',       'ytsearch10:best fails compilation this month',                                'social', 7],
+    ['social_nature',        'Nature & Science',    'ytsearch10:nature documentary short amazing',                                 'social', 8],
+    ['social_music',         'Live Music',          'ytsearch10:tiny desk concert',                                                'social', 9],
+    ['social_sports',        'Sports Highlights',   'ytsearch10:best sports highlights this week',                                 'social', 10],
+    ['social_cooking',       'Cooking',             'ytsearch10:cooking recipe viral short',                                       'social', 11],
+    ['social_reddit_unexp',  'Reddit Unexpected',   'https://www.reddit.com/r/Unexpected/hot',                                    'social', 12],
+    ['social_reddit_nfl',    'Reddit NextLevel',    'https://www.reddit.com/r/nextfuckinglevel/hot',                              'social', 13],
+    ['social_reddit_satis',  'Reddit Satisfying',   'https://www.reddit.com/r/oddlysatisfying/hot',                               'social', 14],
+    ['social_fireship',      'Fireship',            'https://www.youtube.com/@Fireship/shorts',                                   'social', 15],
+    ['social_city_walks',    'City Walks',          'ytsearch10:city walking tour 4K',                                             'social', 16],
+    ['social_explainers',    'Explainers',          'ytsearch10:explained in 5 minutes',                                           'social', 17],
+    ['social_tiktok_fyp',    'TikTok For You',      'https://www.tiktok.com/foryou',                                               'social', 18],
+  ]
+  for (const row of categories) {
+    insert.run(...row)
+  }
+}
+
 export function initDatabase() {
   // Ensure data directory exists
   const dataDir = dirname(DB_PATH)
@@ -120,6 +176,18 @@ export function initDatabase() {
       FOREIGN KEY (source_domain) REFERENCES sources(domain)
     );
 
+    -- System searches (saved search presets that mix into homepage rotation)
+    CREATE TABLE IF NOT EXISTS system_searches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      query TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'nsfw',
+      weight REAL DEFAULT 1.0,
+      active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT (datetime('now')),
+      last_fetched DATETIME
+    );
+
     -- Tag preferences (liked/disliked tags for recommendations)
     CREATE TABLE IF NOT EXISTS tag_preferences (
       tag TEXT PRIMARY KEY,
@@ -176,35 +244,52 @@ export function initDatabase() {
   // Seed default categories if empty
   const catCount = db.prepare('SELECT COUNT(*) as n FROM categories').get()
   if (catCount.n === 0) {
-    const insert = db.prepare('INSERT INTO categories (key, label, query, mode, sort_order) VALUES (?, ?, ?, ?, ?)')
-    const defaults = [
-      ['social-trending', 'Trending Now', 'trending videos', 'social', 0],
-      ['social-popular', 'Popular This Week', 'most viewed this week', 'social', 1],
-      ['social-new', 'New Arrivals', 'newest uploads', 'social', 2],
-      ['social-picks', 'Staff Picks', 'editor picks best of', 'social', 3],
-      ['nsfw-trending', 'Trending Now', 'trending', 'nsfw', 0],
-      ['nsfw-popular', 'Popular This Week', 'most viewed', 'nsfw', 1],
-      ['nsfw-new', 'New Arrivals', 'newest', 'nsfw', 2],
-      ['nsfw-picks', 'Staff Picks', 'best rated', 'nsfw', 3],
-    ]
-    for (const row of defaults) {
-      insert.run(...row)
-    }
+    _seedCategories(db)
   }
+
+  // Migrate: replace old/generic category seeds with curated ones from CONTENT_QUERIES.md
+  try {
+    const hasNewSeeds = db.prepare("SELECT COUNT(*) as n FROM categories WHERE key = 'nsfw_trending'").get()
+    if (hasNewSeeds.n === 0) {
+      db.exec("DELETE FROM homepage_cache")
+      db.exec("DELETE FROM categories")
+      _seedCategories(db)
+    }
+  } catch {}
 
   // Seed default feed sources if empty
   const srcCount = db.prepare('SELECT COUNT(*) as n FROM sources').get()
   if (srcCount.n === 0) {
     const insertSrc = db.prepare('INSERT INTO sources (domain, mode, label, query, weight) VALUES (?, ?, ?, ?, ?)')
     const defaultSources = [
-      ['youtube.com', 'social', 'YouTube Shorts', 'ytsearch20:viral shorts 2025', 1.0],
-      ['tiktok.com', 'social', 'TikTok', 'ytsearch20:tiktok compilation funny', 0.8],
-      ['pornhub.com', 'nsfw', 'PornHub', 'trending', 1.0],
+      ['youtube.com',   'social', 'YouTube',   'https://www.youtube.com/feed/trending',    1.0],
+      ['tiktok.com',    'social', 'TikTok',    'https://www.tiktok.com/foryou',            0.9],
+      ['reddit.com',    'social', 'Reddit',    'https://www.reddit.com/r/videos/hot',      0.7],
+      ['pornhub.com',   'nsfw',   'PornHub',   'https://www.pornhub.com/video?o=tr',       1.0],
+      ['xvideos.com',   'nsfw',   'XVideos',   'https://www.xvideos.com/best',             0.8],
+      ['spankbang.com', 'nsfw',   'SpankBang', 'https://spankbang.com/trending',           0.7],
+      ['redgifs.com',   'nsfw',   'RedGifs',   'https://www.redgifs.com/trending',         0.9],
+      ['fikfap.com',    'nsfw',   'FikFap',    'https://fikfap.com/trending',              0.7],
     ]
     for (const row of defaultSources) {
       insertSrc.run(...row)
     }
   }
+
+  // Migrate: add new sources if missing
+  try {
+    const insertSrc = db.prepare('INSERT OR IGNORE INTO sources (domain, mode, label, query, weight) VALUES (?, ?, ?, ?, ?)')
+    const newSources = [
+      ['reddit.com',    'social', 'Reddit',    'https://www.reddit.com/r/videos/hot',  0.7],
+      ['xvideos.com',   'nsfw',   'XVideos',   'https://www.xvideos.com/best',         0.8],
+      ['spankbang.com', 'nsfw',   'SpankBang', 'https://spankbang.com/trending',       0.7],
+      ['redgifs.com',   'nsfw',   'RedGifs',   'https://www.redgifs.com/trending',     0.9],
+      ['fikfap.com',    'nsfw',   'FikFap',    'https://fikfap.com/trending',          0.7],
+    ]
+    for (const row of newSources) {
+      insertSrc.run(...row)
+    }
+  } catch {}
 
   // Migrate: add fetch_interval and last_fetched to sources if missing
   try {

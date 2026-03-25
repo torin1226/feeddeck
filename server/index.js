@@ -5,6 +5,7 @@ import { existsSync, writeFileSync, unlinkSync, statSync, readFileSync } from 'f
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { randomBytes } from 'crypto'
+import { getCookieArgs } from './cookies.js'
 import { initDatabase, db } from './database.js'
 import { registry, ytdlp as ytdlpAdapter, scraper as scraperAdapter, closeAllSources } from './sources/index.js'
 import { logger } from './logger.js'
@@ -21,6 +22,10 @@ const ALLOWED_CDN_DOMAINS = [
   'tiktokcdn-us.com',
   'akamaized.net',
   'cloudfront.net',
+  'xvideos-cdn.com',
+  'spankbang.com',
+  'redgifs.com',
+  'thumbs2.redgifs.com',
 ]
 
 function isAllowedCdnUrl(url) {
@@ -181,7 +186,7 @@ app.get('/api/stream-formats', async (req, res) => {
     const execFileAsync = promisify(execFile)
 
     const { stdout } = await execFileAsync('yt-dlp', [
-      '-j', '--no-warnings', '--no-playlist', url
+      ...getCookieArgs(url), '-j', '--no-warnings', '--no-playlist', url
     ], { timeout: 30000 })
 
     const info = JSON.parse(stdout)
@@ -284,7 +289,7 @@ app.get('/api/hls-proxy', async (req, res) => {
     }
     if (req.headers.range) headers['Range'] = req.headers.range
 
-    const upstream = await fetch(url, { headers })
+    const upstream = await fetch(url, { headers, signal: AbortSignal.timeout(15000) })
 
     if (url.includes('.m3u8')) {
       // Rewrite m3u8 playlist: proxy ALL non-comment lines (segments, variant playlists)
@@ -420,6 +425,7 @@ app.get('/api/videos/watch-later', (req, res) => {
 // Cookie Auth (3.4) — import browser cookies for yt-dlp
 // -----------------------------------------------------------
 
+// Legacy cookie path kept for cookie management API endpoints
 const COOKIES_PATH = join(__dirname, '..', 'data', 'cookies.txt')
 
 // POST /api/cookies — upload cookies.txt content
@@ -620,15 +626,12 @@ app.get('/api/recommendations/seed', async (req, res) => {
   const { execFile } = await import('child_process')
   const { promisify } = await import('util')
   const execFileP = promisify(execFile)
-  const cookiesPath = join(__dirname, '..', 'data', 'cookies.txt')
-  const cookiesArgs = existsSync(cookiesPath) ? ['--cookies', cookiesPath] : []
-
   const allVideoUrls = []
   for (const src of urls) {
     send({ type: 'progress', phase: 'scan', source: src.label })
     try {
       const { stdout } = await execFileP('yt-dlp', [
-        ...cookiesArgs, '--flat-playlist', '--dump-json', '--no-warnings',
+        ...getCookieArgs(src.url), '--flat-playlist', '--dump-json', '--no-warnings',
         '--socket-timeout', '10', src.url
       ], { encoding: 'utf8', timeout: 60000, maxBuffer: 10 * 1024 * 1024, windowsHide: true })
 
@@ -669,7 +672,7 @@ app.get('/api/recommendations/seed', async (req, res) => {
     }
     try {
       const { stdout } = await execFileP('yt-dlp', [
-        ...cookiesArgs, '--dump-json', '--skip-download', '--no-playlist', '--no-warnings',
+        ...getCookieArgs(url), '--dump-json', '--skip-download', '--no-playlist', '--no-warnings',
         '--socket-timeout', '10', url
       ], { encoding: 'utf8', timeout: 30000, maxBuffer: 5 * 1024 * 1024, windowsHide: true })
 
@@ -1275,28 +1278,47 @@ app.post('/api/homepage/viewed', (req, res) => {
 // -----------------------------------------------------------
 // Async refill: fetch new videos for a category via yt-dlp
 // -----------------------------------------------------------
+// NSFW site round-robin for even distribution across sources
+const _nsfwSites = ['pornhub.com', 'xvideos.com', 'spankbang.com']
+let _nsfwSiteIdx = 0
+
 async function refillCategory(categoryKey) {
   const cat = db.prepare('SELECT query, mode FROM categories WHERE key = ?').get(categoryKey)
   if (!cat) return
 
-  // Build a personalized query by mixing in liked tag preferences
   let query = cat.query
+
+  // For yt-dlp search strings (not URLs), append personalization tags
+  if (!query.startsWith('http')) {
+    try {
+      const likedTags = db.prepare(
+        "SELECT tag FROM tag_preferences WHERE preference = 'liked' ORDER BY RANDOM() LIMIT 2"
+      ).all().map(r => r.tag)
+      if (likedTags.length > 0) {
+        query = `${query} ${likedTags.join(' ')}`
+        logger.info(`  🎯 Personalized query for ${categoryKey}: "${query}" (tags: ${likedTags.join(', ')})`)
+      }
+    } catch { /* tag_preferences may not exist yet — use base query */ }
+  }
+
+  logger.info(`  🔄 Refilling category: ${categoryKey} (query: "${query}")`)
+
   try {
-    const likedTags = db.prepare(
-      "SELECT tag FROM tag_preferences WHERE preference = 'liked' ORDER BY RANDOM() LIMIT 2"
-    ).all().map(r => r.tag)
-    if (likedTags.length > 0) {
-      query = `${cat.query} ${likedTags.join(' ')}`
-      logger.info(`  🎯 Personalized query for ${categoryKey}: "${query}" (base: "${cat.query}", tags: ${likedTags.join(', ')})`)
+    // Use yt-dlp for YouTube/search queries. For NSFW site URLs, use the
+    // registry fallback chain (scraper → yt-dlp) since yt-dlp can't always
+    // extract from NSFW sites directly.
+    let videos
+    if (cat.mode === 'nsfw' && query.startsWith('http')) {
+      // Extract domain from URL for site-specific routing
+      try {
+        const domain = new URL(query).hostname.replace(/^www\./, '')
+        videos = await registry.search(query, { site: domain, limit: 12 })
+      } catch {
+        videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
+      }
+    } else {
+      videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
     }
-  } catch { /* tag_preferences may not exist yet — use base query */ }
-
-  logger.info(`  🔄 Refilling category: ${categoryKey}`)
-
-  try {
-    // Use registry search with fallback (scraper → yt-dlp)
-    const site = cat.mode === 'nsfw' ? 'pornhub.com' : undefined
-    const videos = await registry.search(query, { site, limit: 12 })
 
     const insert = db.prepare(`
       INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, tags, fetched_at, expires_at)
@@ -1648,7 +1670,7 @@ async function _preResolveStreamUrls(videoUrls) {
 function startScheduledFeedRefill() {
   const CHECK_INTERVAL = 60_000 // Check every 60 seconds
 
-  setInterval(() => {
+  return setInterval(() => {
     try {
       const stale = db.prepare(`
         SELECT domain, mode, label FROM sources
@@ -1679,7 +1701,12 @@ function startScheduledTrendingRefresh() {
 
   let siteIndex = 0
 
-  setInterval(async () => {
+  // SFW category round-robin: refill one SFW category per tick
+  const sfwCategories = db.prepare("SELECT key FROM categories WHERE mode = 'social'").all()
+  let sfwCatIndex = 0
+
+  return setInterval(async () => {
+    // --- NSFW: rotate through scraper sites for trending ---
     const site = sites[siteIndex % sites.length]
     siteIndex++
 
@@ -1705,6 +1732,15 @@ function startScheduledTrendingRefresh() {
     } catch (err) {
       logger.error(`  ❌ Trending refresh failed for ${site}:`, { error: err.message })
     }
+
+    // --- SFW: refill one category per tick via yt-dlp ---
+    if (sfwCategories.length > 0) {
+      const sfwCat = sfwCategories[sfwCatIndex % sfwCategories.length]
+      sfwCatIndex++
+      refillCategory(sfwCat.key).catch(err =>
+        logger.error(`  ❌ SFW refresh error (${sfwCat.key}):`, { error: err.message })
+      )
+    }
   }, TRENDING_INTERVAL)
 }
 
@@ -1716,7 +1752,7 @@ function startScheduledTrendingRefresh() {
 function startStreamUrlTTLMonitor() {
   const TTL_CHECK_INTERVAL = 5 * 60_000 // Check every 5 minutes
 
-  setInterval(async () => {
+  return setInterval(async () => {
     try {
       // Find URLs expiring in the next 15 minutes that still have a stream_url
       const expiring = db.prepare(`
@@ -1760,9 +1796,12 @@ process.on('unhandledRejection', (reason) => {
   // (feed refill, category refresh) shouldn't take down the server
   logger.warn('Unhandled rejection', { reason: String(reason) })
 })
+const _intervalIds = []
 process.on('SIGTERM', async () => {
   logger.info('Shutting down...')
+  for (const id of _intervalIds) clearInterval(id)
   await closeAllSources()
+  db.close()
   process.exit(0)
 })
 
@@ -1787,7 +1826,24 @@ app.listen(PORT, '0.0.0.0', () => {
   } catch {}
 
   logger.info(`     Health check: http://localhost:${PORT}/api/health\n`)
-  startScheduledFeedRefill()
-  startScheduledTrendingRefresh()
-  startStreamUrlTTLMonitor()
+  _intervalIds.push(startScheduledFeedRefill())
+  _intervalIds.push(startScheduledTrendingRefresh())
+  _intervalIds.push(startStreamUrlTTLMonitor())
+
+  // First-boot population: if homepage_cache is empty, sequentially refill all categories
+  const cacheCount = db.prepare('SELECT COUNT(*) as n FROM homepage_cache').get()
+  if (cacheCount.n === 0) {
+    logger.info('  🚀 First boot: populating homepage cache...')
+    const allCats = db.prepare('SELECT key FROM categories').all()
+    ;(async () => {
+      for (const cat of allCats) {
+        try {
+          await refillCategory(cat.key)
+        } catch (err) {
+          logger.error(`  First boot refill error (${cat.key}):`, { error: err.message })
+        }
+      }
+      logger.info('  ✅ First boot: homepage cache population complete')
+    })()
+  }
 })

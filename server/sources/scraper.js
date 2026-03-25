@@ -149,6 +149,7 @@ export class ScraperAdapter extends SourceAdapter {
       },
     })
     this.browser = null
+    this._consecutiveFailures = 0
   }
 
   async _getBrowser() {
@@ -171,22 +172,27 @@ export class ScraperAdapter extends SourceAdapter {
     const browser = await this._getBrowser()
     const page = await browser.newPage()
 
-    // Stealth basics: realistic user agent + viewport
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'
-    )
-    await page.setViewport({ width: 1920, height: 1080 })
+    try {
+      // Stealth basics: realistic user agent + viewport
+      await page.setUserAgent(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'
+      )
+      await page.setViewport({ width: 1920, height: 1080 })
 
-    // Block images, fonts, and CSS to speed things up (we only need the DOM)
-    await page.setRequestInterception(true)
-    page.on('request', (req) => {
-      const type = req.resourceType()
-      if (['image', 'font', 'stylesheet', 'media'].includes(type)) {
-        req.abort()
-      } else {
-        req.continue()
-      }
-    })
+      // Block images, fonts, and CSS to speed things up (we only need the DOM)
+      await page.setRequestInterception(true)
+      page.on('request', (req) => {
+        const type = req.resourceType()
+        if (['image', 'font', 'stylesheet', 'media'].includes(type)) {
+          try { req.abort() } catch {}
+        } else {
+          try { req.continue() } catch {}
+        }
+      })
+    } catch (err) {
+      await page.close().catch(() => {})
+      throw err
+    }
 
     return page
   }
@@ -282,6 +288,7 @@ export class ScraperAdapter extends SourceAdapter {
       }, config, limit)
 
       // Normalize into our standard shape
+      this._consecutiveFailures = 0
       return videos.map(v => this.normalizeVideo({
         id: this._urlToId(v.url),
         webpage_url: v.url,
@@ -292,8 +299,16 @@ export class ScraperAdapter extends SourceAdapter {
         uploader: v.uploader,
         source: siteKey,
       }))
+    } catch (err) {
+      this._consecutiveFailures++
+      if (this._consecutiveFailures >= 5) {
+        await this.browser?.close().catch(() => {})
+        this.browser = null
+        this._consecutiveFailures = 0
+      }
+      throw err
     } finally {
-      await page.close()
+      await page.close().catch(() => {})
     }
   }
 

@@ -75,7 +75,7 @@ export class CobaltAdapter extends SourceAdapter {
     return this.normalizeVideo({
       id: this._urlToId(url),
       webpage_url: url,
-      title: result.filename || 'Untitled',
+      title: (result.filename && typeof result.filename === 'string') ? result.filename : 'Untitled',
       source: new URL(url).hostname.replace(/^www\./, ''),
     })
   }
@@ -91,6 +91,7 @@ export class CobaltAdapter extends SourceAdapter {
     if (result.picker && result.picker.length > 0) {
       // Pick the first video option
       const video = result.picker.find(p => p.type === 'video') || result.picker[0]
+      if (!video?.url) throw new Error('Cobalt picker entry missing URL')
       return video.url
     }
 

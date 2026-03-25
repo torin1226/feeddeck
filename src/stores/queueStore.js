@@ -149,6 +149,10 @@ const useQueueStore = create((set, get) => ({
     const { queue, currentIndex } = get()
     if (fromIdx < 0 || fromIdx >= queue.length || toIdx < 0 || toIdx >= queue.length) return
 
+    // Store pre-optimistic state for rollback
+    const prevQueue = queue
+    const prevIndex = currentIndex
+
     // Optimistic local reorder
     const next = [...queue]
     const [moved] = next.splice(fromIdx, 1)
@@ -174,7 +178,8 @@ const useQueueStore = create((set, get) => ({
       const data = await res.json()
       set({ queue: normalizeQueue(data.queue) || next, online: true, lastSynced: Date.now() })
     } catch {
-      set({ online: false })
+      // Rollback to pre-optimistic state on server rejection
+      set({ queue: prevQueue, currentIndex: prevIndex, online: false })
     }
   },
 

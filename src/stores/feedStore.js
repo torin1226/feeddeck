@@ -69,6 +69,8 @@ const useFeedStore = create((set, get) => ({
       // Fire-and-forget: mark as watched on backend
       fetch(`/api/feed/watched?id=${encodeURIComponent(video.id)}`, { method: 'POST' }).catch(() => {})
     }
+    // Evict watchedIds to prevent unbounded growth
+    if (watchedIds.size > 1000) watchedIds.clear()
     set({ currentIndex: idx })
 
     // Check if we need to fetch more
@@ -91,14 +93,16 @@ const useFeedStore = create((set, get) => ({
         set(s => {
           const MAX_BUFFER = 200
           const newBuffer = [...s.buffer, ...videos]
-          // Evict oldest items if buffer grows too large, keeping currentIndex valid
+          // Evict oldest items if buffer grows too large
           if (newBuffer.length > MAX_BUFFER) {
             const trimCount = newBuffer.length - MAX_BUFFER
-            const safeToTrim = Math.min(trimCount, Math.max(0, s.currentIndex - 10))
-            return {
-              buffer: newBuffer.slice(safeToTrim),
-              currentIndex: s.currentIndex - safeToTrim,
-              loading: false,
+            if (trimCount > 0) {
+              const newBuf = newBuffer.slice(trimCount)
+              return {
+                buffer: newBuf,
+                currentIndex: Math.max(0, s.currentIndex - trimCount),
+                loading: false,
+              }
             }
           }
           return { buffer: newBuffer, loading: false }
@@ -136,6 +140,9 @@ const useFeedStore = create((set, get) => ({
 
   // Reset feed (e.g. on mode change)
   resetFeed: () => {
+    // Abort any in-flight warm requests
+    if (_warmAbortController) _warmAbortController.abort()
+    _warmAbortController = new AbortController()
     set({
       buffer: [],
       currentIndex: 0,
@@ -171,6 +178,9 @@ async function fetchFeedBatch(getState) {
   return (data.videos || []).filter(v => !watchedIds.has(v.id) && !bufferIds.has(v.id))
 }
 
+// AbortController for cancelling in-flight warm requests on reset
+let _warmAbortController = new AbortController()
+
 // Eagerly resolve stream URLs for videos that don't have one yet.
 // Fires requests in parallel (max 3) so they're cached server-side
 // by the time the user scrolls to them.
@@ -178,8 +188,9 @@ function _warmStreamUrls(videos) {
   const needWarm = videos.filter(v => !v.streamUrl && v.url).slice(0, 5)
   if (needWarm.length === 0) return
 
+  const signal = _warmAbortController.signal
   for (const v of needWarm) {
-    fetch(`/api/stream-url?url=${encodeURIComponent(v.url)}`)
+    fetch(`/api/stream-url?url=${encodeURIComponent(v.url)}`, { signal })
       .then(r => r.json())
       .then(data => {
         if (data.streamUrl) {
