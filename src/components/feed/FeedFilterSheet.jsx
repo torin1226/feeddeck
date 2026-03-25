@@ -34,14 +34,21 @@ export default function FeedFilterSheet({ onClose }) {
       .finally(() => setLoadingSources(false))
   }, [isSFW])
 
-  // Fetch popular tags
+  // Fetch popular tags (filtered by mode)
   useEffect(() => {
-    fetch('/api/tags/popular')
+    const mode = isSFW ? 'social' : 'nsfw'
+    fetch(`/api/tags/popular?mode=${mode}`)
       .then(r => r.json())
       .then(data => setTags((data.tags || []).slice(0, 20)))
       .catch(() => {})
       .finally(() => setLoadingTags(false))
-  }, [])
+  }, [isSFW])
+
+  // Clear search results on mode change
+  useEffect(() => {
+    setSearchQuery('')
+    setSearchResults(null)
+  }, [isSFW])
 
   // Toggle source selection
   const toggleSource = useCallback((domain) => {
@@ -74,7 +81,8 @@ export default function FeedFilterSheet({ onClose }) {
     searchTimer.current = setTimeout(async () => {
       setSearching(true)
       try {
-        const res = await fetch(`/api/search/multi?q=${encodeURIComponent(value.trim())}&limit=20`)
+        const mode = isSFW ? 'social' : 'nsfw'
+        const res = await fetch(`/api/search/multi?q=${encodeURIComponent(value.trim())}&limit=20&mode=${mode}`)
         const data = await res.json()
         setSearchResults(data.results || [])
       } catch {

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import useModeStore from '../stores/modeStore'
 import useQueueStore from '../stores/queueStore'
 import useLibraryStore from '../stores/libraryStore'
-import { getSFWData } from '../data/socialData'
 
 // ============================================================
 // VideoPlayer
@@ -25,8 +24,7 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
   const [selectedQuality, setSelectedQuality] = useState(() => localStorage.getItem('fd-quality') || 'auto')
   const [showQuality, setShowQuality] = useState(false)
 
-  const sfw = getSFWData(video.id)
-  const displayTitle = isSFW ? sfw.title : video.title
+  const displayTitle = video.title
 
   // Fetch direct stream URL from backend (yt-dlp resolves the page URL → CDN URL)
   useEffect(() => {
@@ -217,7 +215,7 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
             <div className="w-full h-full flex flex-col items-center justify-center text-text-muted gap-3 relative">
               {video.thumbnail && (
                 <img
-                  src={isSFW ? sfw.thumbnail : video.thumbnail}
+                  src={video.thumbnail}
                   alt=""
                   className="absolute inset-0 w-full h-full object-contain opacity-40"
                 />
@@ -243,9 +241,9 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
             <div className="flex-1 min-w-0">
               <h2 className="text-base font-semibold text-text-primary mb-1">{displayTitle}</h2>
               <div className="flex items-center gap-3 text-sm text-text-muted">
-                <span>{isSFW ? sfw.channel : (video.channel || video.source)}</span>
+                <span>{video.channel || video.source}</span>
                 <span>·</span>
-                <span>{isSFW ? sfw.views : video.views}</span>
+                <span>{video.views}</span>
                 {queue.length > 0 && (
                   <>
                     <span>·</span>

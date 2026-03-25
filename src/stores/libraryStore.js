@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import useModeStore from './modeStore'
 
 // ============================================================
 // Library Store
@@ -123,7 +124,8 @@ const useLibraryStore = create(
       // -----------------------------------------------------------
       loadFromServer: async () => {
         try {
-          const res = await fetch('/api/videos')
+          const mode = useModeStore.getState().isSFW ? 'social' : 'nsfw'
+          const res = await fetch(`/api/videos?mode=${mode}`)
           if (res.ok) {
             const data = await res.json()
             if (data.videos?.length) {

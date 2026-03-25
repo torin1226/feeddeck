@@ -4,7 +4,6 @@ import clsx from 'clsx'
 import useModeStore from '../stores/modeStore'
 import useLibraryStore from '../stores/libraryStore'
 import useQueueStore from '../stores/queueStore'
-import { getSFWData, generateDemoContent } from '../data/socialData'
 
 // ============================================================
 // MobileSwipeView
@@ -18,25 +17,21 @@ export default function MobileSwipeView() {
   const { videos, toggleFavorite, markWatched } = useLibraryStore()
   const { addToQueue } = useQueueStore()
 
-  // Use demo content in Social mode if library is empty
-  const displayVideos = isSFW && videos.length === 0
-    ? generateDemoContent(20)
-    : videos
+  const displayVideos = videos
 
   const [index, setIndex] = useState(0)
   const [showOverlay, setShowOverlay] = useState(true)
   const hideTimer = useRef(null)
 
   const current = displayVideos[index]
-  const sfw = current ? getSFWData(current.id) : null
   const display = current
-    ? (isSFW ? sfw : {
+    ? {
         title: current.title,
         thumbnail: current.thumbnail,
         views: current.views,
         channel: current.channel || current.source,
         duration: current.durationFormatted,
-      })
+      }
     : null
 
   // Auto-hide overlay

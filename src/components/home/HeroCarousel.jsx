@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import useHomeStore from '../../stores/homeStore'
+import useModeStore from '../../stores/modeStore'
 
 // ============================================================
 // HeroCarousel
@@ -42,7 +43,8 @@ export default function HeroCarousel() {
       if (!savedItems) setSavedItems([...carouselItems])
       setSearching(true)
       try {
-        const res = await fetch(`/api/search/multi?q=${encodeURIComponent(q)}&limit=20`)
+        const mode = useModeStore.getState().isSFW ? 'social' : 'nsfw'
+        const res = await fetch(`/api/search/multi?q=${encodeURIComponent(q)}&limit=20&mode=${mode}`)
         const data = await res.json()
         const results = (data.results || []).map(v => ({
           id: v.id || v.url,

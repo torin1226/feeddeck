@@ -1,6 +1,4 @@
-import useModeStore from '../stores/modeStore'
 import useQueueStore from '../stores/queueStore'
-import { getSFWData } from '../data/socialData'
 
 // ============================================================
 // QueueSidebar
@@ -10,7 +8,6 @@ import { getSFWData } from '../data/socialData'
 // ============================================================
 
 export default function QueueSidebar() {
-  const { isSFW } = useModeStore()
   const { queue, removeFromQueue, clearQueue } = useQueueStore()
 
   return (
@@ -51,7 +48,6 @@ export default function QueueSidebar() {
                 key={item.id}
                 item={item}
                 index={index}
-                isSFW={isSFW}
                 onRemove={() => removeFromQueue(item.id)}
               />
             ))}
@@ -65,11 +61,10 @@ export default function QueueSidebar() {
 // -----------------------------------------------------------
 // Single queue item row
 // -----------------------------------------------------------
-function QueueItem({ item, index, isSFW, onRemove }) {
-  const sfw = getSFWData(item.id)
-  const thumb = isSFW ? sfw.thumbnail : item.thumbnail
-  const title = isSFW ? sfw.title : item.title
-  const duration = isSFW ? sfw.duration : (item.duration_formatted || '0:00')
+function QueueItem({ item, index, onRemove }) {
+  const thumb = item.thumbnail
+  const title = item.title
+  const duration = item.duration_formatted || '0:00'
 
   return (
     <li className="group flex items-center gap-3 px-4 py-2 hover:bg-surface-overlay transition-colors">

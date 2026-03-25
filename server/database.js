@@ -95,6 +95,7 @@ export function initDatabase() {
       duration INTEGER DEFAULT 0,
       tags TEXT DEFAULT '[]',
       source TEXT,
+      mode TEXT NOT NULL DEFAULT 'social' CHECK(mode IN ('social', 'nsfw')),
       added_at DATETIME DEFAULT (datetime('now')),
       last_watched DATETIME,
       watch_count INTEGER DEFAULT 0,
@@ -315,6 +316,21 @@ export function initDatabase() {
     const cols = db.prepare("PRAGMA table_info(videos)").all()
     if (!cols.some(c => c.name === 'watch_later')) {
       db.exec("ALTER TABLE videos ADD COLUMN watch_later INTEGER DEFAULT 0")
+    }
+  } catch {}
+
+  // Migrate: add mode column to videos if missing, infer from source domain
+  try {
+    const cols = db.prepare("PRAGMA table_info(videos)").all()
+    if (!cols.some(c => c.name === 'mode')) {
+      db.exec("ALTER TABLE videos ADD COLUMN mode TEXT NOT NULL DEFAULT 'social'")
+      // Infer mode from source domain for existing rows
+      const nsfwDomains = ['pornhub.com', 'xvideos.com', 'spankbang.com', 'redtube.com',
+        'youporn.com', 'xhamster.com', 'redgifs.com', 'fikfap.com', 'xnxx.com']
+      for (const domain of nsfwDomains) {
+        db.prepare("UPDATE videos SET mode = 'nsfw' WHERE source LIKE ?").run(`%${domain}%`)
+      }
+      logger.info('Migrated videos table: added mode column, inferred mode from source domain')
     }
   } catch {}
 

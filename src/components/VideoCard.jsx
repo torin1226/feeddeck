@@ -1,9 +1,7 @@
 import { useState } from 'react'
 import clsx from 'clsx'
-import useModeStore from '../stores/modeStore'
 import useQueueStore from '../stores/queueStore'
 import useLibraryStore from '../stores/libraryStore'
-import { getSFWData } from '../data/socialData'
 import useHoverPreview from '../hooks/useHoverPreview'
 import ContextMenu from './ContextMenu'
 
@@ -16,24 +14,19 @@ import ContextMenu from './ContextMenu'
 // ============================================================
 
 export default function VideoCard({ video, onClick }) {
-  const { isSFW } = useModeStore()
   const { addToQueue } = useQueueStore()
   const { toggleFavorite } = useLibraryStore()
   const [ctxMenu, setCtxMenu] = useState(null)
   const { startPreview, cancelPreview } = useHoverPreview()
 
-  // Get the display data (real or fake)
-  const sfw = getSFWData(video.id)
-  const display = isSFW
-    ? sfw
-    : {
-        title: video.title,
-        thumbnail: video.thumbnail,
-        duration: video.durationFormatted || '0:00',
-        views: video.views || '',
-        channel: video.channel || video.source || '',
-        uploadDate: video.addedAt ? timeAgo(video.addedAt) : '',
-      }
+  const display = {
+    title: video.title,
+    thumbnail: video.thumbnail,
+    duration: video.durationFormatted || '0:00',
+    views: video.views || '',
+    channel: video.channel || video.source || '',
+    uploadDate: video.addedAt ? timeAgo(video.addedAt) : '',
+  }
 
   const handleContextMenu = (e) => {
     e.preventDefault()

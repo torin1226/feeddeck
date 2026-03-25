@@ -55,6 +55,34 @@ app.use(cors())
 app.use(express.json())
 
 // -----------------------------------------------------------
+// Mode inference: determine if a URL/source is NSFW or social
+// -----------------------------------------------------------
+const NSFW_DOMAINS = new Set([
+  'pornhub.com', 'xvideos.com', 'spankbang.com', 'redtube.com',
+  'youporn.com', 'xhamster.com', 'redgifs.com', 'fikfap.com', 'xnxx.com',
+])
+
+function inferMode(urlOrSource) {
+  if (!urlOrSource) return 'social'
+  const str = urlOrSource.toLowerCase()
+  for (const domain of NSFW_DOMAINS) {
+    if (str.includes(domain)) return 'nsfw'
+  }
+  return 'social'
+}
+
+/** Read mode from request query, default to 'social' (fail safe).
+ *  Logs a warning if mode param is missing on content endpoints. */
+function getMode(req) {
+  const mode = req.query.mode
+  if (!mode) {
+    logger.warn(`Missing mode param on ${req.path} — defaulting to social`, { query: req.query })
+  }
+  if (mode === 'nsfw') return 'nsfw'
+  return 'social'
+}
+
+// -----------------------------------------------------------
 // Health check
 // -----------------------------------------------------------
 app.get('/api/health', async (req, res) => {
@@ -82,8 +110,8 @@ app.get('/api/metadata', async (req, res) => {
     // Save to database
     try {
       const stmt = db.prepare(`
-        INSERT OR REPLACE INTO videos (id, url, title, thumbnail, duration, tags, source, added_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        INSERT OR REPLACE INTO videos (id, url, title, thumbnail, duration, tags, source, mode, added_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
       `)
       stmt.run(
         metadata.id,
@@ -92,7 +120,8 @@ app.get('/api/metadata', async (req, res) => {
         metadata.thumbnail,
         metadata.duration,
         JSON.stringify(metadata.tags),
-        metadata.source
+        metadata.source,
+        inferMode(url)
       )
     } catch (dbErr) {
       logger.warn('DB save failed', { error: dbErr.message })
@@ -329,7 +358,8 @@ app.get('/api/hls-proxy', async (req, res) => {
 // -----------------------------------------------------------
 app.get('/api/videos', (req, res) => {
   try {
-    const rows = db.prepare('SELECT * FROM videos ORDER BY added_at DESC').all()
+    const mode = getMode(req)
+    const rows = db.prepare('SELECT * FROM videos WHERE mode = ? ORDER BY added_at DESC').all(mode)
     const videos = rows.map((row) => ({
       ...row,
       tags: row.tags ? JSON.parse(row.tags) : [],
@@ -398,7 +428,8 @@ app.put('/api/videos/:id/watch-later', (req, res) => {
 // -----------------------------------------------------------
 app.get('/api/videos/favorites', (req, res) => {
   try {
-    const rows = db.prepare('SELECT * FROM videos WHERE favorite = 1 ORDER BY added_at DESC').all()
+    const mode = getMode(req)
+    const rows = db.prepare('SELECT * FROM videos WHERE favorite = 1 AND mode = ? ORDER BY added_at DESC').all(mode)
     const videos = rows.map(row => ({ ...row, tags: row.tags ? JSON.parse(row.tags) : [], durationFormatted: formatDuration(row.duration) }))
     res.json({ videos })
   } catch (err) {
@@ -412,7 +443,8 @@ app.get('/api/videos/favorites', (req, res) => {
 // -----------------------------------------------------------
 app.get('/api/videos/watch-later', (req, res) => {
   try {
-    const rows = db.prepare('SELECT * FROM videos WHERE watch_later = 1 ORDER BY added_at DESC').all()
+    const mode = getMode(req)
+    const rows = db.prepare('SELECT * FROM videos WHERE watch_later = 1 AND mode = ? ORDER BY added_at DESC').all(mode)
     const videos = rows.map(row => ({ ...row, tags: row.tags ? JSON.parse(row.tags) : [], durationFormatted: formatDuration(row.duration) }))
     res.json({ videos })
   } catch (err) {
@@ -520,7 +552,8 @@ app.delete('/api/tags/preferences/:tag', (req, res) => {
 // GET /api/tags/popular — list most common tags across all videos
 app.get('/api/tags/popular', (req, res) => {
   try {
-    const rows = db.prepare('SELECT tags FROM videos WHERE tags IS NOT NULL AND tags != \'[]\'').all()
+    const mode = getMode(req)
+    const rows = db.prepare('SELECT tags FROM videos WHERE tags IS NOT NULL AND tags != \'[]\' AND mode = ?').all(mode)
     const tagCounts = {}
     for (const row of rows) {
       try {
@@ -740,12 +773,12 @@ app.get('/api/recommendations/seed', async (req, res) => {
   // Phase 4: Import videos into library (videos table)
   let addedVideos = 0
   const insertVideo = db.prepare(`
-    INSERT OR IGNORE INTO videos (url, title, thumbnail, duration, source, tags, added_at)
-    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    INSERT OR IGNORE INTO videos (url, title, thumbnail, duration, source, tags, mode, added_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `)
   for (const v of importedVideos) {
     try {
-      const result = insertVideo.run(v.url, v.title, v.thumbnail, v.duration, v.source, JSON.stringify(v.tags))
+      const result = insertVideo.run(v.url, v.title, v.thumbnail, v.duration, v.source, JSON.stringify(v.tags), inferMode(v.url || v.source))
       if (result.changes > 0) addedVideos++
     } catch {}
   }
@@ -777,14 +810,15 @@ app.get('/api/recommendations/seed', async (req, res) => {
 
 app.get('/api/discover', (req, res) => {
   const { limit = 20 } = req.query
+  const mode = getMode(req)
   try {
     // Get tag preferences
     const prefs = db.prepare('SELECT tag, preference FROM tag_preferences').all()
     const liked = new Set(prefs.filter(p => p.preference === 'liked').map(p => p.tag))
     const disliked = new Set(prefs.filter(p => p.preference === 'disliked').map(p => p.tag))
 
-    // Get all unwatched videos
-    const videos = db.prepare('SELECT * FROM videos WHERE watch_count = 0 OR watch_count IS NULL ORDER BY added_at DESC').all()
+    // Get all unwatched videos (filtered by mode)
+    const videos = db.prepare('SELECT * FROM videos WHERE (watch_count = 0 OR watch_count IS NULL) AND mode = ? ORDER BY added_at DESC').all(mode)
 
     // Score each video
     const scored = videos.map(v => {
@@ -959,10 +993,18 @@ app.get('/api/search', (req, res) => {
 // -----------------------------------------------------------
 app.get('/api/search/multi', async (req, res) => {
   const { q, limit = 10 } = req.query
+  const mode = getMode(req)
   if (!q) return res.status(400).json({ error: 'Search query required' })
 
   try {
-    const videos = await scraperAdapter.searchAll(q, { limit: parseInt(limit, 10) })
+    let videos
+    if (mode === 'nsfw') {
+      // NSFW: hit all scraper sites in parallel
+      videos = await scraperAdapter.searchAll(q, { limit: parseInt(limit, 10) })
+    } else {
+      // Social: use yt-dlp YouTube search (scraper only has NSFW sites)
+      videos = await registry.search(q, { site: 'youtube.com', limit: parseInt(limit, 10) })
+    }
     res.json({
       query: q,
       count: videos.length,

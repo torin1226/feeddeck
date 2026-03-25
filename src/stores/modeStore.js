@@ -7,6 +7,9 @@ import { persist } from 'zustand/middleware'
 // - Always loads SFW first (safe default)
 // - Escape key → always goes TO SFW (panic)
 // - Persists preference for next session
+//
+// NUCLEAR SWITCH: On mode change, ALL content stores are flushed
+// instantly. No NSFW content survives a switch to SFW.
 // ============================================================
 
 const SOCIAL_FAVICON = "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>"
@@ -24,6 +27,33 @@ function setDocumentMeta(isSFW) {
   link.href = isSFW ? SOCIAL_FAVICON : NEUTRAL_FAVICON
 }
 
+/**
+ * Nuclear flush: purge ALL content from every store that might
+ * hold mode-specific data. Called on every mode switch.
+ * Lazy-imports stores to avoid circular dependency.
+ */
+async function nuclearFlush() {
+  // Destroy any active video elements immediately
+  document.querySelectorAll('video').forEach(v => {
+    v.pause()
+    v.removeAttribute('src')
+    v.load() // Force release of media resources
+  })
+
+  // Flush all content stores (lazy import to break circular deps)
+  const [{ default: useFeedStore }, { default: useHomeStore }, { default: useQueueStore }, { default: usePlayerStore }] = await Promise.all([
+    import('./feedStore'),
+    import('./homeStore'),
+    import('./queueStore'),
+    import('./playerStore'),
+  ])
+
+  useFeedStore.getState().resetFeed()
+  useHomeStore.getState().resetHome()
+  useQueueStore.getState().clearQueue()
+  usePlayerStore.getState().clear()
+}
+
 const useModeStore = create(
   persist(
     (set) => ({
@@ -34,11 +64,13 @@ const useModeStore = create(
       activateSFW: () => {
         setDocumentMeta(true)
         set({ isSFW: true })
+        nuclearFlush()
       },
 
       activateNSFW: () => {
         setDocumentMeta(false)
         set({ isSFW: false })
+        nuclearFlush()
       },
 
       toggleMode: () => {
@@ -47,6 +79,7 @@ const useModeStore = create(
           setDocumentMeta(next)
           return { isSFW: next }
         })
+        nuclearFlush()
       },
     }),
     {
