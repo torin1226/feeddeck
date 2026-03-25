@@ -18,6 +18,17 @@ const COOKIES_TMP = join(__dirname, '..', 'data', '.cookie-tmp')
 // Ensure temp dir exists for cookie copies
 try { mkdirSync(COOKIES_TMP, { recursive: true }) } catch {}
 
+// Clean up stale temp cookie files on startup
+try {
+  const { readdirSync } = await import('fs')
+  for (const f of readdirSync(COOKIES_TMP)) {
+    try { unlinkSync(join(COOKIES_TMP, f)) } catch {}
+  }
+} catch {}
+
+// Active temp files: track so we don't delete while in use
+const activeTempFiles = new Set()
+
 const COOKIE_MAP = {
   // Social — explicit cookie files
   'youtube.com':    { file: 'youtube.txt' },
@@ -29,9 +40,7 @@ const COOKIE_MAP = {
   'fikfap.com':     { file: 'fikfap.txt' },
   'redgifs.com':    { file: 'redgifs.txt' },
 
-  // NSFW — no cookies needed for public content (browser cookie extraction
-  // requires the browser to be closed, which is impractical)
-  // TODO: export explicit cookie files for these sites when logged in
+  // NSFW — no cookies needed for public content
   // 'xvideos.com':  { browser: 'chrome' },
   // 'spankbang.com': { browser: 'chrome' },
   // 'redtube.com':  { browser: 'chrome' },
@@ -77,15 +86,22 @@ export function getCookieArgs(url) {
     const fullPath = join(COOKIES_DIR, config.file)
     if (existsSync(fullPath)) {
       // Copy to temp file to avoid PermissionError when multiple yt-dlp
-      // processes try to write back to the same cookie file concurrently
+      // processes try to write back to the same cookie file concurrently.
+      // Use unique random name per call; cleanup after 3 minutes (yt-dlp
+      // search can take up to 2min).
       try {
-        const tmpPath = join(COOKIES_TMP, `${randomBytes(4).toString('hex')}-${config.file}`)
+        const tmpName = `${randomBytes(4).toString('hex')}-${config.file}`
+        const tmpPath = join(COOKIES_TMP, tmpName)
         copyFileSync(fullPath, tmpPath)
-        // Schedule cleanup after 60s (yt-dlp should be done by then)
-        setTimeout(() => { try { unlinkSync(tmpPath) } catch {} }, 60000)
+        activeTempFiles.add(tmpPath)
+        setTimeout(() => {
+          activeTempFiles.delete(tmpPath)
+          try { unlinkSync(tmpPath) } catch {}
+        }, 180_000)
         return ['--cookies', tmpPath]
-      } catch {
-        // Fallback to original if copy fails
+      } catch (err) {
+        logger.warn(`Cookie temp copy failed for ${config.file}: ${err.message}`)
+        // Fallback to original — may PermissionError on concurrent writes
         return ['--cookies', fullPath]
       }
     }

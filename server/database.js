@@ -262,9 +262,9 @@ export function initDatabase() {
   if (srcCount.n === 0) {
     const insertSrc = db.prepare('INSERT INTO sources (domain, mode, label, query, weight) VALUES (?, ?, ?, ?, ?)')
     const defaultSources = [
-      ['youtube.com',   'social', 'YouTube',   'https://www.youtube.com/feed/trending',    1.0],
-      ['tiktok.com',    'social', 'TikTok',    'https://www.tiktok.com/foryou',            0.9],
-      ['reddit.com',    'social', 'Reddit',    'https://www.reddit.com/r/videos/hot',      0.7],
+      ['youtube.com',   'social', 'YouTube',   'trending videos',    1.0],
+      ['tiktok.com',    'social', 'TikTok',    'tiktok viral trending',            0.9],
+      ['reddit.com',    'social', 'Reddit',    'reddit videos best of',      0.7],
       ['pornhub.com',   'nsfw',   'PornHub',   'https://www.pornhub.com/video?o=tr',       1.0],
       ['xvideos.com',   'nsfw',   'XVideos',   'https://www.xvideos.com/best',             0.8],
       ['spankbang.com', 'nsfw',   'SpankBang', 'https://spankbang.com/trending',           0.7],
@@ -280,7 +280,7 @@ export function initDatabase() {
   try {
     const insertSrc = db.prepare('INSERT OR IGNORE INTO sources (domain, mode, label, query, weight) VALUES (?, ?, ?, ?, ?)')
     const newSources = [
-      ['reddit.com',    'social', 'Reddit',    'https://www.reddit.com/r/videos/hot',  0.7],
+      ['reddit.com',    'social', 'Reddit',    'reddit videos best of',  0.7],
       ['xvideos.com',   'nsfw',   'XVideos',   'https://www.xvideos.com/best',         0.8],
       ['spankbang.com', 'nsfw',   'SpankBang', 'https://spankbang.com/trending',       0.7],
       ['redgifs.com',   'nsfw',   'RedGifs',   'https://www.redgifs.com/trending',     0.9],
@@ -289,6 +289,13 @@ export function initDatabase() {
     for (const row of newSources) {
       insertSrc.run(...row)
     }
+  } catch {}
+
+  // Migrate: fix social source queries from feed URLs (need auth) to search queries
+  try {
+    db.prepare("UPDATE sources SET query = 'trending videos' WHERE domain = 'youtube.com' AND query LIKE '%youtube.com/feed/%'").run()
+    db.prepare("UPDATE sources SET query = 'tiktok viral trending' WHERE domain = 'tiktok.com' AND query LIKE '%tiktok.com/%'").run()
+    db.prepare("UPDATE sources SET query = 'reddit videos best of' WHERE domain = 'reddit.com' AND query LIKE '%reddit.com/%'").run()
   } catch {}
 
   // Migrate: add fetch_interval and last_fetched to sources if missing

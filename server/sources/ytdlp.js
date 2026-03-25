@@ -101,21 +101,61 @@ export class YtDlpAdapter extends SourceAdapter {
     const { site, limit = 12 } = options
     let searchUrl
 
-    // If query is already a URL or yt-dlp search string, use it directly
-    if (query.startsWith('http') || /^ytsearch\w*:/i.test(query)) {
+    // If query is a yt-dlp search string (ytsearch:), use directly
+    if (/^ytsearch\w*:/i.test(query)) {
       searchUrl = query
+    } else if (query.startsWith('http')) {
+      // URL-based query: check if it's a social feed URL that needs auth
+      // Social feed URLs (youtube.com/feed/*, tiktok.com/foryou, reddit.com/r/*/hot)
+      // don't work without cookies — convert to search queries instead
+      const isSocialFeedUrl = /youtube\.com\/feed\//i.test(query) ||
+        /tiktok\.com\/(foryou|discover)/i.test(query) ||
+        /reddit\.com\/r\/\w+\/(hot|top|new)/i.test(query)
+
+      if (isSocialFeedUrl) {
+        // Extract a useful search term from the URL
+        const searchTerm = this._socialFeedToSearch(query, limit)
+        searchUrl = searchTerm
+      } else {
+        // Regular URL (category page, playlist, etc.) — use directly
+        searchUrl = query
+      }
     } else if (site && site.includes('pornhub')) {
       searchUrl = `https://www.pornhub.com/video/search?search=${encodeURIComponent(query)}`
     } else if (site && site.includes('xvideos')) {
       searchUrl = `https://www.xvideos.com/?k=${encodeURIComponent(query)}`
     } else if (site && site.includes('spankbang')) {
       searchUrl = `https://spankbang.com/s/${encodeURIComponent(query)}/`
+    } else if (site && (site.includes('tiktok') || site.includes('reddit'))) {
+      // Social sites without URL: use YouTube search as proxy (yt-dlp doesn't search TikTok/Reddit)
+      searchUrl = `ytsearch${limit}:${query}`
     } else {
       // Default: YouTube search
       searchUrl = `ytsearch${limit}:${query}`
     }
 
     return this._fetchPlaylist(searchUrl, limit)
+  }
+
+  // Convert social feed URLs (that require auth) to yt-dlp search queries
+  _socialFeedToSearch(feedUrl, limit) {
+    if (/youtube\.com\/feed\/trending/i.test(feedUrl)) {
+      // YouTube trending: use the trending music/videos playlist (public, no auth)
+      return 'https://www.youtube.com/playlist?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf'
+    }
+    if (/youtube\.com\/feed\//i.test(feedUrl)) {
+      // Other YouTube feeds (subscriptions, etc.) — fallback to popular search
+      return `ytsearch${limit}:trending videos today`
+    }
+    if (/tiktok\.com/i.test(feedUrl)) {
+      return `ytsearch${limit}:tiktok viral trending`
+    }
+    if (/reddit\.com\/r\/(\w+)/i.test(feedUrl)) {
+      const sub = feedUrl.match(/reddit\.com\/r\/(\w+)/i)[1]
+      return `ytsearch${limit}:reddit ${sub} best`
+    }
+    // Fallback
+    return `ytsearch${limit}:trending videos`
   }
 
   async fetchCategory(categoryUrl, options = {}) {

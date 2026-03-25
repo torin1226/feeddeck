@@ -71,15 +71,15 @@ const SITE_CONFIGS = {
     categoryUrl: (cat) => `https://spankbang.com/t/${encodeURIComponent(cat)}/`,
     trendingUrl: 'https://spankbang.com/trending_videos/',
     selectors: {
-      videoCard: '.video-item',
-      title: 'a.n',
-      thumbnail: 'img[data-src], picture img',
-      duration: '.l',
-      views: '.v',
-      uploader: '.u a',
-      link: 'a.n',
+      videoCard: '.js-video-item, [data-testid="video-item"]',
+      title: 'a[href*="/video/"][title]',
+      thumbnail: 'picture img, img',
+      duration: 'div[class*="bottom-2"][class*="right-2"], .l',
+      views: 'span[class*="whitespace-nowrap"], .v',
+      uploader: 'span.text-action-tertiary, .u a',
+      link: 'a[href*="/video/"]',
     },
-    thumbnailAttr: ['data-src', 'src'],
+    thumbnailAttr: ['src', 'data-src'],
     baseUrl: 'https://spankbang.com',
   },
 
@@ -252,7 +252,7 @@ export class ScraperAdapter extends SourceAdapter {
             }
           }
 
-          // Duration text like "12:34"
+          // Duration text: "12:34", "1:05:30", "10m", "1h 5m"
           const durEl = card.querySelector(cfg.selectors.duration)
           const durText = durEl?.textContent?.trim() || ''
           let duration = 0
@@ -263,6 +263,12 @@ export class ScraperAdapter extends SourceAdapter {
             } else {
               duration = parseInt(durMatch[1]) * 60 + parseInt(durMatch[2])
             }
+          } else {
+            // Handle "10m", "1h 5m", "1h" formats
+            const hMatch = durText.match(/(\d+)\s*h/)
+            const mMatch = durText.match(/(\d+)\s*m/)
+            if (hMatch) duration += parseInt(hMatch[1]) * 3600
+            if (mMatch) duration += parseInt(mMatch[1]) * 60
           }
 
           // Views
