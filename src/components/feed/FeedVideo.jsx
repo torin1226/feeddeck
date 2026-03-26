@@ -45,6 +45,28 @@ function _getPreloadWindow() {
   return 1 // 2g or slow-2g
 }
 
+// Semaphore to cap concurrent stream URL prefetches (prevents flooding the server)
+const MAX_CONCURRENT_PREFETCH = 2
+let _prefetchInFlight = 0
+const _prefetchQueue = [] // array of { resolve }
+
+function acquirePrefetchSlot() {
+  if (_prefetchInFlight < MAX_CONCURRENT_PREFETCH) {
+    _prefetchInFlight++
+    return Promise.resolve()
+  }
+  return new Promise(resolve => _prefetchQueue.push({ resolve }))
+}
+
+function releasePrefetchSlot() {
+  if (_prefetchQueue.length > 0) {
+    const next = _prefetchQueue.shift()
+    next.resolve()
+  } else {
+    _prefetchInFlight--
+  }
+}
+
 // Load a URL into the shared video.
 // All CDN URLs go through /api/proxy-stream to avoid ORB blocking on desktop
 // and ensure correct Referer headers. iOS could play direct but proxying
@@ -132,28 +154,43 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
     if (video.streamUrl) { setStreamUrl(video.streamUrl); return }
 
     let cancelled = false
+    let slotAcquired = false
     setStreamLoading(true)
-    setDebugMsg('fetching stream...')
+    setDebugMsg('waiting for prefetch slot...')
 
-    fetch(`/api/stream-url?url=${encodeURIComponent(video.url)}`)
-      .then(r => r.json())
-      .then(data => {
-        if (!cancelled && data.streamUrl) {
-          setStreamUrl(data.streamUrl)
-          setDebugMsg('got stream url')
-        } else {
-          setDebugMsg('no streamUrl in response')
-        }
-        setStreamLoading(false)
-      })
-      .catch((err) => {
-        if (!cancelled) {
+    acquirePrefetchSlot().then(() => {
+      if (cancelled) { releasePrefetchSlot(); return }
+      slotAcquired = true
+      setDebugMsg('fetching stream...')
+
+      return fetch(`/api/stream-url?url=${encodeURIComponent(video.url)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (!cancelled && data.streamUrl) {
+            setStreamUrl(data.streamUrl)
+            setDebugMsg('got stream url')
+          } else {
+            setDebugMsg('no streamUrl in response')
+          }
           setStreamLoading(false)
-          setDebugMsg('fetch error: ' + err.message)
-        }
-      })
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            setStreamLoading(false)
+            setDebugMsg('fetch error: ' + err.message)
+          }
+        })
+        .finally(() => releasePrefetchSlot())
+    })
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      if (!slotAcquired) {
+        // Remove from queue if we never got a slot
+        const idx = _prefetchQueue.findIndex(p => p === cancelled)
+        if (idx !== -1) _prefetchQueue.splice(idx, 1)
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- video.streamUrl is checked inside the effect as a shortcut; adding it would re-trigger the fetch
   }, [shouldLoad, video.url, streamUrl, streamLoading])
 
