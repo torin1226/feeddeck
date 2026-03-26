@@ -110,6 +110,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
   const setMuted = useFeedStore(s => s.setMuted)
   const [paused, setPaused] = useState(false)
   const [debugMsg, setDebugMsg] = useState(video.streamUrl ? 'has stream url' : 'init')
+  const [videoPlaying, setVideoPlaying] = useState(false) // true once video is visually playing
   const letterbox = useFeedStore(s => s.letterbox)
   const immersive = useFeedStore(s => s.immersive)
   const overlayVisible = useFeedStore(s => s.overlayVisible)
@@ -158,6 +159,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
   useEffect(() => {
     if (!isActive || !streamUrl || !containerEl.current) return
     let cancelled = false
+    setVideoPlaying(false)
 
     const vid = getSharedVideo()
     videoEl.current = vid
@@ -170,7 +172,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
     vid.muted = true
 
     // Event listeners
-    const onPlaying = () => setDebugMsg(`PLAYING muted=${vid.muted}`)
+    const onPlaying = () => { setVideoPlaying(true); setDebugMsg(`PLAYING muted=${vid.muted}`) }
     const onWaiting = () => setDebugMsg('buffering...')
     const onError = () => {
       const err = vid.error
@@ -215,6 +217,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
 
     return () => {
       cancelled = true
+      setVideoPlaying(false)
       vid.removeEventListener('playing', onPlaying)
       vid.removeEventListener('waiting', onWaiting)
       vid.removeEventListener('error', onError)
@@ -260,12 +263,14 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
       className="h-dvh w-full snap-start snap-always relative flex items-center justify-center bg-black"
       onClick={handleTap}
     >
-      {/* Thumbnail placeholder — shown when this slot is NOT active */}
-      {video.thumbnail && !isActive && (
+      {/* Thumbnail placeholder — shown until video is visually playing.
+          Keeps the thumbnail visible during the active-but-loading gap
+          to prevent black flicker between scroll-snap and first frame. */}
+      {video.thumbnail && !videoPlaying && (
         <img
           src={video.thumbnail}
           alt=""
-          className="absolute inset-0 w-full h-full"
+          className="absolute inset-0 w-full h-full z-[1]"
           style={{ objectFit }}
           draggable="false"
         />

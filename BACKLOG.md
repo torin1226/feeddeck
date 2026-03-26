@@ -575,7 +575,7 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 - [?] Homepage: click multiple different cards in sequence — each one plays
   > Same — needs manual verification
 - [?] Feed: swipe through 5+ videos — each autoplays on snap
-  > Feed API returns videos correctly. Needs manual test.
+  > Feed API returns videos correctly. Fixed black flicker between swipes (thumbnail stays visible until video's `playing` event fires). Needs manual test.
 - [?] Feed: navigate away and back — playback resumes
   > Needs manual test
 - [?] Queue: add 3+ videos, play through — autoadvance works, each video plays
