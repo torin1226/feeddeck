@@ -117,6 +117,16 @@ const useHomeStore = create((set, get) => ({
     })
   },
 
+  // Nuclear reset: clear all content (used on mode switch)
+  resetHome: () => set({
+    heroItem: null,
+    carouselItems: [],
+    theatreMode: false,
+    featuredItems: [],
+    featuredIndex: 0,
+    categories: [],
+  }),
+
   // Fetch real data from backend. Falls back to placeholders if empty.
   fetchHomepage: async (mode = 'social') => {
     try {

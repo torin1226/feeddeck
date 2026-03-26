@@ -5,6 +5,7 @@ import { existsSync, writeFileSync, unlinkSync, statSync, readFileSync } from 'f
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { randomBytes } from 'crypto'
+import { getCookieArgs } from './cookies.js'
 import { initDatabase, db } from './database.js'
 import { registry, ytdlp as ytdlpAdapter, scraper as scraperAdapter, closeAllSources } from './sources/index.js'
 import { logger } from './logger.js'
@@ -21,6 +22,10 @@ const ALLOWED_CDN_DOMAINS = [
   'tiktokcdn-us.com',
   'akamaized.net',
   'cloudfront.net',
+  'xvideos-cdn.com',
+  'spankbang.com',
+  'redgifs.com',
+  'thumbs2.redgifs.com',
 ]
 
 function isAllowedCdnUrl(url) {
@@ -50,6 +55,34 @@ app.use(cors())
 app.use(express.json())
 
 // -----------------------------------------------------------
+// Mode inference: determine if a URL/source is NSFW or social
+// -----------------------------------------------------------
+const NSFW_DOMAINS = new Set([
+  'pornhub.com', 'xvideos.com', 'spankbang.com', 'redtube.com',
+  'youporn.com', 'xhamster.com', 'redgifs.com', 'fikfap.com', 'xnxx.com',
+])
+
+function inferMode(urlOrSource) {
+  if (!urlOrSource) return 'social'
+  const str = urlOrSource.toLowerCase()
+  for (const domain of NSFW_DOMAINS) {
+    if (str.includes(domain)) return 'nsfw'
+  }
+  return 'social'
+}
+
+/** Read mode from request query, default to 'social' (fail safe).
+ *  Logs a warning if mode param is missing on content endpoints. */
+function getMode(req) {
+  const mode = req.query.mode
+  if (!mode) {
+    logger.warn(`Missing mode param on ${req.path} — defaulting to social`, { query: req.query })
+  }
+  if (mode === 'nsfw') return 'nsfw'
+  return 'social'
+}
+
+// -----------------------------------------------------------
 // Health check
 // -----------------------------------------------------------
 app.get('/api/health', async (req, res) => {
@@ -77,8 +110,8 @@ app.get('/api/metadata', async (req, res) => {
     // Save to database
     try {
       const stmt = db.prepare(`
-        INSERT OR REPLACE INTO videos (id, url, title, thumbnail, duration, tags, source, added_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        INSERT OR REPLACE INTO videos (id, url, title, thumbnail, duration, tags, source, mode, added_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
       `)
       stmt.run(
         metadata.id,
@@ -87,7 +120,8 @@ app.get('/api/metadata', async (req, res) => {
         metadata.thumbnail,
         metadata.duration,
         JSON.stringify(metadata.tags),
-        metadata.source
+        metadata.source,
+        inferMode(url)
       )
     } catch (dbErr) {
       logger.warn('DB save failed', { error: dbErr.message })
@@ -181,7 +215,7 @@ app.get('/api/stream-formats', async (req, res) => {
     const execFileAsync = promisify(execFile)
 
     const { stdout } = await execFileAsync('yt-dlp', [
-      '-j', '--no-warnings', '--no-playlist', url
+      ...getCookieArgs(url), '-j', '--no-warnings', '--no-playlist', url
     ], { timeout: 30000 })
 
     const info = JSON.parse(stdout)
@@ -294,7 +328,7 @@ app.get('/api/hls-proxy', async (req, res) => {
     }
     if (req.headers.range) headers['Range'] = req.headers.range
 
-    const upstream = await fetch(url, { headers })
+    const upstream = await fetch(url, { headers, signal: AbortSignal.timeout(15000) })
 
     if (url.includes('.m3u8')) {
       // Rewrite m3u8 playlist: proxy ALL non-comment lines (segments, variant playlists)
@@ -334,7 +368,8 @@ app.get('/api/hls-proxy', async (req, res) => {
 // -----------------------------------------------------------
 app.get('/api/videos', (req, res) => {
   try {
-    const rows = db.prepare('SELECT * FROM videos ORDER BY added_at DESC').all()
+    const mode = getMode(req)
+    const rows = db.prepare('SELECT * FROM videos WHERE mode = ? ORDER BY added_at DESC').all(mode)
     const videos = rows.map((row) => ({
       ...row,
       tags: row.tags ? JSON.parse(row.tags) : [],
@@ -403,7 +438,8 @@ app.put('/api/videos/:id/watch-later', (req, res) => {
 // -----------------------------------------------------------
 app.get('/api/videos/favorites', (req, res) => {
   try {
-    const rows = db.prepare('SELECT * FROM videos WHERE favorite = 1 ORDER BY added_at DESC').all()
+    const mode = getMode(req)
+    const rows = db.prepare('SELECT * FROM videos WHERE favorite = 1 AND mode = ? ORDER BY added_at DESC').all(mode)
     const videos = rows.map(row => ({ ...row, tags: row.tags ? JSON.parse(row.tags) : [], durationFormatted: formatDuration(row.duration) }))
     res.json({ videos })
   } catch (err) {
@@ -417,7 +453,8 @@ app.get('/api/videos/favorites', (req, res) => {
 // -----------------------------------------------------------
 app.get('/api/videos/watch-later', (req, res) => {
   try {
-    const rows = db.prepare('SELECT * FROM videos WHERE watch_later = 1 ORDER BY added_at DESC').all()
+    const mode = getMode(req)
+    const rows = db.prepare('SELECT * FROM videos WHERE watch_later = 1 AND mode = ? ORDER BY added_at DESC').all(mode)
     const videos = rows.map(row => ({ ...row, tags: row.tags ? JSON.parse(row.tags) : [], durationFormatted: formatDuration(row.duration) }))
     res.json({ videos })
   } catch (err) {
@@ -430,6 +467,7 @@ app.get('/api/videos/watch-later', (req, res) => {
 // Cookie Auth (3.4) — import browser cookies for yt-dlp
 // -----------------------------------------------------------
 
+// Legacy cookie path kept for cookie management API endpoints
 const COOKIES_PATH = join(__dirname, '..', 'data', 'cookies.txt')
 
 // POST /api/cookies — upload cookies.txt content
@@ -524,7 +562,8 @@ app.delete('/api/tags/preferences/:tag', (req, res) => {
 // GET /api/tags/popular — list most common tags across all videos
 app.get('/api/tags/popular', (req, res) => {
   try {
-    const rows = db.prepare('SELECT tags FROM videos WHERE tags IS NOT NULL AND tags != \'[]\'').all()
+    const mode = getMode(req)
+    const rows = db.prepare('SELECT tags FROM videos WHERE tags IS NOT NULL AND tags != \'[]\' AND mode = ?').all(mode)
     const tagCounts = {}
     for (const row of rows) {
       try {
@@ -630,15 +669,12 @@ app.get('/api/recommendations/seed', async (req, res) => {
   const { execFile } = await import('child_process')
   const { promisify } = await import('util')
   const execFileP = promisify(execFile)
-  const cookiesPath = join(__dirname, '..', 'data', 'cookies.txt')
-  const cookiesArgs = existsSync(cookiesPath) ? ['--cookies', cookiesPath] : []
-
   const allVideoUrls = []
   for (const src of urls) {
     send({ type: 'progress', phase: 'scan', source: src.label })
     try {
       const { stdout } = await execFileP('yt-dlp', [
-        ...cookiesArgs, '--flat-playlist', '--dump-json', '--no-warnings',
+        ...getCookieArgs(src.url), '--flat-playlist', '--dump-json', '--no-warnings',
         '--socket-timeout', '10', src.url
       ], { encoding: 'utf8', timeout: 60000, maxBuffer: 10 * 1024 * 1024, windowsHide: true })
 
@@ -679,7 +715,7 @@ app.get('/api/recommendations/seed', async (req, res) => {
     }
     try {
       const { stdout } = await execFileP('yt-dlp', [
-        ...cookiesArgs, '--dump-json', '--skip-download', '--no-playlist', '--no-warnings',
+        ...getCookieArgs(url), '--dump-json', '--skip-download', '--no-playlist', '--no-warnings',
         '--socket-timeout', '10', url
       ], { encoding: 'utf8', timeout: 30000, maxBuffer: 5 * 1024 * 1024, windowsHide: true })
 
@@ -747,12 +783,12 @@ app.get('/api/recommendations/seed', async (req, res) => {
   // Phase 4: Import videos into library (videos table)
   let addedVideos = 0
   const insertVideo = db.prepare(`
-    INSERT OR IGNORE INTO videos (url, title, thumbnail, duration, source, tags, added_at)
-    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    INSERT OR IGNORE INTO videos (url, title, thumbnail, duration, source, tags, mode, added_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `)
   for (const v of importedVideos) {
     try {
-      const result = insertVideo.run(v.url, v.title, v.thumbnail, v.duration, v.source, JSON.stringify(v.tags))
+      const result = insertVideo.run(v.url, v.title, v.thumbnail, v.duration, v.source, JSON.stringify(v.tags), inferMode(v.url || v.source))
       if (result.changes > 0) addedVideos++
     } catch {}
   }
@@ -784,14 +820,15 @@ app.get('/api/recommendations/seed', async (req, res) => {
 
 app.get('/api/discover', (req, res) => {
   const { limit = 20 } = req.query
+  const mode = getMode(req)
   try {
     // Get tag preferences
     const prefs = db.prepare('SELECT tag, preference FROM tag_preferences').all()
     const liked = new Set(prefs.filter(p => p.preference === 'liked').map(p => p.tag))
     const disliked = new Set(prefs.filter(p => p.preference === 'disliked').map(p => p.tag))
 
-    // Get all unwatched videos
-    const videos = db.prepare('SELECT * FROM videos WHERE watch_count = 0 OR watch_count IS NULL ORDER BY added_at DESC').all()
+    // Get all unwatched videos (filtered by mode)
+    const videos = db.prepare('SELECT * FROM videos WHERE (watch_count = 0 OR watch_count IS NULL) AND mode = ? ORDER BY added_at DESC').all(mode)
 
     // Score each video
     const scored = videos.map(v => {
@@ -966,10 +1003,18 @@ app.get('/api/search', (req, res) => {
 // -----------------------------------------------------------
 app.get('/api/search/multi', async (req, res) => {
   const { q, limit = 10 } = req.query
+  const mode = getMode(req)
   if (!q) return res.status(400).json({ error: 'Search query required' })
 
   try {
-    const videos = await scraperAdapter.searchAll(q, { limit: parseInt(limit, 10) })
+    let videos
+    if (mode === 'nsfw') {
+      // NSFW: hit all scraper sites in parallel
+      videos = await scraperAdapter.searchAll(q, { limit: parseInt(limit, 10) })
+    } else {
+      // Social: use yt-dlp YouTube search (scraper only has NSFW sites)
+      videos = await registry.search(q, { site: 'youtube.com', limit: parseInt(limit, 10) })
+    }
     res.json({
       query: q,
       count: videos.length,
@@ -1285,28 +1330,47 @@ app.post('/api/homepage/viewed', (req, res) => {
 // -----------------------------------------------------------
 // Async refill: fetch new videos for a category via yt-dlp
 // -----------------------------------------------------------
+// NSFW site round-robin for even distribution across sources
+const _nsfwSites = ['pornhub.com', 'xvideos.com', 'spankbang.com']
+let _nsfwSiteIdx = 0
+
 async function refillCategory(categoryKey) {
   const cat = db.prepare('SELECT query, mode FROM categories WHERE key = ?').get(categoryKey)
   if (!cat) return
 
-  // Build a personalized query by mixing in liked tag preferences
   let query = cat.query
+
+  // For yt-dlp search strings (not URLs), append personalization tags
+  if (!query.startsWith('http')) {
+    try {
+      const likedTags = db.prepare(
+        "SELECT tag FROM tag_preferences WHERE preference = 'liked' ORDER BY RANDOM() LIMIT 2"
+      ).all().map(r => r.tag)
+      if (likedTags.length > 0) {
+        query = `${query} ${likedTags.join(' ')}`
+        logger.info(`  🎯 Personalized query for ${categoryKey}: "${query}" (tags: ${likedTags.join(', ')})`)
+      }
+    } catch { /* tag_preferences may not exist yet — use base query */ }
+  }
+
+  logger.info(`  🔄 Refilling category: ${categoryKey} (query: "${query}")`)
+
   try {
-    const likedTags = db.prepare(
-      "SELECT tag FROM tag_preferences WHERE preference = 'liked' ORDER BY RANDOM() LIMIT 2"
-    ).all().map(r => r.tag)
-    if (likedTags.length > 0) {
-      query = `${cat.query} ${likedTags.join(' ')}`
-      logger.info(`  🎯 Personalized query for ${categoryKey}: "${query}" (base: "${cat.query}", tags: ${likedTags.join(', ')})`)
+    // Use yt-dlp for YouTube/search queries. For NSFW site URLs, use the
+    // registry fallback chain (scraper → yt-dlp) since yt-dlp can't always
+    // extract from NSFW sites directly.
+    let videos
+    if (cat.mode === 'nsfw' && query.startsWith('http')) {
+      // Extract domain from URL for site-specific routing
+      try {
+        const domain = new URL(query).hostname.replace(/^www\./, '')
+        videos = await registry.search(query, { site: domain, limit: 12 })
+      } catch {
+        videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
+      }
+    } else {
+      videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
     }
-  } catch { /* tag_preferences may not exist yet — use base query */ }
-
-  logger.info(`  🔄 Refilling category: ${categoryKey}`)
-
-  try {
-    // Use registry search with fallback (scraper → yt-dlp)
-    const site = cat.mode === 'nsfw' ? 'pornhub.com' : undefined
-    const videos = await registry.search(query, { site, limit: 12 })
 
     const insert = db.prepare(`
       INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, tags, fetched_at, expires_at)
@@ -1692,7 +1756,12 @@ function startScheduledTrendingRefresh() {
 
   let siteIndex = 0
 
+  // SFW category round-robin: refill one SFW category per tick
+  const sfwCategories = db.prepare("SELECT key FROM categories WHERE mode = 'social'").all()
+  let sfwCatIndex = 0
+
   backgroundIntervals.push(setInterval(async () => {
+    // --- NSFW: rotate through scraper sites for trending ---
     const site = sites[siteIndex % sites.length]
     siteIndex++
 
@@ -1717,6 +1786,15 @@ function startScheduledTrendingRefresh() {
       logger.info(`  ✅ Trending refresh: added ${added} videos from ${site}`)
     } catch (err) {
       logger.error(`  ❌ Trending refresh failed for ${site}:`, { error: err.message })
+    }
+
+    // --- SFW: refill one category per tick via yt-dlp ---
+    if (sfwCategories.length > 0) {
+      const sfwCat = sfwCategories[sfwCatIndex % sfwCategories.length]
+      sfwCatIndex++
+      refillCategory(sfwCat.key).catch(err =>
+        logger.error(`  ❌ SFW refresh error (${sfwCat.key}):`, { error: err.message })
+      )
     }
   }, TRENDING_INTERVAL))
 }
@@ -1787,6 +1865,87 @@ process.on('SIGTERM', async () => {
 process.on('SIGINT', () => process.emit('SIGTERM'))
 
 // -----------------------------------------------------------
+// TikTok Import API
+// -----------------------------------------------------------
+
+// Status of TikTok imports (pending/done/failed counts)
+app.get('/api/tiktok/status', (req, res) => {
+  try {
+    const counts = db.prepare(`
+      SELECT status, COUNT(*) as count FROM tiktok_imports GROUP BY status
+    `).all()
+    const byMode = db.prepare(`
+      SELECT mode, status, COUNT(*) as count FROM tiktok_imports GROUP BY mode, status
+    `).all()
+    const watchHistory = db.prepare(`
+      SELECT mode, COUNT(*) as count FROM tiktok_watch_history GROUP BY mode
+    `).all()
+
+    const summary = { pending: 0, done: 0, failed: 0 }
+    for (const row of counts) summary[row.status] = row.count
+
+    res.json({ summary, byMode, watchHistory })
+  } catch (err) {
+    // Tables may not exist yet
+    res.json({ summary: { pending: 0, done: 0, failed: 0 }, byMode: [], watchHistory: [] })
+  }
+})
+
+// Recent imports (processed videos)
+app.get('/api/tiktok/recent', (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200)
+    const mode = req.query.mode
+    const whereMode = mode ? 'AND ti.mode = ?' : ''
+    const params = mode ? ['done', limit, mode] : ['done', limit]
+
+    // Reorder params for the query
+    const rows = db.prepare(`
+      SELECT ti.url, ti.source, ti.tiktok_date, ti.mode, ti.processed_at,
+             v.title, v.thumbnail, v.duration, v.tags
+      FROM tiktok_imports ti
+      LEFT JOIN videos v ON v.url = ti.url
+      WHERE ti.status = ? ${whereMode}
+      ORDER BY ti.processed_at DESC
+      LIMIT ?
+    `).all(...(mode ? ['done', mode, limit] : ['done', limit]))
+
+    res.json(rows)
+  } catch (err) {
+    res.json([])
+  }
+})
+
+// Failed imports
+app.get('/api/tiktok/failed', (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200)
+    const rows = db.prepare(`
+      SELECT url, source, mode, error, processed_at
+      FROM tiktok_imports WHERE status = 'failed'
+      ORDER BY processed_at DESC LIMIT ?
+    `).all(limit)
+    res.json(rows)
+  } catch (err) {
+    res.json([])
+  }
+})
+
+// Watch history
+app.get('/api/tiktok/watch-history', (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 100, 500)
+    const mode = req.query.mode
+    const rows = mode
+      ? db.prepare('SELECT * FROM tiktok_watch_history WHERE mode = ? ORDER BY watched_at DESC LIMIT ?').all(mode, limit)
+      : db.prepare('SELECT * FROM tiktok_watch_history ORDER BY watched_at DESC LIMIT ?').all(limit)
+    res.json(rows)
+  } catch (err) {
+    res.json([])
+  }
+})
+
+// -----------------------------------------------------------
 // Start server
 // -----------------------------------------------------------
 initDatabase()
@@ -1810,4 +1969,21 @@ app.listen(PORT, '0.0.0.0', () => {
   startScheduledFeedRefill()
   startScheduledTrendingRefresh()
   startStreamUrlTTLMonitor()
+
+  // First-boot population: if homepage_cache is empty, sequentially refill all categories
+  const cacheCount = db.prepare('SELECT COUNT(*) as n FROM homepage_cache').get()
+  if (cacheCount.n === 0) {
+    logger.info('  🚀 First boot: populating homepage cache...')
+    const allCats = db.prepare('SELECT key FROM categories').all()
+    ;(async () => {
+      for (const cat of allCats) {
+        try {
+          await refillCategory(cat.key)
+        } catch (err) {
+          logger.error(`  First boot refill error (${cat.key}):`, { error: err.message })
+        }
+      }
+      logger.info('  ✅ First boot: homepage cache population complete')
+    })()
+  }
 })

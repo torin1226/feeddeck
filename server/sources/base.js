@@ -5,6 +5,8 @@
 // so no single source is a single point of failure.
 // ============================================================
 
+import { randomUUID } from 'crypto'
+
 export class SourceAdapter {
   constructor(config = {}) {
     this.name = config.name || 'unknown'
@@ -51,7 +53,7 @@ export class SourceAdapter {
   // Normalize yt-dlp / scraper output into our standard video shape
   normalizeVideo(raw) {
     return {
-      id: raw.id || crypto.randomUUID(),
+      id: raw.id || randomUUID(),
       url: raw.webpage_url || raw.url || '',
       title: raw.title || 'Untitled',
       thumbnail: raw.thumbnail || raw.thumbnails?.[0]?.url || '',

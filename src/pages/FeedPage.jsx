@@ -1,5 +1,9 @@
-import { useEffect, useRef, useCallback, useState } from 'react'
+import { useEffect, useRef, useCallback, useState, lazy, Suspense } from 'react'
 import useFeedStore from '../stores/feedStore'
+import useDesktopBreakpoint from '../hooks/useDesktopBreakpoint'
+
+const ForYouFeed = lazy(() => import('../components/feed/ForYouFeed'))
+const RemixFeed = lazy(() => import('../components/feed/RemixFeed'))
 import useModeStore from '../stores/modeStore'
 import useQueueStore from '../stores/queueStore'
 import useFeedGestures from '../hooks/useFeedGestures'
@@ -31,6 +35,11 @@ export default function FeedPage() {
   const [hearts, setHearts] = useState([])
   const [sourceSheet, setSourceSheet] = useState(null)
   const [showSwipeAnim, setShowSwipeAnim] = useState(false)
+
+  const isDesktop = useDesktopBreakpoint()
+  const feedView = useFeedStore(s => s.feedView)
+  const setFeedView = useFeedStore(s => s.setFeedView)
+  const theatreMode = useFeedStore(s => s.theatreMode)
 
   // Filter sheet state
   const [filterOpen, setFilterOpen] = useState(false)
@@ -166,6 +175,67 @@ export default function FeedPage() {
     }
   }, [currentIndex, resetFeed])
 
+  // Theatre mode swipe-up/down (mobile only) + body class
+  const theatreTouchStart = useRef(0)
+  useEffect(() => {
+    if (isDesktop) return
+    const container = containerRef.current
+    if (!container) return
+
+    const onTouchStart = (e) => {
+      theatreTouchStart.current = e.touches[0].clientY
+    }
+    const onTouchEnd = (e) => {
+      const dy = theatreTouchStart.current - e.changedTouches[0].clientY
+      const currentTheatreMode = useFeedStore.getState().theatreMode
+      if (dy > 80 && !currentTheatreMode) {
+        useFeedStore.getState().setTheatreMode(true)
+      } else if (dy < -80 && currentTheatreMode) {
+        useFeedStore.getState().setTheatreMode(false)
+      }
+    }
+
+    container.addEventListener('touchstart', onTouchStart, { passive: true })
+    container.addEventListener('touchend', onTouchEnd, { passive: true })
+    return () => {
+      container.removeEventListener('touchstart', onTouchStart)
+      container.removeEventListener('touchend', onTouchEnd)
+    }
+  }, [isDesktop])
+
+  // Sync body class for theatre mode (mobile + desktop)
+  useEffect(() => {
+    if (theatreMode) {
+      document.body.classList.add('theatre-active')
+    } else {
+      document.body.classList.remove('theatre-active')
+    }
+    return () => document.body.classList.remove('theatre-active')
+  }, [theatreMode])
+
+  // Double-tap left/right for ±10s seek in mobile theatre mode
+  const theatreDoubleTapRef = useRef({ lastTap: 0, lastX: null })
+  const handleTheatreDoubleTap = useCallback((e) => {
+    if (!useFeedStore.getState().theatreMode) return
+    const touch = e.changedTouches?.[0]
+    if (!touch) return
+    const now = Date.now()
+    const prev = theatreDoubleTapRef.current
+    if (now - prev.lastTap < 300) {
+      // Double tap detected
+      const { getSharedVideoEl } = window.__feedSharedVideo || {}
+      // Access shared video via module-level reference through a custom event
+      const seekEvent = new CustomEvent('feed:seek', {
+        detail: { delta: touch.clientX < window.innerWidth / 2 ? -10 : 10 }
+      })
+      window.dispatchEvent(seekEvent)
+      prev.lastTap = 0 // reset
+    } else {
+      prev.lastTap = now
+      prev.lastX = touch.clientX
+    }
+  }, [])
+
   // Keyboard navigation (up/down + left/right for desktop)
   useEffect(() => {
     const handleKey = (e) => {
@@ -215,6 +285,36 @@ export default function FeedPage() {
     return () => container.removeEventListener('scroll', onScroll)
   }, [])
 
+  // Desktop: show tab bar + selected feed view
+  if (isDesktop) {
+    return (
+      <div className="h-dvh w-full bg-black relative">
+        {/* Tab bar — top center, only visible when not in theatre mode */}
+        {!theatreMode && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex gap-1 p-1 rounded-full bg-black/40 backdrop-blur-lg border border-white/10">
+            {['foryou', 'remix'].map(view => (
+              <button
+                key={view}
+                onClick={() => setFeedView(view)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                  feedView === view
+                    ? 'bg-white/20 text-white'
+                    : 'text-white/50 hover:text-white/70'
+                }`}
+              >
+                {view === 'foryou' ? 'For You' : 'Remix'}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <Suspense fallback={<div className="h-dvh bg-black" />}>
+          {feedView === 'foryou' ? <ForYouFeed /> : <RemixFeed />}
+        </Suspense>
+      </div>
+    )
+  }
+
   if (!initialized && loading) {
     return (
       <div className="h-dvh w-full bg-black flex items-center justify-center">
@@ -256,6 +356,7 @@ export default function FeedPage() {
         ref={containerRef}
         className="h-dvh w-full overflow-y-scroll snap-y snap-mandatory bg-black scrollbar-none"
         style={{ scrollBehavior: 'smooth' }}
+        onTouchEnd={!isDesktop ? handleTheatreDoubleTap : undefined}
       >
         {buffer.map((video, idx) => (
           <FeedVideo
@@ -283,7 +384,7 @@ export default function FeedPage() {
       </div>
 
       {/* Filter button (top-left) */}
-      {(!immersive || overlayVisible) && (
+      {(!immersive || overlayVisible) && !theatreMode && (
         <button
           onClick={() => setFilterOpen(true)}
           className={`fixed top-4 left-4 z-50 h-10 rounded-full
@@ -304,7 +405,7 @@ export default function FeedPage() {
       )}
 
       {/* Refresh button (top-right, visible when at first video) */}
-      {currentIndex === 0 && !refreshing && (
+      {currentIndex === 0 && !refreshing && !theatreMode && (
         <button
           onClick={() => {
             setRefreshing(true)
@@ -326,7 +427,7 @@ export default function FeedPage() {
       )}
 
       {/* Immersive mode toggle (below refresh or alone in top-right) */}
-      {(!immersive || overlayVisible) && (
+      {(!immersive || overlayVisible) && !theatreMode && (
         <button
           onClick={() => useFeedStore.getState().toggleImmersive()}
           className={`fixed z-50 w-10 h-10 rounded-full
@@ -392,7 +493,7 @@ export default function FeedPage() {
       )}
 
       {/* Bottom navigation */}
-      <FeedBottomNav hidden={navHidden || (immersive && !overlayVisible)} onFilterOpen={() => setFilterOpen(true)} />
+      <FeedBottomNav hidden={navHidden || (immersive && !overlayVisible) || theatreMode} onFilterOpen={() => setFilterOpen(true)} />
 
       {/* Source control sheet (long-press) */}
       {sourceSheet && (

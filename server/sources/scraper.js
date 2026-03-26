@@ -71,15 +71,15 @@ const SITE_CONFIGS = {
     categoryUrl: (cat) => `https://spankbang.com/t/${encodeURIComponent(cat)}/`,
     trendingUrl: 'https://spankbang.com/trending_videos/',
     selectors: {
-      videoCard: '.video-item',
-      title: 'a.n',
-      thumbnail: 'img[data-src], picture img',
-      duration: '.l',
-      views: '.v',
-      uploader: '.u a',
-      link: 'a.n',
+      videoCard: '.js-video-item, [data-testid="video-item"]',
+      title: 'a[href*="/video/"][title]',
+      thumbnail: 'picture img, img',
+      duration: 'div[class*="bottom-2"][class*="right-2"], .l',
+      views: 'span[class*="whitespace-nowrap"], .v',
+      uploader: 'span.text-action-tertiary, .u a',
+      link: 'a[href*="/video/"]',
     },
-    thumbnailAttr: ['data-src', 'src'],
+    thumbnailAttr: ['src', 'data-src'],
     baseUrl: 'https://spankbang.com',
   },
 
@@ -149,6 +149,7 @@ export class ScraperAdapter extends SourceAdapter {
       },
     })
     this.browser = null
+    this._consecutiveFailures = 0
   }
 
   async _getBrowser() {
@@ -171,22 +172,27 @@ export class ScraperAdapter extends SourceAdapter {
     const browser = await this._getBrowser()
     const page = await browser.newPage()
 
-    // Stealth basics: realistic user agent + viewport
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'
-    )
-    await page.setViewport({ width: 1920, height: 1080 })
+    try {
+      // Stealth basics: realistic user agent + viewport
+      await page.setUserAgent(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'
+      )
+      await page.setViewport({ width: 1920, height: 1080 })
 
-    // Block images, fonts, and CSS to speed things up (we only need the DOM)
-    await page.setRequestInterception(true)
-    page.on('request', (req) => {
-      const type = req.resourceType()
-      if (['image', 'font', 'stylesheet', 'media'].includes(type)) {
-        req.abort()
-      } else {
-        req.continue()
-      }
-    })
+      // Block images, fonts, and CSS to speed things up (we only need the DOM)
+      await page.setRequestInterception(true)
+      page.on('request', (req) => {
+        const type = req.resourceType()
+        if (['image', 'font', 'stylesheet', 'media'].includes(type)) {
+          try { req.abort() } catch {}
+        } else {
+          try { req.continue() } catch {}
+        }
+      })
+    } catch (err) {
+      await page.close().catch(() => {})
+      throw err
+    }
 
     return page
   }
@@ -254,7 +260,7 @@ export class ScraperAdapter extends SourceAdapter {
             }
           }
 
-          // Duration text like "12:34"
+          // Duration text: "12:34", "1:05:30", "10m", "1h 5m"
           const durEl = card.querySelector(cfg.selectors.duration)
           const durText = durEl?.textContent?.trim() || ''
           let duration = 0
@@ -265,6 +271,12 @@ export class ScraperAdapter extends SourceAdapter {
             } else {
               duration = parseInt(durMatch[1]) * 60 + parseInt(durMatch[2])
             }
+          } else {
+            // Handle "10m", "1h 5m", "1h" formats
+            const hMatch = durText.match(/(\d+)\s*h/)
+            const mMatch = durText.match(/(\d+)\s*m/)
+            if (hMatch) duration += parseInt(hMatch[1]) * 3600
+            if (mMatch) duration += parseInt(mMatch[1]) * 60
           }
 
           // Views
@@ -290,6 +302,7 @@ export class ScraperAdapter extends SourceAdapter {
       }, config, limit)
 
       // Normalize into our standard shape
+      this._consecutiveFailures = 0
       return videos.map(v => this.normalizeVideo({
         id: this._urlToId(v.url),
         webpage_url: v.url,
@@ -301,12 +314,16 @@ export class ScraperAdapter extends SourceAdapter {
         source: siteKey,
       }))
     } catch (err) {
-      // Close the browser on failure so leaked instances don't accumulate
-      await page.close().catch(() => {})
-      await this._closeBrowser()
+      // Close browser after repeated failures to prevent leaked instances
+      this._consecutiveFailures++
+      if (this._consecutiveFailures >= 5) {
+        await this._closeBrowser()
+        this._consecutiveFailures = 0
+      }
       throw err
+    } finally {
+      await page.close().catch(() => {})
     }
-    await page.close()
   }
 
   // Close and null the browser so it gets re-launched on next use

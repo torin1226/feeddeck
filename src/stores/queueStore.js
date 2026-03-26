@@ -1,13 +1,21 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
+import { safeStorage } from './safeStorage'
 
 // ============================================================
-// Queue Store (Server-Backed)
+// Queue Store (Server-Backed with Offline Persistence)
 // Manages the play-next queue. All mutations hit the API first,
 // then update local state from the server response. Polling
 // (useQueueSync hook) keeps multiple clients in sync.
+// Queue persists to localStorage for survival across server
+// restarts — server state wins on reconnect.
 // ============================================================
 
 const API = '/api'
+
+// Serialize reorder requests to prevent race conditions from rapid drags
+let _reorderInFlight = false
+let _pendingReorder = null
 
 // Normalize server queue items to include `url` (alias of `video_url`)
 // and `durationFormatted` (alias of `duration_formatted`) for backwards compat
@@ -18,7 +26,7 @@ function normalizeQueue(items) {
   return (items || []).map(normalizeItem)
 }
 
-const useQueueStore = create((set, get) => ({
+const useQueueStore = create(persist((set, get) => ({
   // State
   queue: [],          // Array of { id, position, video_url, title, thumbnail, duration, duration_formatted }
   currentIndex: -1,   // Which queue item is playing (-1 = none)
@@ -149,6 +157,10 @@ const useQueueStore = create((set, get) => ({
     const { queue, currentIndex } = get()
     if (fromIdx < 0 || fromIdx >= queue.length || toIdx < 0 || toIdx >= queue.length) return
 
+    // Store pre-optimistic state for rollback
+    const prevQueue = queue
+    const prevIndex = currentIndex
+
     // Optimistic local reorder
     const next = [...queue]
     const [moved] = next.splice(fromIdx, 1)
@@ -163,7 +175,13 @@ const useQueueStore = create((set, get) => ({
 
     set({ queue: next, currentIndex: newIndex })
 
-    // Send reorder to server
+    // Serialize reorder requests to prevent race conditions
+    if (_reorderInFlight) {
+      _pendingReorder = { order: next.map(item => item.id), prevQueue, prevIndex }
+      return
+    }
+
+    _reorderInFlight = true
     try {
       const res = await fetch(`${API}/queue`, {
         method: 'PUT',
@@ -174,7 +192,29 @@ const useQueueStore = create((set, get) => ({
       const data = await res.json()
       set({ queue: normalizeQueue(data.queue) || next, online: true, lastSynced: Date.now() })
     } catch {
-      set({ online: false })
+      set({ queue: prevQueue, currentIndex: prevIndex, online: false })
+    } finally {
+      _reorderInFlight = false
+      // Process any pending reorder that came in while we were syncing
+      if (_pendingReorder) {
+        const pending = _pendingReorder
+        _pendingReorder = null
+        _reorderInFlight = true
+        try {
+          const res = await fetch(`${API}/queue`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order: pending.order }),
+          })
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          const data = await res.json()
+          set({ queue: normalizeQueue(data.queue), online: true, lastSynced: Date.now() })
+        } catch {
+          set({ queue: pending.prevQueue, currentIndex: pending.prevIndex, online: false })
+        } finally {
+          _reorderInFlight = false
+        }
+      }
     }
   },
 
@@ -185,8 +225,11 @@ const useQueueStore = create((set, get) => ({
     const { queue, currentIndex } = get()
     if (currentIndex < queue.length - 1) {
       const nextIndex = currentIndex + 1
+      const nextItem = queue[nextIndex]
+      // Validate item has a URL before advancing
+      if (!nextItem?.url && !nextItem?.video_url) return null
       set({ currentIndex: nextIndex })
-      return queue[nextIndex]
+      return nextItem
     }
     return null
   },
@@ -208,6 +251,13 @@ const useQueueStore = create((set, get) => ({
   // Set currently playing index directly (local only)
   // -----------------------------------------------------------
   setCurrentIndex: (index) => set({ currentIndex: index }),
+}), {
+  name: 'fd-queue',
+  storage: safeStorage,
+  partialize: (state) => ({
+    queue: state.queue,
+    currentIndex: state.currentIndex,
+  }),
 }))
 
 export default useQueueStore

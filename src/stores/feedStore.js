@@ -11,7 +11,7 @@ const BUFFER_THRESHOLD = 5 // fetch more when this many from end
 const FETCH_COUNT = 10
 
 // AbortController for in-flight stream URL warm-up fetches
-let warmAbort = null
+let _warmAbortController = new AbortController()
 
 const useFeedStore = create((set, get) => ({
   // Feed buffer — array of video objects
@@ -44,6 +44,18 @@ const useFeedStore = create((set, get) => ({
   })),
   flashOverlay: () => set({ overlayVisible: true }), // called on tap in immersive mode
 
+  // Desktop feed view preference: 'foryou' | 'remix'
+  feedView: 'foryou',
+  setFeedView: (view) => {
+    set({ feedView: view })
+    try { localStorage.setItem('fd-feed-view', view) } catch {}
+  },
+
+  // Theatre mode (not persisted — resets each session)
+  theatreMode: false,
+  setTheatreMode: (val) => set({ theatreMode: val }),
+  toggleTheatreMode: () => set(s => ({ theatreMode: !s.theatreMode })),
+
   // Initialize the feed — fetch first batch (or use prefetched buffer)
   initFeed: async () => {
     const { initialized, loading, buffer } = get()
@@ -72,6 +84,8 @@ const useFeedStore = create((set, get) => ({
       // Fire-and-forget: mark as watched on backend
       fetch(`/api/feed/watched?id=${encodeURIComponent(video.id)}`, { method: 'POST' }).catch(() => {})
     }
+    // Evict watchedIds to prevent unbounded growth
+    if (watchedIds.size > 1000) watchedIds.clear()
     set({ currentIndex: idx })
 
     // Check if we need to fetch more
@@ -94,14 +108,16 @@ const useFeedStore = create((set, get) => ({
         set(s => {
           const MAX_BUFFER = 200
           const newBuffer = [...s.buffer, ...videos]
-          // Evict oldest items if buffer grows too large, keeping currentIndex valid
+          // Evict oldest items if buffer grows too large
           if (newBuffer.length > MAX_BUFFER) {
             const trimCount = newBuffer.length - MAX_BUFFER
-            const safeToTrim = Math.min(trimCount, Math.max(0, s.currentIndex - 10))
-            return {
-              buffer: newBuffer.slice(safeToTrim),
-              currentIndex: s.currentIndex - safeToTrim,
-              loading: false,
+            if (trimCount > 0) {
+              const newBuf = newBuffer.slice(trimCount)
+              return {
+                buffer: newBuf,
+                currentIndex: Math.max(0, s.currentIndex - trimCount),
+                loading: false,
+              }
             }
           }
           return { buffer: newBuffer, loading: false }
@@ -140,7 +156,8 @@ const useFeedStore = create((set, get) => ({
   // Reset feed (e.g. on mode change)
   resetFeed: () => {
     // Abort any in-flight warm-up fetches so they don't update stale buffer
-    if (warmAbort) { warmAbort.abort(); warmAbort = null }
+    _warmAbortController.abort()
+    _warmAbortController = new AbortController()
     set({
       buffer: [],
       currentIndex: 0,
@@ -156,6 +173,14 @@ try {
   const stored = localStorage.getItem('fd-feed-letterbox')
   if (stored !== null) {
     useFeedStore.setState({ letterbox: JSON.parse(stored) })
+  }
+} catch {}
+
+// Load feed view preference from localStorage
+try {
+  const storedView = localStorage.getItem('fd-feed-view')
+  if (storedView === 'foryou' || storedView === 'remix') {
+    useFeedStore.setState({ feedView: storedView })
   }
 } catch {}
 
@@ -183,11 +208,7 @@ function _warmStreamUrls(videos) {
   const needWarm = videos.filter(v => !v.streamUrl && v.url).slice(0, 5)
   if (needWarm.length === 0) return
 
-  // Abort previous batch and start a new one
-  if (warmAbort) warmAbort.abort()
-  warmAbort = new AbortController()
-  const { signal } = warmAbort
-
+  const signal = _warmAbortController.signal
   for (const v of needWarm) {
     fetch(`/api/stream-url?url=${encodeURIComponent(v.url)}`, { signal })
       .then(r => r.json())

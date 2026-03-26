@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import useQueueStore from '../stores/queueStore'
 import useModeStore from '../stores/modeStore'
-import { getSFWData } from '../data/socialData'
 import { queueCollapseRef } from '../hooks/useKeyboard'
 
 // ============================================================
@@ -244,11 +243,9 @@ function QueueRow({
   onDrop,
   onDragEnd,
 }) {
-  // In Social mode, swap in neutral data based on the video's real ID
-  const sfw = getSFWData(item.id)
-  const thumb = isSFW ? sfw.thumbnail : item.thumbnail
-  const title = isSFW ? sfw.title : item.title
-  const duration = isSFW ? sfw.duration : (item.duration_formatted || item.durationFormatted || '0:00')
+  const thumb = item.thumbnail
+  const title = item.title
+  const duration = item.duration_formatted || item.durationFormatted || '0:00'
 
   return (
     <li

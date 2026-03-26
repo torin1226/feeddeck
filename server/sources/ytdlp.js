@@ -7,14 +7,10 @@
 
 import { execFile, execFileSync, spawn } from 'child_process'
 import { promisify } from 'util'
-import { existsSync } from 'fs'
-import { join, dirname } from 'path'
-import { fileURLToPath } from 'url'
 import { SourceAdapter } from './base.js'
+import { getCookieArgs } from '../cookies.js'
 
 const execFileAsync = promisify(execFile)
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const COOKIES_PATH = join(__dirname, '..', '..', 'data', 'cookies.txt')
 
 // yt-dlp supports 1000+ sites, so we don't restrict by domain.
 // It acts as the universal fallback for extraction.
@@ -23,12 +19,9 @@ const YTDLP_SEARCH_TIMEOUT = 120_000
 const MAX_BUFFER = 50 * 1024 * 1024
 
 // Safe yt-dlp execution — uses execFile (no shell) to prevent command injection
-// Automatically passes --cookies flag when cookies.txt exists
-async function ytdlp(args, options = {}) {
-  const finalArgs = [...args]
-  if (existsSync(COOKIES_PATH)) {
-    finalArgs.unshift('--cookies', COOKIES_PATH)
-  }
+// Routes cookies per-domain based on the URL being fetched
+async function ytdlp(args, url, options = {}) {
+  const finalArgs = [...getCookieArgs(url), ...args]
   const { stdout } = await execFileAsync('yt-dlp', finalArgs, {
     encoding: 'utf8',
     timeout: options.timeout || YTDLP_TIMEOUT,
@@ -73,8 +66,13 @@ export class YtDlpAdapter extends SourceAdapter {
 
   async extractMetadata(url) {
     if (!this.isAvailable()) throw new Error('yt-dlp not installed')
-    const stdout = await ytdlp(['--dump-json', '--no-download', url])
-    const data = JSON.parse(stdout)
+    const stdout = await ytdlp(['--dump-json', '--no-download', url], url)
+    let data
+    try {
+      data = JSON.parse(stdout)
+    } catch {
+      throw new Error(`yt-dlp returned invalid JSON for ${url}: ${stdout.slice(0, 500)}`)
+    }
     return this.normalizeVideo(data)
   }
 
@@ -82,14 +80,14 @@ export class YtDlpAdapter extends SourceAdapter {
     if (!this.isAvailable()) throw new Error('yt-dlp not installed')
 
     const formatStr = '480p/240p/720p/best[height<=480][protocol=https][ext=mp4][vcodec!*=av01]/best[height<=480][ext=mp4]/18/best[ext=mp4]/best'
-    const stdout = await ytdlp(['-g', '-f', formatStr, url])
+    const stdout = await ytdlp(['-g', '-f', formatStr, url], url)
 
     let cdnUrl = stdout.trim().split('\n')[0]
 
     // If yt-dlp returned HLS, retry with direct MP4 formats
     if (cdnUrl.includes('.m3u8')) {
       try {
-        const mp4Out = await ytdlp(['-g', '-f', '480p/240p/720p/18', url])
+        const mp4Out = await ytdlp(['-g', '-f', '480p/240p/720p/18', url], url)
         cdnUrl = mp4Out.trim().split('\n')[0]
       } catch { /* keep original if format 18 fails */ }
     }
@@ -103,18 +101,61 @@ export class YtDlpAdapter extends SourceAdapter {
     const { site, limit = 12 } = options
     let searchUrl
 
-    if (site && site.includes('pornhub')) {
+    // If query is a yt-dlp search string (ytsearch:), use directly
+    if (/^ytsearch\w*:/i.test(query)) {
+      searchUrl = query
+    } else if (query.startsWith('http')) {
+      // URL-based query: check if it's a social feed URL that needs auth
+      // Social feed URLs (youtube.com/feed/*, tiktok.com/foryou, reddit.com/r/*/hot)
+      // don't work without cookies — convert to search queries instead
+      const isSocialFeedUrl = /youtube\.com\/feed\//i.test(query) ||
+        /tiktok\.com\/(foryou|discover)/i.test(query) ||
+        /reddit\.com\/r\/\w+\/(hot|top|new)/i.test(query)
+
+      if (isSocialFeedUrl) {
+        // Extract a useful search term from the URL
+        const searchTerm = this._socialFeedToSearch(query, limit)
+        searchUrl = searchTerm
+      } else {
+        // Regular URL (category page, playlist, etc.) — use directly
+        searchUrl = query
+      }
+    } else if (site && site.includes('pornhub')) {
       searchUrl = `https://www.pornhub.com/video/search?search=${encodeURIComponent(query)}`
     } else if (site && site.includes('xvideos')) {
       searchUrl = `https://www.xvideos.com/?k=${encodeURIComponent(query)}`
     } else if (site && site.includes('spankbang')) {
       searchUrl = `https://spankbang.com/s/${encodeURIComponent(query)}/`
+    } else if (site && (site.includes('tiktok') || site.includes('reddit'))) {
+      // Social sites without URL: use YouTube search as proxy (yt-dlp doesn't search TikTok/Reddit)
+      searchUrl = `ytsearch${limit}:${query}`
     } else {
       // Default: YouTube search
       searchUrl = `ytsearch${limit}:${query}`
     }
 
     return this._fetchPlaylist(searchUrl, limit)
+  }
+
+  // Convert social feed URLs (that require auth) to yt-dlp search queries
+  _socialFeedToSearch(feedUrl, limit) {
+    if (/youtube\.com\/feed\/trending/i.test(feedUrl)) {
+      // YouTube trending: use the trending music/videos playlist (public, no auth)
+      return 'https://www.youtube.com/playlist?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf'
+    }
+    if (/youtube\.com\/feed\//i.test(feedUrl)) {
+      // Other YouTube feeds (subscriptions, etc.) — fallback to popular search
+      return `ytsearch${limit}:trending videos today`
+    }
+    if (/tiktok\.com/i.test(feedUrl)) {
+      return `ytsearch${limit}:tiktok viral trending`
+    }
+    if (/reddit\.com\/r\/(\w+)/i.test(feedUrl)) {
+      const sub = feedUrl.match(/reddit\.com\/r\/(\w+)/i)[1]
+      return `ytsearch${limit}:reddit ${sub} best`
+    }
+    // Fallback
+    return `ytsearch${limit}:trending videos`
   }
 
   async fetchCategory(categoryUrl, options = {}) {
@@ -144,6 +185,7 @@ export class YtDlpAdapter extends SourceAdapter {
 
     const stdout = await ytdlp(
       ['--dump-json', '--playlist-end', String(limit), '--no-download', url],
+      url,
       { timeout: YTDLP_SEARCH_TIMEOUT }
     )
 
@@ -174,7 +216,7 @@ export class YtDlpAdapter extends SourceAdapter {
       searchUrl = `ytsearch${limit}:${query}`
     }
 
-    const child = spawn('yt-dlp', ['--dump-json', '--playlist-end', String(limit), searchUrl])
+    const child = spawn('yt-dlp', [...getCookieArgs(searchUrl), '--dump-json', '--playlist-end', String(limit), searchUrl])
 
     // Kill subprocess after 60s to prevent resource leaks
     const timeout = setTimeout(() => { try { child.kill('SIGTERM') } catch {} }, 60000)

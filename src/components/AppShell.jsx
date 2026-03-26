@@ -3,6 +3,7 @@ import { Routes, Route, useLocation } from 'react-router-dom'
 import useKeyboard from '../hooks/useKeyboard'
 import useQueueSync from '../hooks/useQueueSync'
 import useDeviceStore from '../stores/deviceStore'
+import ErrorBoundary from './ErrorBoundary'
 import FloatingQueue from './FloatingQueue'
 import OfflineBanner from './OfflineBanner'
 
@@ -39,10 +40,10 @@ export default function AppShell() {
           </div>
         }>
           <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/library" element={<LibraryPage />} />
-            <Route path="/feed" element={<FeedPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/" element={<ErrorBoundary name="Homepage"><HomePage /></ErrorBoundary>} />
+            <Route path="/library" element={<ErrorBoundary name="Library"><LibraryPage /></ErrorBoundary>} />
+            <Route path="/feed" element={<ErrorBoundary name="Feed"><FeedPage /></ErrorBoundary>} />
+            <Route path="/settings" element={<ErrorBoundary name="Settings"><SettingsPage /></ErrorBoundary>} />
           </Routes>
         </Suspense>
       </main>

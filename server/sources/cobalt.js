@@ -4,14 +4,20 @@
 // when yt-dlp fails. Cobalt supports YouTube, TikTok, Instagram,
 // Twitter, Reddit, and others.
 //
-// Free API, no auth needed. Only handles publicly accessible content.
-// Primarily an extraction tool (metadata + stream URLs), not discovery.
+// As of 2025, the public api.cobalt.tools requires Turnstile
+// challenge solving (JWT auth). Self-hosted instances work without
+// auth. Set COBALT_API_URL env var to point at your own instance.
+// When no instance is configured, this adapter auto-disables.
 // ============================================================
 
 import { SourceAdapter } from './base.js'
 
-const COBALT_API = 'https://api.cobalt.tools'
+const COBALT_API = process.env.COBALT_API_URL || 'https://api.cobalt.tools'
+const COBALT_API_KEY = process.env.COBALT_API_KEY || ''
 const REQUEST_TIMEOUT = 30_000
+
+// Auto-disable if using default public API (requires Turnstile)
+const IS_SELF_HOSTED = !!process.env.COBALT_API_URL
 
 export class CobaltAdapter extends SourceAdapter {
   constructor() {
@@ -28,11 +34,12 @@ export class CobaltAdapter extends SourceAdapter {
         'soundcloud.com',
       ],
       capabilities: {
-        search: false,      // Cobalt doesn't do search
+        search: false,
         categories: false,
         trending: false,
-        metadata: true,     // Can extract basic metadata
-        streamUrl: true,    // Can resolve direct stream URLs
+        // Only enable if self-hosted instance is configured
+        metadata: IS_SELF_HOSTED,
+        streamUrl: IS_SELF_HOSTED,
       },
     })
   }
@@ -42,12 +49,16 @@ export class CobaltAdapter extends SourceAdapter {
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
 
     try {
+      const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      }
+      if (COBALT_API_KEY) {
+        headers['Authorization'] = `Api-Key ${COBALT_API_KEY}`
+      }
       const response = await fetch(`${COBALT_API}/`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           url,
           videoQuality: '480',
@@ -75,7 +86,7 @@ export class CobaltAdapter extends SourceAdapter {
     return this.normalizeVideo({
       id: this._urlToId(url),
       webpage_url: url,
-      title: result.filename || 'Untitled',
+      title: (result.filename && typeof result.filename === 'string') ? result.filename : 'Untitled',
       source: new URL(url).hostname.replace(/^www\./, ''),
     })
   }
@@ -91,6 +102,7 @@ export class CobaltAdapter extends SourceAdapter {
     if (result.picker && result.picker.length > 0) {
       // Pick the first video option
       const video = result.picker.find(p => p.type === 'video') || result.picker[0]
+      if (!video?.url) throw new Error('Cobalt picker entry missing URL')
       return video.url
     }
 
