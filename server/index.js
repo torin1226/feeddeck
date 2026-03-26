@@ -1886,8 +1886,8 @@ app.get('/api/tiktok/status', (req, res) => {
 
     res.json({ summary, byMode, watchHistory })
   } catch (err) {
-    // Tables may not exist yet
-    res.json({ summary: { pending: 0, done: 0, failed: 0 }, byMode: [], watchHistory: [] })
+    logger.error('TikTok status error:', { error: err.message })
+    res.status(500).json({ error: 'Failed to fetch TikTok import status' })
   }
 })
 
@@ -1912,7 +1912,8 @@ app.get('/api/tiktok/recent', (req, res) => {
 
     res.json(rows)
   } catch (err) {
-    res.json([])
+    logger.error('TikTok recent error:', { error: err.message })
+    res.status(500).json({ error: 'Failed to fetch recent TikTok imports' })
   }
 })
 
@@ -1927,7 +1928,8 @@ app.get('/api/tiktok/failed', (req, res) => {
     `).all(limit)
     res.json(rows)
   } catch (err) {
-    res.json([])
+    logger.error('TikTok failed imports error:', { error: err.message })
+    res.status(500).json({ error: 'Failed to fetch failed TikTok imports' })
   }
 })
 
@@ -1941,7 +1943,8 @@ app.get('/api/tiktok/watch-history', (req, res) => {
       : db.prepare('SELECT * FROM tiktok_watch_history ORDER BY watched_at DESC LIMIT ?').all(limit)
     res.json(rows)
   } catch (err) {
-    res.json([])
+    logger.error('TikTok watch history error:', { error: err.message })
+    res.status(500).json({ error: 'Failed to fetch TikTok watch history' })
   }
 })
 
