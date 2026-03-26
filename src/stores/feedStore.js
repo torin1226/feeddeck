@@ -41,6 +41,18 @@ const useFeedStore = create((set, get) => ({
   })),
   flashOverlay: () => set({ overlayVisible: true }), // called on tap in immersive mode
 
+  // Desktop feed view preference: 'foryou' | 'remix'
+  feedView: 'foryou',
+  setFeedView: (view) => {
+    set({ feedView: view })
+    try { localStorage.setItem('fd-feed-view', view) } catch {}
+  },
+
+  // Theatre mode (not persisted — resets each session)
+  theatreMode: false,
+  setTheatreMode: (val) => set({ theatreMode: val }),
+  toggleTheatreMode: () => set(s => ({ theatreMode: !s.theatreMode })),
+
   // Initialize the feed — fetch first batch (or use prefetched buffer)
   initFeed: async () => {
     const { initialized, loading, buffer } = get()
@@ -158,6 +170,14 @@ try {
   const stored = localStorage.getItem('fd-feed-letterbox')
   if (stored !== null) {
     useFeedStore.setState({ letterbox: JSON.parse(stored) })
+  }
+} catch {}
+
+// Load feed view preference from localStorage
+try {
+  const storedView = localStorage.getItem('fd-feed-view')
+  if (storedView === 'foryou' || storedView === 'remix') {
+    useFeedStore.setState({ feedView: storedView })
   }
 } catch {}
 
