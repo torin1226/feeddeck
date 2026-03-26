@@ -285,9 +285,19 @@ app.get('/api/proxy-stream', async (req, res) => {
     // Pipe the body using Node streams (more robust than manual reader pump)
     const { Readable } = await import('stream')
     const nodeStream = Readable.fromWeb(upstream.body)
+
+    // Idle timeout: abort if no data chunk arrives for 30 seconds
+    const IDLE_TIMEOUT = 30_000
+    let idleTimer = setTimeout(() => { nodeStream.destroy(new Error('Idle timeout')) }, IDLE_TIMEOUT)
+    nodeStream.on('data', () => {
+      clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => { nodeStream.destroy(new Error('Idle timeout')) }, IDLE_TIMEOUT)
+    })
+    nodeStream.on('end', () => clearTimeout(idleTimer))
+
     nodeStream.pipe(res)
-    nodeStream.on('error', () => { if (!res.writableEnded) res.end() })
-    res.on('close', () => { nodeStream.destroy() })
+    nodeStream.on('error', () => { clearTimeout(idleTimer); if (!res.writableEnded) res.end() })
+    res.on('close', () => { clearTimeout(idleTimer); nodeStream.destroy() })
   } catch (err) {
     logger.error('Proxy stream error:', { error: err.message })
     if (!res.headersSent) res.status(500).send('Stream proxy failed')
@@ -562,7 +572,7 @@ app.get('/api/tags/popular', (req, res) => {
           const t = tag.toLowerCase().trim()
           if (t) tagCounts[t] = (tagCounts[t] || 0) + 1
         }
-      } catch {}
+      } catch (e) { logger.warn('Malformed tags JSON in popular tags', { tags: row.tags, error: e.message }) }
     }
     const popular = Object.entries(tagCounts)
       .sort((a, b) => b[1] - a[1])
@@ -830,7 +840,7 @@ app.get('/api/discover', (req, res) => {
           if (liked.has(t)) score += 2
           if (disliked.has(t)) score -= 5
         }
-      } catch {}
+      } catch (e) { logger.warn('Malformed tags JSON in discover scoring', { videoId: v.id, tags: v.tags, error: e.message }) }
       // Bonus for favorited
       if (v.favorite) score += 1
       // Bonus for highly rated
@@ -1432,7 +1442,7 @@ app.get('/api/feed/next', (req, res) => {
             const videoTags = JSON.parse(v.tags || '[]').map(t => t.toLowerCase())
             const titleLower = (v.title || '').toLowerCase()
             return filterTags.some(ft => videoTags.includes(ft) || titleLower.includes(ft))
-          } catch { return false }
+          } catch (e) { logger.warn('Malformed tags JSON in feed filter', { videoId: v.id, tags: v.tags, error: e.message }); return false }
         })
       }
     }
@@ -1709,10 +1719,13 @@ async function _preResolveStreamUrls(videoUrls) {
 // Scheduled feed refill: check all sources and refill any
 // whose last_fetched is older than their fetch_interval
 // -----------------------------------------------------------
+// Track background interval IDs for graceful shutdown
+const backgroundIntervals = []
+
 function startScheduledFeedRefill() {
   const CHECK_INTERVAL = 60_000 // Check every 60 seconds
 
-  return setInterval(() => {
+  backgroundIntervals.push(setInterval(() => {
     try {
       const stale = db.prepare(`
         SELECT domain, mode, label FROM sources
@@ -1729,7 +1742,7 @@ function startScheduledFeedRefill() {
     } catch (err) {
       logger.error('Scheduled refill check error:', { error: err.message })
     }
-  }, CHECK_INTERVAL)
+  }, CHECK_INTERVAL))
 }
 
 // -----------------------------------------------------------
@@ -1747,7 +1760,7 @@ function startScheduledTrendingRefresh() {
   const sfwCategories = db.prepare("SELECT key FROM categories WHERE mode = 'social'").all()
   let sfwCatIndex = 0
 
-  return setInterval(async () => {
+  backgroundIntervals.push(setInterval(async () => {
     // --- NSFW: rotate through scraper sites for trending ---
     const site = sites[siteIndex % sites.length]
     siteIndex++
@@ -1783,7 +1796,7 @@ function startScheduledTrendingRefresh() {
         logger.error(`  ❌ SFW refresh error (${sfwCat.key}):`, { error: err.message })
       )
     }
-  }, TRENDING_INTERVAL)
+  }, TRENDING_INTERVAL))
 }
 
 // -----------------------------------------------------------
@@ -1794,7 +1807,7 @@ function startScheduledTrendingRefresh() {
 function startStreamUrlTTLMonitor() {
   const TTL_CHECK_INTERVAL = 5 * 60_000 // Check every 5 minutes
 
-  return setInterval(async () => {
+  backgroundIntervals.push(setInterval(async () => {
     try {
       // Find URLs expiring in the next 15 minutes that still have a stream_url
       const expiring = db.prepare(`
@@ -1813,7 +1826,7 @@ function startStreamUrlTTLMonitor() {
     } catch (err) {
       logger.error('TTL monitor error:', { error: err.message })
     }
-  }, TTL_CHECK_INTERVAL)
+  }, TTL_CHECK_INTERVAL))
 }
 
 // -----------------------------------------------------------
@@ -1838,14 +1851,18 @@ process.on('unhandledRejection', (reason) => {
   // (feed refill, category refresh) shouldn't take down the server
   logger.warn('Unhandled rejection', { reason: String(reason) })
 })
-const _intervalIds = []
 process.on('SIGTERM', async () => {
   logger.info('Shutting down...')
-  for (const id of _intervalIds) clearInterval(id)
+  // Clear background intervals
+  for (const id of backgroundIntervals) clearInterval(id)
+  backgroundIntervals.length = 0
+  // Close source adapters (Puppeteer, etc.)
   await closeAllSources()
-  db.close()
+  // Close database
+  try { db.close() } catch {}
   process.exit(0)
 })
+process.on('SIGINT', () => process.emit('SIGTERM'))
 
 // -----------------------------------------------------------
 // TikTok Import API
@@ -1869,8 +1886,8 @@ app.get('/api/tiktok/status', (req, res) => {
 
     res.json({ summary, byMode, watchHistory })
   } catch (err) {
-    // Tables may not exist yet
-    res.json({ summary: { pending: 0, done: 0, failed: 0 }, byMode: [], watchHistory: [] })
+    logger.error('TikTok status error:', { error: err.message })
+    res.status(500).json({ error: 'Failed to fetch TikTok import status' })
   }
 })
 
@@ -1895,7 +1912,8 @@ app.get('/api/tiktok/recent', (req, res) => {
 
     res.json(rows)
   } catch (err) {
-    res.json([])
+    logger.error('TikTok recent error:', { error: err.message })
+    res.status(500).json({ error: 'Failed to fetch recent TikTok imports' })
   }
 })
 
@@ -1910,7 +1928,8 @@ app.get('/api/tiktok/failed', (req, res) => {
     `).all(limit)
     res.json(rows)
   } catch (err) {
-    res.json([])
+    logger.error('TikTok failed imports error:', { error: err.message })
+    res.status(500).json({ error: 'Failed to fetch failed TikTok imports' })
   }
 })
 
@@ -1924,7 +1943,8 @@ app.get('/api/tiktok/watch-history', (req, res) => {
       : db.prepare('SELECT * FROM tiktok_watch_history ORDER BY watched_at DESC LIMIT ?').all(limit)
     res.json(rows)
   } catch (err) {
-    res.json([])
+    logger.error('TikTok watch history error:', { error: err.message })
+    res.status(500).json({ error: 'Failed to fetch TikTok watch history' })
   }
 })
 
@@ -1949,9 +1969,9 @@ app.listen(PORT, '0.0.0.0', () => {
   } catch {}
 
   logger.info(`     Health check: http://localhost:${PORT}/api/health\n`)
-  _intervalIds.push(startScheduledFeedRefill())
-  _intervalIds.push(startScheduledTrendingRefresh())
-  _intervalIds.push(startStreamUrlTTLMonitor())
+  startScheduledFeedRefill()
+  startScheduledTrendingRefresh()
+  startStreamUrlTTLMonitor()
 
   // First-boot population: if homepage_cache is empty, sequentially refill all categories
   const cacheCount = db.prepare('SELECT COUNT(*) as n FROM homepage_cache').get()

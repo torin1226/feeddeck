@@ -7,6 +7,7 @@ export default function RemixHero({ video }) {
   const hlsRef = useRef(null)
   const [playing, setPlaying] = useState(true)
   const [progress, setProgress] = useState(0)
+  const [loadError, setLoadError] = useState(null)
   const muted = useFeedStore(s => s.muted)
 
   // Load and autoplay hero video
@@ -15,6 +16,7 @@ export default function RemixHero({ video }) {
     if (!vid || !video) return
 
     let cancelled = false
+    setLoadError(null)
 
     const load = async () => {
       // Cleanup previous
@@ -25,9 +27,18 @@ export default function RemixHero({ video }) {
       if (!url && video.url) {
         try {
           const res = await fetch(`/api/stream-url?url=${encodeURIComponent(video.url)}`)
+          if (!res.ok) {
+            console.warn(`RemixHero: stream-url fetch failed with HTTP ${res.status}`)
+            if (!cancelled) setLoadError('Failed to load video stream')
+            return
+          }
           const data = await res.json()
           url = data.streamUrl
-        } catch { return }
+        } catch (err) {
+          console.warn('RemixHero: stream-url fetch error:', err.message)
+          if (!cancelled) setLoadError('Network error loading video')
+          return
+        }
       }
       if (cancelled || !url) return
 
@@ -50,7 +61,11 @@ export default function RemixHero({ video }) {
     }
 
     load()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- muted and video object are read inside async load(); re-running on change would restart playback
   }, [video?.id])
 
   // Sync mute
@@ -88,6 +103,13 @@ export default function RemixHero({ video }) {
         loop
         muted={muted}
       />
+
+      {/* Load error message */}
+      {loadError && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <p className="text-white/60 text-sm bg-black/50 px-4 py-2 rounded-lg">{loadError}</p>
+        </div>
+      )}
 
       {/* Bottom gradient */}
       <div

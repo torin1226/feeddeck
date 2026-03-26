@@ -77,7 +77,13 @@ db.exec(`
 // Parse TikTok export file (Date:/Link: pairs separated by blank lines)
 function parseExportFile(filePath) {
   if (!existsSync(filePath)) return []
-  const content = readFileSync(filePath, 'utf-8')
+  let content
+  try {
+    content = readFileSync(filePath, 'utf-8')
+  } catch (err) {
+    console.error(`  Error reading ${filePath}: ${err.message}`)
+    return []
+  }
   const entries = []
   const blocks = content.split(/\n\s*\n/)
 
@@ -108,10 +114,18 @@ function importFile(filePath, source) {
 
   let added = 0
   let skipped = 0
-  for (const entry of entries) {
-    const result = insertImport.run(entry.url, source, entry.date, mode)
-    if (result.changes > 0) added++
-    else skipped++
+  try {
+    db.exec('BEGIN')
+    for (const entry of entries) {
+      const result = insertImport.run(entry.url, source, entry.date, mode)
+      if (result.changes > 0) added++
+      else skipped++
+    }
+    db.exec('COMMIT')
+  } catch (err) {
+    db.exec('ROLLBACK')
+    console.error(`  ${source}: transaction failed — ${err.message}`)
+    return { added: 0, skipped: 0 }
   }
 
   console.log(`  ${source}: ${added} added, ${skipped} skipped (${entries.length} total)`)
@@ -132,10 +146,18 @@ function importWatchHistory(filePath) {
 
   let added = 0
   let skipped = 0
-  for (const entry of entries) {
-    const result = insertHistory.run(entry.url, entry.date, mode)
-    if (result.changes > 0) added++
-    else skipped++
+  try {
+    db.exec('BEGIN')
+    for (const entry of entries) {
+      const result = insertHistory.run(entry.url, entry.date, mode)
+      if (result.changes > 0) added++
+      else skipped++
+    }
+    db.exec('COMMIT')
+  } catch (err) {
+    db.exec('ROLLBACK')
+    console.error(`  watch_history: transaction failed — ${err.message}`)
+    return { added: 0, skipped: 0 }
   }
 
   console.log(`  watch_history: ${added} added, ${skipped} skipped (${entries.length} total)`)

@@ -10,6 +10,9 @@ import useModeStore from './modeStore'
 const BUFFER_THRESHOLD = 5 // fetch more when this many from end
 const FETCH_COUNT = 10
 
+// AbortController for in-flight stream URL warm-up fetches
+let _warmAbortController = new AbortController()
+
 const useFeedStore = create((set, get) => ({
   // Feed buffer — array of video objects
   buffer: [],
@@ -152,8 +155,8 @@ const useFeedStore = create((set, get) => ({
 
   // Reset feed (e.g. on mode change)
   resetFeed: () => {
-    // Abort any in-flight warm requests
-    if (_warmAbortController) _warmAbortController.abort()
+    // Abort any in-flight warm-up fetches so they don't update stale buffer
+    _warmAbortController.abort()
     _warmAbortController = new AbortController()
     set({
       buffer: [],
@@ -198,12 +201,9 @@ async function fetchFeedBatch(getState) {
   return (data.videos || []).filter(v => !watchedIds.has(v.id) && !bufferIds.has(v.id))
 }
 
-// AbortController for cancelling in-flight warm requests on reset
-let _warmAbortController = new AbortController()
-
 // Eagerly resolve stream URLs for videos that don't have one yet.
-// Fires requests in parallel (max 3) so they're cached server-side
-// by the time the user scrolls to them.
+// Fires requests in parallel (max 5) so they're cached server-side
+// by the time the user scrolls to them. Aborted on resetFeed().
 function _warmStreamUrls(videos) {
   const needWarm = videos.filter(v => !v.streamUrl && v.url).slice(0, 5)
   if (needWarm.length === 0) return
@@ -213,18 +213,17 @@ function _warmStreamUrls(videos) {
     fetch(`/api/stream-url?url=${encodeURIComponent(v.url)}`, { signal })
       .then(r => r.json())
       .then(data => {
-        if (data.streamUrl) {
-          // Update the video in the buffer so FeedVideo picks it up
-          const state = useFeedStore.getState()
-          const idx = state.buffer.findIndex(b => b.id === v.id)
-          if (idx !== -1) {
-            const updated = [...state.buffer]
-            updated[idx] = { ...updated[idx], streamUrl: data.streamUrl }
-            useFeedStore.setState({ buffer: updated })
-          }
+        if (signal.aborted || !data.streamUrl) return
+        // Update the video in the buffer so FeedVideo picks it up
+        const state = useFeedStore.getState()
+        const idx = state.buffer.findIndex(b => b.id === v.id)
+        if (idx !== -1) {
+          const updated = [...state.buffer]
+          updated[idx] = { ...updated[idx], streamUrl: data.streamUrl }
+          useFeedStore.setState({ buffer: updated })
         }
       })
-      .catch(() => {}) // silent — video will still resolve on-demand
+      .catch(() => {}) // silent — aborted or network error
   }
 }
 

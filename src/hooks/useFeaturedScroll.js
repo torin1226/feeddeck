@@ -338,6 +338,7 @@ export default function useFeaturedScroll({
       applyProgress(getProgress())
     }
     prevTotalRef.current = totalCards
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- applyProgress/getProgress are stable inner functions that read refs
   }, [totalCards])
 
   // activeIndex watcher: update carousel if in Phase 4
@@ -346,6 +347,7 @@ export default function useFeaturedScroll({
       applyCarousel()
       resetProgressBar()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- applyCarousel/resetProgressBar are stable inner functions that read refs
   }, [activeIndex])
 
   return {

@@ -1,0 +1,31 @@
+# ============================================================
+# FeedDeck — Docker Compose for local QA
+#
+# Usage:
+#   docker compose up          — start the app
+#   docker compose up --build  — rebuild after code changes
+#
+# Then open http://localhost:3000 in your browser.
+# ============================================================
+
+services:
+  feeddeck:
+    build: .
+    ports:
+      - "3000:3000"   # Vite dev server (proxies /api → 3001)
+      - "3001:3001"   # Express API (direct access)
+    volumes:
+      # Persist database and cookies across restarts
+      - feeddeck-data:/app/data
+      # Mount source code for live reload during dev
+      # (comment out for production-like testing)
+      - .:/app
+      - /app/node_modules  # prevent host node_modules from overriding container's
+    environment:
+      - NODE_ENV=development
+      - PUPPETEER_SKIP_DOWNLOAD=true
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+    restart: unless-stopped
+
+volumes:
+  feeddeck-data:

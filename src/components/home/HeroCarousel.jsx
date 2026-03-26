@@ -32,6 +32,7 @@ export default function HeroCarousel() {
         doSearch(value.trim())
       }, 380)
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- clearSearch/doSearch are stable useCallback refs; adding them would not change behavior
     [carouselItems]
   )
 

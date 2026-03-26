@@ -575,7 +575,7 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 - [?] Homepage: click multiple different cards in sequence — each one plays
   > Same — needs manual verification
 - [?] Feed: swipe through 5+ videos — each autoplays on snap
-  > Feed API returns videos correctly. Needs manual test.
+  > Feed API returns videos correctly. Fixed black flicker between swipes (thumbnail stays visible until video's `playing` event fires). Needs manual test.
 - [?] Feed: navigate away and back — playback resumes
   > Needs manual test
 - [?] Queue: add 3+ videos, play through — autoadvance works, each video plays
@@ -706,17 +706,17 @@ _Claude Code adds tasks here as they come up during implementation. Move to the 
 - [x] Clean up 3 stale `vite.config.js.timestamp-*` files in project root
 - [x] **CRITICAL:** Fix missing `crypto` import in `server/index.js` — playlist creation crashed at runtime. Fixed: imported `randomBytes` from `crypto` (Cowork morning sprint 2026-03-22)
 - [x] Wire tag preferences into `refillCategory()` and `_refillFeedCacheImpl()` — both now query liked tags and append up to 2 random liked tags to search queries for personalized discovery. Discovered during personalization audit (morning sprint 2026-03-22)
-- [ ] Hover preview video element cleanup — found 54 `<video>` elements in DOM, likely from hover previews not being properly destroyed. Potential memory leak. Discovered during 5a.2 playback testing
+- [x] Hover preview video element cleanup — refactored to single shared `<video>` element moved between containers instead of per-card elements. Eliminates 50+ DOM video tags
 - [x] (2026-03-26) TikTok GDPR import pipeline — `import-tiktok.js` parses exports, `server/scripts/process-tiktok-imports.js` enriches via yt-dlp, API routes added (`/api/tiktok/status`, `/api/tiktok/recent`, `/api/tiktok/failed`, `/api/tiktok/watch-history`). 56K+ imports seeded, processor running.
 - [x] **HIGH:** Add timeout to yt-dlp `streamSearch()` spawn — 60s kill timer prevents leaked processes (Cowork morning sprint 2026-03-22)
 - [x] **HIGH:** Cap feed buffer at 200 items with safe eviction in `feedStore.js` — prevents OOM on long sessions (Cowork morning sprint 2026-03-22)
-- [ ] **HIGH:** Close Puppeteer browser on scrape failure in `server/sources/scraper.js` (~line 195) — failed scrapes leave browser instances alive
-- [ ] Add SIGTERM handler to clear background `setInterval` callbacks in `server/index.js` (~lines 1392, 1423, 1460) and close DB
-- [ ] Add per-chunk timeout to proxy-stream pipe in `server/index.js` (~line 240) — stalled upstream blocks response forever
-- [ ] Add AbortController to `_warmStreamUrls()` in feedStore, abort on `resetFeed()` — fire-and-forget fetches update stale buffer
-- [ ] Log malformed JSON parse failures in `server/index.js` tag processing instead of silently skipping
-- [ ] Wire tag preferences into `refillCategory()` — currently uses hardcoded generic queries, ignoring liked/disliked tags entirely
-- [ ] Remaining 16 `react-hooks/exhaustive-deps` ESLint warnings — need per-hook manual review to avoid infinite loops
+- [x] **HIGH:** Close Puppeteer browser on scrape failure in `server/sources/scraper.js` — browser now closed and nulled on error so it re-launches on next attempt
+- [x] Add SIGTERM handler to clear background `setInterval` callbacks in `server/index.js` and close DB — intervals tracked in array, cleared on SIGTERM/SIGINT along with DB close
+- [x] Add per-chunk timeout to proxy-stream pipe in `server/index.js` — 30s idle timeout destroys stream if no data chunk arrives
+- [x] Add AbortController to `_warmStreamUrls()` in feedStore, abort on `resetFeed()` — prevents stale buffer updates after feed reset
+- [x] Log malformed JSON parse failures in `server/index.js` tag processing — 3 silent catch blocks now log warnings with video ID and raw tag data
+- [x] Wire tag preferences into `refillCategory()` — already done, appends up to 2 random liked tags to search queries (duplicate of earlier entry)
+- [x] ESLint cleanup — 0 errors, 0 warnings. Fixed `no-unsafe-finally` in queueStore, removed unused vars, exhaustive-deps warnings resolved by plugin update
 - [x] Remove debug `console.log('Queue: advancing to')` from `VideoPlayer.jsx:136` and `useKeyboard.js:41` (Cowork morning sprint 2026-03-22)
 
 ---

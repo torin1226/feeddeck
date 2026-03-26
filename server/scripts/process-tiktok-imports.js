@@ -46,7 +46,9 @@ try {
   if (!cols.some(c => c.name === 'mode')) {
     db.exec("ALTER TABLE videos ADD COLUMN mode TEXT NOT NULL DEFAULT 'social'")
   }
-} catch {}
+} catch (err) {
+  console.warn(`  Warning: ALTER TABLE failed (column may already exist): ${err.message}`)
+}
 
 const getPending = db.prepare(
   'SELECT id, url, source, tiktok_date, mode FROM tiktok_imports WHERE status = ? ORDER BY id LIMIT ?'
@@ -74,7 +76,8 @@ function extractMetadata(url) {
     })
     return JSON.parse(output)
   } catch (err) {
-    throw new Error(err.stderr?.split('\n')[0] || err.message)
+    const stderrLine = err.stderr?.split('\n').find(l => l.trim()) || ''
+    throw new Error(stderrLine || err.message || 'yt-dlp failed with no error output')
   }
 }
 

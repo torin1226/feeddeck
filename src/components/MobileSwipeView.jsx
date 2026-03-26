@@ -51,6 +51,7 @@ export default function MobileSwipeView() {
     if (current && !current.isDemo) {
       markWatched(current.id)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- markWatched is a stable store action; current is derived from current?.id
   }, [current?.id])
 
   const goNext = () => index < displayVideos.length - 1 && setIndex(i => i + 1)

@@ -24,6 +24,7 @@ export default function HomePage() {
   // Fetch homepage data on mount and when mode changes
   useEffect(() => {
     fetchHomepage(isSFW ? 'social' : 'nsfw')
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchHomepage is a stable store action
   }, [isSFW])
 
   // Pre-warm feed buffer so /feed loads instantly when navigated to

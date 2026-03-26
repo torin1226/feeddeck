@@ -45,6 +45,28 @@ function _getPreloadWindow() {
   return 1 // 2g or slow-2g
 }
 
+// Semaphore to cap concurrent stream URL prefetches (prevents flooding the server)
+const MAX_CONCURRENT_PREFETCH = 2
+let _prefetchInFlight = 0
+const _prefetchQueue = [] // array of { resolve }
+
+function acquirePrefetchSlot() {
+  if (_prefetchInFlight < MAX_CONCURRENT_PREFETCH) {
+    _prefetchInFlight++
+    return Promise.resolve()
+  }
+  return new Promise(resolve => _prefetchQueue.push({ resolve }))
+}
+
+function releasePrefetchSlot() {
+  if (_prefetchQueue.length > 0) {
+    const next = _prefetchQueue.shift()
+    next.resolve()
+  } else {
+    _prefetchInFlight--
+  }
+}
+
 // Load a URL into the shared video.
 // All CDN URLs go through /api/proxy-stream to avoid ORB blocking on desktop
 // and ensure correct Referer headers. iOS could play direct but proxying
@@ -111,6 +133,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
   const [paused, setPaused] = useState(false)
   const [isLandscape, setIsLandscape] = useState(false)
   const [debugMsg, setDebugMsg] = useState(video.streamUrl ? 'has stream url' : 'init')
+  const [videoPlaying, setVideoPlaying] = useState(false) // true once video is visually playing
   const letterbox = useFeedStore(s => s.letterbox)
   const immersive = useFeedStore(s => s.immersive)
   const overlayVisible = useFeedStore(s => s.overlayVisible)
@@ -131,34 +154,51 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
     if (video.streamUrl) { setStreamUrl(video.streamUrl); return }
 
     let cancelled = false
+    let slotAcquired = false
     setStreamLoading(true)
-    setDebugMsg('fetching stream...')
+    setDebugMsg('waiting for prefetch slot...')
 
-    fetch(`/api/stream-url?url=${encodeURIComponent(video.url)}`)
-      .then(r => r.json())
-      .then(data => {
-        if (!cancelled && data.streamUrl) {
-          setStreamUrl(data.streamUrl)
-          setDebugMsg('got stream url')
-        } else {
-          setDebugMsg('no streamUrl in response')
-        }
-        setStreamLoading(false)
-      })
-      .catch((err) => {
-        if (!cancelled) {
+    acquirePrefetchSlot().then(() => {
+      if (cancelled) { releasePrefetchSlot(); return }
+      slotAcquired = true
+      setDebugMsg('fetching stream...')
+
+      return fetch(`/api/stream-url?url=${encodeURIComponent(video.url)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (!cancelled && data.streamUrl) {
+            setStreamUrl(data.streamUrl)
+            setDebugMsg('got stream url')
+          } else {
+            setDebugMsg('no streamUrl in response')
+          }
           setStreamLoading(false)
-          setDebugMsg('fetch error: ' + err.message)
-        }
-      })
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            setStreamLoading(false)
+            setDebugMsg('fetch error: ' + err.message)
+          }
+        })
+        .finally(() => releasePrefetchSlot())
+    })
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      if (!slotAcquired) {
+        // Remove from queue if we never got a slot
+        const idx = _prefetchQueue.findIndex(p => p === cancelled)
+        if (idx !== -1) _prefetchQueue.splice(idx, 1)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- video.streamUrl is checked inside the effect as a shortcut; adding it would re-trigger the fetch
   }, [shouldLoad, video.url, streamUrl, streamLoading])
 
   // Claim the shared video element when this slot becomes active
   useEffect(() => {
     if (!isActive || !streamUrl || !containerEl.current) return
     let cancelled = false
+    setVideoPlaying(false)
 
     const vid = getSharedVideo()
     videoEl.current = vid
@@ -171,7 +211,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
     vid.muted = true
 
     // Event listeners
-    const onPlaying = () => setDebugMsg(`PLAYING muted=${vid.muted}`)
+    const onPlaying = () => { setVideoPlaying(true); setDebugMsg(`PLAYING muted=${vid.muted}`) }
     const onWaiting = () => setDebugMsg('buffering...')
     const onError = () => {
       const err = vid.error
@@ -229,6 +269,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
 
     return () => {
       cancelled = true
+      setVideoPlaying(false)
       vid.removeEventListener('playing', onPlaying)
       vid.removeEventListener('waiting', onWaiting)
       vid.removeEventListener('error', onError)
@@ -276,12 +317,14 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
       className={`w-full snap-start snap-always relative flex items-center justify-center bg-black ${isLandscape ? 'min-h-[60dvh]' : 'h-dvh'}`}
       onClick={handleTap}
     >
-      {/* Thumbnail placeholder — shown when this slot is NOT active */}
-      {video.thumbnail && !isActive && (
+      {/* Thumbnail placeholder — shown until video is visually playing.
+          Keeps the thumbnail visible during the active-but-loading gap
+          to prevent black flicker between scroll-snap and first frame. */}
+      {video.thumbnail && !videoPlaying && (
         <img
           src={video.thumbnail}
           alt=""
-          className="absolute inset-0 w-full h-full"
+          className="absolute inset-0 w-full h-full z-[1]"
           style={{ objectFit }}
           draggable="false"
         />
