@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import useModeStore from './modeStore'
+import { safeStorage } from './safeStorage'
 
 // ============================================================
 // Library Store
@@ -163,6 +164,7 @@ const useLibraryStore = create(
     }),
     {
       name: 'fd-lib',
+      storage: safeStorage,
     }
   )
 )
