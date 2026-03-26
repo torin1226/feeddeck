@@ -572,7 +572,7 @@ app.get('/api/tags/popular', (req, res) => {
           const t = tag.toLowerCase().trim()
           if (t) tagCounts[t] = (tagCounts[t] || 0) + 1
         }
-      } catch {}
+      } catch (e) { logger.warn('Malformed tags JSON in popular tags', { tags: row.tags, error: e.message }) }
     }
     const popular = Object.entries(tagCounts)
       .sort((a, b) => b[1] - a[1])
@@ -840,7 +840,7 @@ app.get('/api/discover', (req, res) => {
           if (liked.has(t)) score += 2
           if (disliked.has(t)) score -= 5
         }
-      } catch {}
+      } catch (e) { logger.warn('Malformed tags JSON in discover scoring', { videoId: v.id, tags: v.tags, error: e.message }) }
       // Bonus for favorited
       if (v.favorite) score += 1
       // Bonus for highly rated
@@ -1442,7 +1442,7 @@ app.get('/api/feed/next', (req, res) => {
             const videoTags = JSON.parse(v.tags || '[]').map(t => t.toLowerCase())
             const titleLower = (v.title || '').toLowerCase()
             return filterTags.some(ft => videoTags.includes(ft) || titleLower.includes(ft))
-          } catch { return false }
+          } catch (e) { logger.warn('Malformed tags JSON in feed filter', { videoId: v.id, tags: v.tags, error: e.message }); return false }
         })
       }
     }

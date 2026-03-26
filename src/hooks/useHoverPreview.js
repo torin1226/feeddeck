@@ -76,6 +76,7 @@ export default function useHoverPreview() {
         // Aborted or network error — silent
       }
     }, 300)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cancelPreview is a stable useCallback ref defined below
   }, [])
 
   const cancelPreview = useCallback(() => {

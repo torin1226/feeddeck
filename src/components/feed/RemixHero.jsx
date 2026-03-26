@@ -51,6 +51,7 @@ export default function RemixHero({ video }) {
 
     load()
     return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- muted and video object are read inside async load(); re-running on change would restart playback
   }, [video?.id])
 
   // Sync mute

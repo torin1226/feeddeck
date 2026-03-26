@@ -50,6 +50,7 @@ export default function LibraryPage() {
         seedDemoData()
       }
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once on mount; loadFromServer/seedDemoData are stable store actions
   }, [])
 
   // Continue Watching — videos with progress between 5% and 95%

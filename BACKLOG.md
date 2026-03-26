@@ -714,9 +714,9 @@ _Claude Code adds tasks here as they come up during implementation. Move to the 
 - [x] Add SIGTERM handler to clear background `setInterval` callbacks in `server/index.js` and close DB — intervals tracked in array, cleared on SIGTERM/SIGINT along with DB close
 - [x] Add per-chunk timeout to proxy-stream pipe in `server/index.js` — 30s idle timeout destroys stream if no data chunk arrives
 - [x] Add AbortController to `_warmStreamUrls()` in feedStore, abort on `resetFeed()` — prevents stale buffer updates after feed reset
-- [ ] Log malformed JSON parse failures in `server/index.js` tag processing instead of silently skipping
-- [ ] Wire tag preferences into `refillCategory()` — currently uses hardcoded generic queries, ignoring liked/disliked tags entirely
-- [ ] Remaining 16 `react-hooks/exhaustive-deps` ESLint warnings — need per-hook manual review to avoid infinite loops
+- [x] Log malformed JSON parse failures in `server/index.js` tag processing — 3 silent catch blocks now log warnings with video ID and raw tag data
+- [x] Wire tag preferences into `refillCategory()` — already done, appends up to 2 random liked tags to search queries (duplicate of earlier entry)
+- [x] ESLint cleanup — 0 errors, 0 warnings. Fixed `no-unsafe-finally` in queueStore, removed unused vars, exhaustive-deps warnings resolved by plugin update
 - [x] Remove debug `console.log('Queue: advancing to')` from `VideoPlayer.jsx:136` and `useKeyboard.js:41` (Cowork morning sprint 2026-03-22)
 
 ---

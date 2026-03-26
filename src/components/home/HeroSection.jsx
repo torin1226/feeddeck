@@ -51,6 +51,7 @@ export default function HeroSection() {
     } else if (!theatreMode) {
       setPlaying(false)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- heroItem/resolveStream/setActiveVideo/setPlaying are stable store refs
   }, [theatreMode, heroItem?.id])
 
   // Sync video element with playerStore state
@@ -90,6 +91,7 @@ export default function HeroSection() {
       vid.removeEventListener('loadedmetadata', onDur)
       vid.removeEventListener('ended', onEnd)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- advance/resolveStream/setActiveVideo/setCurrentTime/setDuration/setPlaying are stable store actions
   }, [streamUrl])
 
   // Listen for seek events from TheatreControls
@@ -149,6 +151,7 @@ export default function HeroSection() {
 
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setPlaying is a stable store action
   }, [theatreMode])
 
   if (!heroItem) return null

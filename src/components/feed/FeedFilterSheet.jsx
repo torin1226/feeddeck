@@ -91,6 +91,7 @@ export default function FeedFilterSheet({ onClose }) {
         setSearching(false)
       }
     }, 400)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- isSFW is read at call time; adding it would recreate the debounced handler
   }, [])
 
   // Apply filters and close

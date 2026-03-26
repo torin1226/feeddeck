@@ -154,6 +154,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
       })
 
     return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- video.streamUrl is checked inside the effect as a shortcut; adding it would re-trigger the fetch
   }, [shouldLoad, video.url, streamUrl, streamLoading])
 
   // Claim the shared video element when this slot becomes active
