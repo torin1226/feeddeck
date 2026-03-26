@@ -109,6 +109,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
   const muted = useFeedStore(s => s.muted)
   const setMuted = useFeedStore(s => s.setMuted)
   const [paused, setPaused] = useState(false)
+  const [isLandscape, setIsLandscape] = useState(false)
   const [debugMsg, setDebugMsg] = useState(video.streamUrl ? 'has stream url' : 'init')
   const letterbox = useFeedStore(s => s.letterbox)
   const immersive = useFeedStore(s => s.immersive)
@@ -164,7 +165,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
 
     // Move the shared element into this container
     containerEl.current.appendChild(vid)
-    vid.style.objectFit = letterbox ? 'contain' : 'cover'
+    vid.style.objectFit = isLandscape ? 'contain' : (letterbox ? 'contain' : 'cover')
 
     // Always start muted for autoplay policy compliance
     vid.muted = true
@@ -176,9 +177,15 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
       const err = vid.error
       setDebugMsg('VIDEO ERROR: code=' + err?.code + ' ' + (err?.message || ''))
     }
+    const onLoadedMetadata = () => {
+      if (vid.videoWidth && vid.videoHeight) {
+        setIsLandscape(vid.videoWidth / vid.videoHeight > 1.5)
+      }
+    }
     vid.addEventListener('playing', onPlaying)
     vid.addEventListener('waiting', onWaiting)
     vid.addEventListener('error', onError)
+    vid.addEventListener('loadedmetadata', onLoadedMetadata)
 
     setDebugMsg('loading source...')
 
@@ -213,16 +220,25 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
       }
     })
 
+    const onSeek = (e) => {
+      if (vid.duration) {
+        vid.currentTime = Math.max(0, Math.min(vid.duration, vid.currentTime + e.detail.delta))
+      }
+    }
+    window.addEventListener('feed:seek', onSeek)
+
     return () => {
       cancelled = true
       vid.removeEventListener('playing', onPlaying)
       vid.removeEventListener('waiting', onWaiting)
       vid.removeEventListener('error', onError)
+      vid.removeEventListener('loadedmetadata', onLoadedMetadata)
+      window.removeEventListener('feed:seek', onSeek)
       vid.pause()
       if (_sharedHls) { _sharedHls.destroy(); _sharedHls = null }
       videoEl.current = null
     }
-  }, [isActive, streamUrl, letterbox])
+  }, [isActive, streamUrl, letterbox, isLandscape])
 
   // Handle pause/unpause while active
   useEffect(() => {
@@ -257,7 +273,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
     <div
       ref={containerEl}
       data-feed-index={index}
-      className="h-dvh w-full snap-start snap-always relative flex items-center justify-center bg-black"
+      className={`w-full snap-start snap-always relative flex items-center justify-center bg-black ${isLandscape ? 'min-h-[60dvh]' : 'h-dvh'}`}
       onClick={handleTap}
     >
       {/* Thumbnail placeholder — shown when this slot is NOT active */}
