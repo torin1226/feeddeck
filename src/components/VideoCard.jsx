@@ -50,8 +50,7 @@ export default function VideoCard({ video, onClick }) {
       <div
         className="relative aspect-video rounded-lg overflow-hidden bg-surface-overlay mb-2"
         onMouseEnter={(e) => {
-          const vid = e.currentTarget.querySelector('video')
-          if (video.url && vid) startPreview(video.url, vid)
+          if (video.url) startPreview(video.url, e.currentTarget)
         }}
         onMouseLeave={cancelPreview}
       >
@@ -67,15 +66,6 @@ export default function VideoCard({ video, onClick }) {
             <span className="text-3xl">▶</span>
           </div>
         )}
-
-        {/* Hover preview video */}
-        <video
-          className="absolute inset-0 w-full h-full object-cover z-[1] pointer-events-none transition-opacity duration-300"
-          style={{ opacity: 0 }}
-          muted
-          playsInline
-          loop
-        />
 
         {/* Duration badge */}
         <div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-1.5 py-0.5 rounded font-medium z-[3]">

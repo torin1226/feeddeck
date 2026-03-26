@@ -251,9 +251,19 @@ app.get('/api/proxy-stream', async (req, res) => {
     // Pipe the body using Node streams (more robust than manual reader pump)
     const { Readable } = await import('stream')
     const nodeStream = Readable.fromWeb(upstream.body)
+
+    // Idle timeout: abort if no data chunk arrives for 30 seconds
+    const IDLE_TIMEOUT = 30_000
+    let idleTimer = setTimeout(() => { nodeStream.destroy(new Error('Idle timeout')) }, IDLE_TIMEOUT)
+    nodeStream.on('data', () => {
+      clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => { nodeStream.destroy(new Error('Idle timeout')) }, IDLE_TIMEOUT)
+    })
+    nodeStream.on('end', () => clearTimeout(idleTimer))
+
     nodeStream.pipe(res)
-    nodeStream.on('error', () => { if (!res.writableEnded) res.end() })
-    res.on('close', () => { nodeStream.destroy() })
+    nodeStream.on('error', () => { clearTimeout(idleTimer); if (!res.writableEnded) res.end() })
+    res.on('close', () => { clearTimeout(idleTimer); nodeStream.destroy() })
   } catch (err) {
     logger.error('Proxy stream error:', { error: err.message })
     if (!res.headersSent) res.status(500).send('Stream proxy failed')
@@ -1645,10 +1655,13 @@ async function _preResolveStreamUrls(videoUrls) {
 // Scheduled feed refill: check all sources and refill any
 // whose last_fetched is older than their fetch_interval
 // -----------------------------------------------------------
+// Track background interval IDs for graceful shutdown
+const backgroundIntervals = []
+
 function startScheduledFeedRefill() {
   const CHECK_INTERVAL = 60_000 // Check every 60 seconds
 
-  setInterval(() => {
+  backgroundIntervals.push(setInterval(() => {
     try {
       const stale = db.prepare(`
         SELECT domain, mode, label FROM sources
@@ -1665,7 +1678,7 @@ function startScheduledFeedRefill() {
     } catch (err) {
       logger.error('Scheduled refill check error:', { error: err.message })
     }
-  }, CHECK_INTERVAL)
+  }, CHECK_INTERVAL))
 }
 
 // -----------------------------------------------------------
@@ -1679,7 +1692,7 @@ function startScheduledTrendingRefresh() {
 
   let siteIndex = 0
 
-  setInterval(async () => {
+  backgroundIntervals.push(setInterval(async () => {
     const site = sites[siteIndex % sites.length]
     siteIndex++
 
@@ -1705,7 +1718,7 @@ function startScheduledTrendingRefresh() {
     } catch (err) {
       logger.error(`  ❌ Trending refresh failed for ${site}:`, { error: err.message })
     }
-  }, TRENDING_INTERVAL)
+  }, TRENDING_INTERVAL))
 }
 
 // -----------------------------------------------------------
@@ -1716,7 +1729,7 @@ function startScheduledTrendingRefresh() {
 function startStreamUrlTTLMonitor() {
   const TTL_CHECK_INTERVAL = 5 * 60_000 // Check every 5 minutes
 
-  setInterval(async () => {
+  backgroundIntervals.push(setInterval(async () => {
     try {
       // Find URLs expiring in the next 15 minutes that still have a stream_url
       const expiring = db.prepare(`
@@ -1735,7 +1748,7 @@ function startStreamUrlTTLMonitor() {
     } catch (err) {
       logger.error('TTL monitor error:', { error: err.message })
     }
-  }, TTL_CHECK_INTERVAL)
+  }, TTL_CHECK_INTERVAL))
 }
 
 // -----------------------------------------------------------
@@ -1762,9 +1775,16 @@ process.on('unhandledRejection', (reason) => {
 })
 process.on('SIGTERM', async () => {
   logger.info('Shutting down...')
+  // Clear background intervals
+  for (const id of backgroundIntervals) clearInterval(id)
+  backgroundIntervals.length = 0
+  // Close source adapters (Puppeteer, etc.)
   await closeAllSources()
+  // Close database
+  try { db.close() } catch {}
   process.exit(0)
 })
+process.on('SIGINT', () => process.emit('SIGTERM'))
 
 // -----------------------------------------------------------
 // Start server

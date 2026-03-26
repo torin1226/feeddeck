@@ -197,7 +197,15 @@ export class ScraperAdapter extends SourceAdapter {
     const config = SITE_CONFIGS[siteKey]
     if (!config) throw new Error(`No scraper config for ${siteKey}`)
 
-    const page = await this._newPage()
+    let page
+    try {
+      page = await this._newPage()
+    } catch (err) {
+      // Browser launch/page creation failed — close the browser so it
+      // gets re-launched on next attempt instead of leaking
+      await this._closeBrowser()
+      throw err
+    }
 
     try {
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 })
@@ -292,9 +300,21 @@ export class ScraperAdapter extends SourceAdapter {
         uploader: v.uploader,
         source: siteKey,
       }))
-    } finally {
-      await page.close()
+    } catch (err) {
+      // Close the browser on failure so leaked instances don't accumulate
+      await page.close().catch(() => {})
+      await this._closeBrowser()
+      throw err
     }
+    await page.close()
+  }
+
+  // Close and null the browser so it gets re-launched on next use
+  async _closeBrowser() {
+    try {
+      await this.browser?.close()
+    } catch {}
+    this.browser = null
   }
 
   _urlToId(url) {
@@ -369,10 +389,7 @@ export class ScraperAdapter extends SourceAdapter {
 
   // Cleanup: close the browser when shutting down
   async close() {
-    if (this.browser) {
-      await this.browser.close()
-      this.browser = null
-    }
+    await this._closeBrowser()
   }
 }
 

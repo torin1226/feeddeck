@@ -72,8 +72,7 @@ export default function CategoryRow({ category }) {
             key={item.id}
             onClick={() => handleCardClick(item)}
             onMouseEnter={(e) => {
-              const vid = e.currentTarget.querySelector('video')
-              if (item.url && vid) startPreview(item.url, vid)
+              if (item.url) startPreview(item.url, e.currentTarget)
             }}
             onMouseLeave={cancelPreview}
             className="cat-card flex-none w-[200px] rounded-[10px] overflow-hidden bg-raised
@@ -85,14 +84,6 @@ export default function CategoryRow({ category }) {
               alt={item.title}
               loading="lazy"
               className="w-full h-[113px] object-cover block bg-overlay"
-            />
-            {/* Hover preview video */}
-            <video
-              className="absolute top-0 left-0 w-full h-[113px] object-cover z-[1] pointer-events-none transition-opacity duration-300"
-              style={{ opacity: 0 }}
-              muted
-              playsInline
-              loop
             />
             {/* Hover play overlay */}
             <div className="absolute top-0 left-0 right-0 h-[113px] bg-black/45 flex items-center justify-center text-[28px] text-white opacity-0 hover:opacity-100 transition-opacity z-[2]">
