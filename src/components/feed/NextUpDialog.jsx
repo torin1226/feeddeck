@@ -1,9 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 export default function NextUpDialog({ videoRef, nextVideo, onAdvance }) {
   const [visible, setVisible] = useState(false)
   const [dismissed, setDismissed] = useState(false)
   const [countdown, setCountdown] = useState(1) // 1 = full, 0 = empty
+
+  // Stable ref for onAdvance — avoids re-running the timeupdate effect
+  // every render when the parent doesn't memoize the callback
+  const onAdvanceRef = useRef(onAdvance)
+  onAdvanceRef.current = onAdvance
 
   // Reset dismissed state when next video changes
   useEffect(() => {
@@ -37,7 +42,7 @@ export default function NextUpDialog({ videoRef, nextVideo, onAdvance }) {
     }
 
     const onEnded = () => {
-      if (!dismissed) onAdvance()
+      if (!dismissed) onAdvanceRef.current()
     }
 
     video.addEventListener('timeupdate', onTime)
@@ -46,7 +51,7 @@ export default function NextUpDialog({ videoRef, nextVideo, onAdvance }) {
       video.removeEventListener('timeupdate', onTime)
       video.removeEventListener('ended', onEnded)
     }
-  }, [videoRef, nextVideo, dismissed, onAdvance])
+  }, [videoRef, nextVideo, dismissed])
 
   // "All caught up" variant when no next video
   if (visible && !nextVideo) {
