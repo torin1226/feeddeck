@@ -1,9 +1,15 @@
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect, useCallback, useState } from 'react'
 import useFeedStore from '../../stores/feedStore'
 import ForYouSlot from './ForYouSlot'
+import TheatreOverlay from './TheatreOverlay'
+import TheatreTimeline from './TheatreTimeline'
+import NextUpDialog from './NextUpDialog'
 
 export default function ForYouFeed() {
   const containerRef = useRef(null)
+  const activeVideoRef = useRef(null)
+  const [nextUpVisible, setNextUpVisible] = useState(false)
+
   const buffer = useFeedStore(s => s.buffer)
   const currentIndex = useFeedStore(s => s.currentIndex)
   const setCurrentIndex = useFeedStore(s => s.setCurrentIndex)
@@ -12,8 +18,20 @@ export default function ForYouFeed() {
   const initialized = useFeedStore(s => s.initialized)
   const theatreMode = useFeedStore(s => s.theatreMode)
 
+  const nextVideo = buffer[currentIndex + 1] || null
+
   // Init feed on mount
   useEffect(() => { initFeed() }, [initFeed])
+
+  // Theatre mode — toggle body class so header can hide itself
+  useEffect(() => {
+    if (theatreMode) {
+      document.body.classList.add('theatre-active')
+    } else {
+      document.body.classList.remove('theatre-active')
+    }
+    return () => document.body.classList.remove('theatre-active')
+  }, [theatreMode])
 
   // Wheel → horizontal scroll (map deltaY to scrollLeft)
   useEffect(() => {
@@ -71,6 +89,20 @@ export default function ForYouFeed() {
     return () => window.removeEventListener('keydown', onKey)
   }, [theatreMode, currentIndex, buffer.length])
 
+  // Receive active video element from the active slot
+  const handleVideoRef = useCallback((el) => {
+    activeVideoRef.current = el
+  }, [])
+
+  // Advance to the next video slot (used by NextUpDialog)
+  const advanceToNext = useCallback(() => {
+    const { currentIndex: idx, buffer: buf } = useFeedStore.getState()
+    if (idx < buf.length - 1) {
+      const next = idx + 1
+      containerRef.current?.children[next]?.scrollIntoView({ behavior: 'smooth', inline: 'start' })
+    }
+  }, [])
+
   if (!initialized && loading) {
     return (
       <div className="h-dvh w-full bg-black flex items-center justify-center">
@@ -88,18 +120,35 @@ export default function ForYouFeed() {
   }
 
   return (
-    <div
-      ref={containerRef}
-      className="h-dvh w-full overflow-x-scroll snap-x snap-mandatory flex bg-black scrollbar-none"
-    >
-      {buffer.map((video, idx) => (
-        <ForYouSlot
-          key={`${video.id}-${idx}`}
-          video={video}
-          index={idx}
-          isActive={idx === currentIndex}
-        />
-      ))}
+    <div className="relative h-dvh w-full">
+      {/* Horizontal scroll container */}
+      <div
+        ref={containerRef}
+        className="h-dvh w-full overflow-x-scroll snap-x snap-mandatory flex bg-black scrollbar-none"
+      >
+        {buffer.map((video, idx) => (
+          <ForYouSlot
+            key={`${video.id}-${idx}`}
+            video={video}
+            index={idx}
+            isActive={idx === currentIndex}
+            onVideoRef={idx === currentIndex ? handleVideoRef : undefined}
+          />
+        ))}
+      </div>
+
+      {/* Theatre mode overlays — rendered outside the scroll container */}
+      {theatreMode && (
+        <>
+          <TheatreOverlay videoRef={activeVideoRef} />
+          <TheatreTimeline videoRef={activeVideoRef} nextUpVisible={nextUpVisible} />
+          <NextUpDialog
+            videoRef={activeVideoRef}
+            nextVideo={nextVideo}
+            onAdvance={advanceToNext}
+          />
+        </>
+      )}
     </div>
   )
 }

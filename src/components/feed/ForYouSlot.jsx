@@ -2,13 +2,20 @@ import { useRef, useEffect, useState, memo } from 'react'
 import Hls from 'hls.js'
 import useFeedStore from '../../stores/feedStore'
 
-const ForYouSlot = memo(function ForYouSlot({ video, index, isActive }) {
+const ForYouSlot = memo(function ForYouSlot({ video, index, isActive, onVideoRef }) {
   const videoRef = useRef(null)
   const hlsRef = useRef(null)
   const theatreMode = useFeedStore(s => s.theatreMode)
   const muted = useFeedStore(s => s.muted)
   const [progress, setProgress] = useState(0)
   const [resolving, setResolving] = useState(false)
+
+  // Expose video element to parent when active
+  useEffect(() => {
+    if (isActive && videoRef.current && onVideoRef) {
+      onVideoRef(videoRef.current)
+    }
+  }, [isActive, onVideoRef])
 
   // Resolve stream URL and play when active
   useEffect(() => {
