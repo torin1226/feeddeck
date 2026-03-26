@@ -1,5 +1,9 @@
-import { useEffect, useRef, useCallback, useState } from 'react'
+import { useEffect, useRef, useCallback, useState, lazy, Suspense } from 'react'
 import useFeedStore from '../stores/feedStore'
+import useDesktopBreakpoint from '../hooks/useDesktopBreakpoint'
+
+const ForYouFeed = lazy(() => import('../components/feed/ForYouFeed'))
+const RemixFeed = lazy(() => import('../components/feed/RemixFeed'))
 import useModeStore from '../stores/modeStore'
 import useQueueStore from '../stores/queueStore'
 import useFeedGestures from '../hooks/useFeedGestures'
@@ -31,6 +35,18 @@ export default function FeedPage() {
   const [hearts, setHearts] = useState([])
   const [sourceSheet, setSourceSheet] = useState(null)
   const [showSwipeAnim, setShowSwipeAnim] = useState(false)
+
+  const isDesktop = useDesktopBreakpoint()
+  const feedView = useFeedStore(s => s.feedView)
+  const setFeedView = useFeedStore(s => s.setFeedView)
+  const theatreMode = useFeedStore(s => s.theatreMode)
+
+  // Exit theatre mode when resizing to mobile
+  useEffect(() => {
+    if (!isDesktop && theatreMode) {
+      useFeedStore.getState().setTheatreMode(false)
+    }
+  }, [isDesktop, theatreMode])
 
   // Filter sheet state
   const [filterOpen, setFilterOpen] = useState(false)
@@ -214,6 +230,36 @@ export default function FeedPage() {
     container.addEventListener('scroll', onScroll, { passive: true })
     return () => container.removeEventListener('scroll', onScroll)
   }, [])
+
+  // Desktop: show tab bar + selected feed view
+  if (isDesktop) {
+    return (
+      <div className="h-dvh w-full bg-black relative">
+        {/* Tab bar — top center, only visible when not in theatre mode */}
+        {!theatreMode && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex gap-1 p-1 rounded-full bg-black/40 backdrop-blur-lg border border-white/10">
+            {['foryou', 'remix'].map(view => (
+              <button
+                key={view}
+                onClick={() => setFeedView(view)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                  feedView === view
+                    ? 'bg-white/20 text-white'
+                    : 'text-white/50 hover:text-white/70'
+                }`}
+              >
+                {view === 'foryou' ? 'For You' : 'Remix'}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <Suspense fallback={<div className="h-dvh bg-black" />}>
+          {feedView === 'foryou' ? <ForYouFeed /> : <RemixFeed />}
+        </Suspense>
+      </div>
+    )
+  }
 
   if (!initialized && loading) {
     return (
