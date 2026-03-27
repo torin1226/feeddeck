@@ -284,11 +284,18 @@ app.get('/api/proxy-stream', async (req, res) => {
     }
 
     // Pipe the body using Node streams (more robust than manual reader pump)
+    // Set a per-chunk idle timeout — if no data arrives for 30s, destroy the stream
     const { Readable } = await import('stream')
     const nodeStream = Readable.fromWeb(upstream.body)
+    let idleTimer = setTimeout(() => nodeStream.destroy(new Error('Upstream idle timeout')), 30000)
+    nodeStream.on('data', () => {
+      clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => nodeStream.destroy(new Error('Upstream idle timeout')), 30000)
+    })
     nodeStream.pipe(res)
-    nodeStream.on('error', () => { if (!res.writableEnded) res.end() })
-    res.on('close', () => { nodeStream.destroy() })
+    nodeStream.on('error', () => { clearTimeout(idleTimer); if (!res.writableEnded) res.end() })
+    nodeStream.on('end', () => clearTimeout(idleTimer))
+    res.on('close', () => { clearTimeout(idleTimer); nodeStream.destroy() })
   } catch (err) {
     logger.error('Proxy stream error:', { error: err.message })
     if (!res.headersSent) res.status(500).send('Stream proxy failed')
@@ -564,7 +571,9 @@ app.get('/api/tags/popular', (req, res) => {
           const t = tag.toLowerCase().trim()
           if (t) tagCounts[t] = (tagCounts[t] || 0) + 1
         }
-      } catch {}
+      } catch (err) {
+        logger.warn('Malformed tags JSON in video row', { tags: row.tags?.slice(0, 100), error: err.message })
+      }
     }
     const popular = Object.entries(tagCounts)
       .sort((a, b) => b[1] - a[1])

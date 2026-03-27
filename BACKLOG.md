@@ -706,16 +706,16 @@ _Claude Code adds tasks here as they come up during implementation. Move to the 
 - [x] Clean up 3 stale `vite.config.js.timestamp-*` files in project root
 - [x] **CRITICAL:** Fix missing `crypto` import in `server/index.js` — playlist creation crashed at runtime. Fixed: imported `randomBytes` from `crypto` (Cowork morning sprint 2026-03-22)
 - [x] Wire tag preferences into `refillCategory()` and `_refillFeedCacheImpl()` — both now query liked tags and append up to 2 random liked tags to search queries for personalized discovery. Discovered during personalization audit (morning sprint 2026-03-22)
-- [ ] Hover preview video element cleanup — found 54 `<video>` elements in DOM, likely from hover previews not being properly destroyed. Potential memory leak. Discovered during 5a.2 playback testing
+- [x] (2026-03-27) Hover preview video element cleanup — video elements are static React DOM (not leaked). Root cause was singleton `activeVideo` DOM reference not cleaned on unmount. Fixed: added useEffect cleanup in `useHoverPreview.js`
 - [x] (2026-03-26) TikTok GDPR import pipeline — `import-tiktok.js` parses exports, `server/scripts/process-tiktok-imports.js` enriches via yt-dlp, API routes added (`/api/tiktok/status`, `/api/tiktok/recent`, `/api/tiktok/failed`, `/api/tiktok/watch-history`). 56K+ imports seeded, processor running.
 - [x] **HIGH:** Add timeout to yt-dlp `streamSearch()` spawn — 60s kill timer prevents leaked processes (Cowork morning sprint 2026-03-22)
 - [x] **HIGH:** Cap feed buffer at 200 items with safe eviction in `feedStore.js` — prevents OOM on long sessions (Cowork morning sprint 2026-03-22)
-- [ ] **HIGH:** Close Puppeteer browser on scrape failure in `server/sources/scraper.js` (~line 195) — failed scrapes leave browser instances alive
-- [ ] Add SIGTERM handler to clear background `setInterval` callbacks in `server/index.js` (~lines 1392, 1423, 1460) and close DB
-- [ ] Add per-chunk timeout to proxy-stream pipe in `server/index.js` (~line 240) — stalled upstream blocks response forever
-- [ ] Add AbortController to `_warmStreamUrls()` in feedStore, abort on `resetFeed()` — fire-and-forget fetches update stale buffer
-- [ ] Log malformed JSON parse failures in `server/index.js` tag processing instead of silently skipping
-- [ ] Wire tag preferences into `refillCategory()` — currently uses hardcoded generic queries, ignoring liked/disliked tags entirely
+- [x] (2026-03-27) **HIGH:** Close Puppeteer browser on scrape failure — already handled: `finally { page.close() }` on every scrape, browser.close() after 5 consecutive failures
+- [x] (2026-03-27) Add SIGTERM handler — already implemented: `_intervalIds` array tracks all intervals, SIGTERM handler clears them all
+- [x] (2026-03-27) Add per-chunk timeout to proxy-stream pipe — 30s idle timeout destroys stream if no data arrives
+- [x] (2026-03-27) Add AbortController to `_warmStreamUrls()` — already implemented: `_warmAbortController` aborted on `resetFeed()`, plus setState updater pattern to avoid stale buffer races
+- [x] (2026-03-27) Log malformed JSON parse failures in tag processing — now logs warning with truncated tags value and error message
+- [x] (2026-03-22) Wire tag preferences into `refillCategory()` — both refillCategory and _refillFeedCacheImpl append liked tags to search queries (done in personalization audit)
 - [ ] Remaining 16 `react-hooks/exhaustive-deps` ESLint warnings — need per-hook manual review to avoid infinite loops
 - [x] Remove debug `console.log('Queue: advancing to')` from `VideoPlayer.jsx:136` and `useKeyboard.js:41` (Cowork morning sprint 2026-03-22)
 
