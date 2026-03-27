@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, memo } from 'react'
 import clsx from 'clsx'
 import useQueueStore from '../stores/queueStore'
 import useLibraryStore from '../stores/libraryStore'
@@ -13,7 +13,7 @@ import ContextMenu from './ContextMenu'
 // Right-click opens context menu with queue actions.
 // ============================================================
 
-export default function VideoCard({ video, onClick }) {
+export default memo(function VideoCard({ video, onClick }) {
   const { addToQueue } = useQueueStore()
   const { toggleFavorite } = useLibraryStore()
   const [ctxMenu, setCtxMenu] = useState(null)
@@ -136,9 +136,7 @@ export default function VideoCard({ video, onClick }) {
       )}
     </div>
   )
-}
-
-// Helper: ISO date → "2 days ago"
+})
 function timeAgo(isoString) {
   const diff = Date.now() - new Date(isoString).getTime()
   const mins = Math.floor(diff / 60000)

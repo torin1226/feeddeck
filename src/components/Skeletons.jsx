@@ -60,17 +60,3 @@ export function SkeletonFeatured() {
     </div>
   )
 }
-
-export function SkeletonVideoGrid() {
-  return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 p-6">
-      {Array.from({ length: 10 }, (_, i) => (
-        <div key={i}>
-          <div className={`${shimmer} aspect-video rounded-lg mb-2`} />
-          <div className={`${shimmer} h-3.5 w-3/4 mb-1.5`} />
-          <div className={`${shimmer} h-3 w-1/2`} />
-        </div>
-      ))}
-    </div>
-  )
-}

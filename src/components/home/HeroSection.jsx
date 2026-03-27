@@ -14,6 +14,13 @@ import HeroCarousel from './HeroCarousel'
 // full screen.
 // ============================================================
 
+// Hoisted static styles to avoid re-creating objects on every render
+const VIGNETTE_STYLE = {
+  background: 'radial-gradient(ellipse at center, transparent 50%, var(--color-surface) 100%)',
+}
+const GRADIENT_TOP_BG = 'linear-gradient(to top, var(--color-surface) 0%, var(--color-gradient-mid) 30%, var(--color-gradient-faint) 65%, transparent 100%)'
+const GRADIENT_RIGHT_BG = 'linear-gradient(to right, var(--color-gradient-solid) 0%, var(--color-gradient-mid) 40%, transparent 75%)'
+
 export default function HeroSection() {
   const { heroItem, theatreMode, toggleTheatre } = useHomeStore()
   const { addToQueue, advance, queue } = useQueueStore()
@@ -178,9 +185,7 @@ export default function HeroSection() {
           }`}
         />
         {/* Vignette overlay to blend edges into background */}
-        <div className="absolute inset-0" style={{
-          background: `radial-gradient(ellipse at center, transparent 50%, var(--color-surface) 100%)`
-        }} />
+        <div className="absolute inset-0" style={VIGNETTE_STYLE} />
       </div>
 
       {/* Video element for theatre mode — proxy CDN URL to avoid CORS/ORB blocking */}
@@ -235,19 +240,11 @@ export default function HeroSection() {
       {/* Gradient overlays — dimmer in theatre mode so video is visible */}
       <div
         className="absolute inset-0 transition-opacity duration-500"
-        style={{
-          background:
-            'linear-gradient(to top, var(--color-surface) 0%, var(--color-gradient-mid) 30%, var(--color-gradient-faint) 65%, transparent 100%)',
-          opacity: theatreMode ? 0.3 : 1,
-        }}
+        style={{ background: GRADIENT_TOP_BG, opacity: theatreMode ? 0.3 : 1 }}
       />
       <div
         className="absolute inset-0 transition-opacity duration-500"
-        style={{
-          background:
-            'linear-gradient(to right, var(--color-gradient-solid) 0%, var(--color-gradient-mid) 40%, transparent 75%)',
-          opacity: theatreMode ? 0.2 : 1,
-        }}
+        style={{ background: GRADIENT_RIGHT_BG, opacity: theatreMode ? 0.2 : 1 }}
       />
 
       {/* Preview badge */}

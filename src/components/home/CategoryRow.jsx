@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, memo } from 'react'
 import useHomeStore from '../../stores/homeStore'
 import useHoverPreview from '../../hooks/useHoverPreview'
 
@@ -8,7 +8,15 @@ import useHoverPreview from '../../hooks/useHoverPreview'
 // Cards fade up with staggered delay via IntersectionObserver.
 // ============================================================
 
-export default function CategoryRow({ category }) {
+// Hoisted to avoid creating a new object on every render
+const ROW_SCROLL_STYLE = {
+  scrollbarWidth: 'none',
+  msOverflowStyle: 'none',
+  WebkitMaskImage: 'linear-gradient(to right, black 88%, transparent 100%)',
+  maskImage: 'linear-gradient(to right, black 88%, transparent 100%)',
+}
+
+export default memo(function CategoryRow({ category }) {
   const { setHeroItem, setTheatreMode } = useHomeStore()
   const { startPreview, cancelPreview } = useHoverPreview()
   const rowRef = useRef(null)
@@ -61,12 +69,7 @@ export default function CategoryRow({ category }) {
       <div
         ref={rowRef}
         className="flex gap-3 overflow-x-auto pb-1.5 scrollbar-none"
-        style={{
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
-          WebkitMaskImage: 'linear-gradient(to right, black 88%, transparent 100%)',
-          maskImage: 'linear-gradient(to right, black 88%, transparent 100%)',
-        }}
+        style={ROW_SCROLL_STYLE}
       >
         {category.items.map((item) => (
           <div
@@ -117,4 +120,4 @@ export default function CategoryRow({ category }) {
       </div>
     </div>
   )
-}
+})
