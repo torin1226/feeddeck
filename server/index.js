@@ -1295,10 +1295,12 @@ app.post('/api/homepage/viewed', (req, res) => {
 
   try {
     // Match by exact id or composite id (category::id format)
-    db.prepare('UPDATE homepage_cache SET viewed = 1 WHERE id = ? OR id LIKE ?').run(id, `%::${id}`)
+    // Escape LIKE wildcards in the user-provided id to prevent injection
+    const escapedId = id.replace(/[%_]/g, '\\$&')
+    db.prepare("UPDATE homepage_cache SET viewed = 1 WHERE id = ? OR id LIKE '%::' || ? ESCAPE '\\'").run(id, escapedId)
 
     // Check if the category needs refill
-    const video = db.prepare('SELECT category_key FROM homepage_cache WHERE id = ? OR id LIKE ? LIMIT 1').get(id, `%::${id}`)
+    const video = db.prepare("SELECT category_key FROM homepage_cache WHERE id = ? OR id LIKE '%::' || ? ESCAPE '\\' LIMIT 1").get(id, escapedId)
     if (video) {
       const unviewed = db.prepare(
         `SELECT COUNT(*) as n FROM homepage_cache

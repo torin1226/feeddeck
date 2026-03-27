@@ -27,7 +27,7 @@ export default function HomePage() {
     // Reset to show skeletons while loading new mode's data
     useHomeStore.getState().resetHome()
     fetchHomepage(mode)
-  }, [isSFW])
+  }, [isSFW, fetchHomepage])
 
   // Pre-warm feed buffer so /feed loads instantly when navigated to
   useEffect(() => {

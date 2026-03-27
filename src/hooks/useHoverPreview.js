@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react'
+import { useRef, useCallback, useEffect } from 'react'
 
 // ============================================================
 // useHoverPreview Hook
@@ -39,6 +39,11 @@ function cancelActivePreview(timerRef) {
 
 export default function useHoverPreview() {
   const timerRef = useRef(null)
+
+  // Clean up singleton on unmount to prevent DOM reference leak
+  useEffect(() => {
+    return () => cancelActivePreview(timerRef)
+  }, [])
 
   const startPreview = useCallback((url, videoEl) => {
     if (!url || !videoEl) return

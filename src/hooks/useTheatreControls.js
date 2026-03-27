@@ -11,6 +11,16 @@ export default function useTheatreControls(videoRef) {
   const rafRef = useRef(null)
   const holdDirection = useRef(null) // 'forward' | 'backward'
 
+  // Clean up RAF and timers on unmount
+  useEffect(() => {
+    return () => {
+      clearTimeout(hideTimer.current)
+      clearTimeout(holdTimer.current)
+      clearTimeout(rampTimer.current)
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    }
+  }, [])
+
   const showControls = useCallback(() => {
     setControlsVisible(true)
     clearTimeout(hideTimer.current)

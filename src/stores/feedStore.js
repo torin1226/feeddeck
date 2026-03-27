@@ -76,14 +76,16 @@ const useFeedStore = create((set, get) => ({
   setCurrentIndex: (idx) => {
     const { buffer, watchedIds } = get()
     const video = buffer[idx]
+    let nextWatched = watchedIds
     if (video && !watchedIds.has(video.id)) {
-      watchedIds.add(video.id)
+      nextWatched = new Set(watchedIds)
+      nextWatched.add(video.id)
       // Fire-and-forget: mark as watched on backend
       fetch(`/api/feed/watched?id=${encodeURIComponent(video.id)}`, { method: 'POST' }).catch(() => {})
     }
     // Evict watchedIds to prevent unbounded growth
-    if (watchedIds.size > 1000) watchedIds.clear()
-    set({ currentIndex: idx })
+    if (nextWatched.size > 1000) nextWatched = new Set()
+    set({ currentIndex: idx, watchedIds: nextWatched })
 
     // Check if we need to fetch more
     const remaining = buffer.length - idx
@@ -214,14 +216,15 @@ function _warmStreamUrls(videos) {
       .then(r => r.json())
       .then(data => {
         if (data.streamUrl) {
-          // Update the video in the buffer so FeedVideo picks it up
-          const state = useFeedStore.getState()
-          const idx = state.buffer.findIndex(b => b.id === v.id)
-          if (idx !== -1) {
+          // Update the video in the buffer so FeedVideo picks it up.
+          // Use updater to avoid stale state and minimize array copies.
+          useFeedStore.setState(state => {
+            const idx = state.buffer.findIndex(b => b.id === v.id)
+            if (idx === -1) return state
             const updated = [...state.buffer]
             updated[idx] = { ...updated[idx], streamUrl: data.streamUrl }
-            useFeedStore.setState({ buffer: updated })
-          }
+            return { buffer: updated }
+          })
         }
       })
       .catch(() => {}) // silent — video will still resolve on-demand
