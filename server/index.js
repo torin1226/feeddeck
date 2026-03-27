@@ -1255,6 +1255,8 @@ app.get('/api/homepage', (req, res) => {
         label: cat.label,
         videos: videos.map(v => ({
           ...v,
+          // Strip composite category::id prefix for client
+          id: v.id.includes('::') ? v.id.split('::').slice(1).join('::') : v.id,
           tags: v.tags ? JSON.parse(v.tags) : [],
           durationFormatted: formatDuration(v.duration),
         })),
@@ -1292,10 +1294,11 @@ app.post('/api/homepage/viewed', (req, res) => {
   if (!id) return res.status(400).json({ error: 'Video ID required' })
 
   try {
-    db.prepare('UPDATE homepage_cache SET viewed = 1 WHERE id = ?').run(id)
+    // Match by exact id or composite id (category::id format)
+    db.prepare('UPDATE homepage_cache SET viewed = 1 WHERE id = ? OR id LIKE ?').run(id, `%::${id}`)
 
     // Check if the category needs refill
-    const video = db.prepare('SELECT category_key FROM homepage_cache WHERE id = ?').get(id)
+    const video = db.prepare('SELECT category_key FROM homepage_cache WHERE id = ? OR id LIKE ? LIMIT 1').get(id, `%::${id}`)
     if (video) {
       const unviewed = db.prepare(
         `SELECT COUNT(*) as n FROM homepage_cache
@@ -1370,7 +1373,9 @@ async function refillCategory(categoryKey) {
     let added = 0
     for (const v of videos) {
       try {
-        insert.run(v.id, categoryKey, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, JSON.stringify(v.tags || []))
+        // Use composite ID so same video can appear in multiple categories
+        const compositeId = `${categoryKey}::${v.id}`
+        insert.run(compositeId, categoryKey, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, JSON.stringify(v.tags || []))
         added++
       } catch { /* skip duplicates */ }
     }

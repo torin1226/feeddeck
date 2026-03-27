@@ -45,14 +45,12 @@ export default function HeroSection() {
   useEffect(() => {
     if (theatreMode && heroItem) {
       setActiveVideo(heroItem)
-      // Only resolve if the item has a real URL (not placeholder data)
       if (heroItem.url) {
         resolveStream(heroItem.url)
       }
       setPlaying(true)
-    } else if (!theatreMode) {
-      setPlaying(false)
     }
+    // Only pause on explicit theatre exit, not on every render where !theatreMode
   }, [theatreMode, heroItem?.id])
 
   // Sync video element with playerStore state
@@ -309,7 +307,14 @@ export default function HeroSection() {
         {/* Actions */}
         <div className="flex items-center gap-2.5">
           <button
-            onClick={toggleTheatre}
+            onClick={() => {
+              // Play inline — start video without entering theatre mode
+              if (heroItem) {
+                setActiveVideo(heroItem)
+                if (heroItem.url) resolveStream(heroItem.url)
+                setPlaying(true)
+              }
+            }}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-accent text-white
               text-sm font-semibold hover:bg-accent-hover hover:-translate-y-px transition-all"
           >

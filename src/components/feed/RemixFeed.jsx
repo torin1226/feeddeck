@@ -3,6 +3,18 @@ import useFeedStore from '../../stores/feedStore'
 import RemixHero from './RemixHero'
 import RemixCarousel from './RemixCarousel'
 
+// Stable shuffle using video ids as seed (deterministic per session, different from ForYou order)
+function shuffled(arr) {
+  const copy = [...arr]
+  for (let i = copy.length - 1; i > 0; i--) {
+    // Simple hash from id for deterministic but different ordering
+    const hash = (copy[i].id || '').split('').reduce((a, c) => ((a << 5) - a + c.charCodeAt(0)) | 0, 0)
+    const j = ((hash >>> 0) % (i + 1))
+    ;[copy[i], copy[j]] = [copy[j], copy[i]]
+  }
+  return copy
+}
+
 // Group videos into categories by source
 function buildCategories(buffer) {
   const bySource = {}
@@ -13,8 +25,8 @@ function buildCategories(buffer) {
     bySource[src].push(video)
   }
 
-  // "All" category: first 20 videos
-  const categories = [{ id: 'all', label: 'All', videos: buffer.slice(0, 20) }]
+  // "All" category: shuffled so Remix order differs from ForYou sequential order
+  const categories = [{ id: 'all', label: 'All', videos: shuffled(buffer).slice(0, 20) }]
 
   // Per-source categories
   for (const [source, videos] of Object.entries(bySource)) {

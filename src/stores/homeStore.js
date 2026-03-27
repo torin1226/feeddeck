@@ -156,7 +156,11 @@ const useHomeStore = create((set, get) => ({
       const allVideos = data.categories.flatMap(cat => cat.videos).map(mapVideo)
 
       if (allVideos.length === 0) {
-        // No cached content yet — fall back to placeholders
+        if (data.needsRefill) {
+          // Backend is refilling — retry after a delay instead of showing placeholders
+          setTimeout(() => get().fetchHomepage(mode), 4000)
+        }
+        // Show placeholders while waiting for refill
         get().generateData()
         return
       }

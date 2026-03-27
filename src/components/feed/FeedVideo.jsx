@@ -282,7 +282,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
     <div
       ref={containerEl}
       data-feed-index={index}
-      className={`w-full snap-start snap-always relative flex items-center justify-center bg-black ${isLandscape ? 'min-h-[60dvh]' : 'h-dvh'}`}
+      className="w-full snap-start snap-always relative flex items-center justify-center bg-black h-dvh"
       onClick={handleTap}
     >
       {/* Thumbnail placeholder — shown when this slot is NOT active */}

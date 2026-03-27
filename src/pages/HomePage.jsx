@@ -23,7 +23,10 @@ export default function HomePage() {
 
   // Fetch homepage data on mount and when mode changes
   useEffect(() => {
-    fetchHomepage(isSFW ? 'social' : 'nsfw')
+    const mode = isSFW ? 'social' : 'nsfw'
+    // Reset to show skeletons while loading new mode's data
+    useHomeStore.getState().resetHome()
+    fetchHomepage(mode)
   }, [isSFW])
 
   // Pre-warm feed buffer so /feed loads instantly when navigated to
