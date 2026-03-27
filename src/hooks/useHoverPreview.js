@@ -13,14 +13,38 @@ import { useRef, useCallback } from 'react'
 let activeAbort = null
 let activeVideo = null
 
+// Shared cancel logic (module-level so startPreview can call it safely)
+function cancelActivePreview(timerRef) {
+  // Clear debounce timer
+  if (timerRef) {
+    clearTimeout(timerRef.current)
+    timerRef.current = null
+  }
+
+  // Abort any in-flight fetch
+  if (activeAbort) {
+    activeAbort.abort()
+    activeAbort = null
+  }
+
+  // Stop and hide any playing video
+  if (activeVideo) {
+    activeVideo.pause()
+    activeVideo.removeAttribute('src')
+    activeVideo.load()
+    activeVideo.style.opacity = '0'
+    activeVideo = null
+  }
+}
+
 export default function useHoverPreview() {
   const timerRef = useRef(null)
 
   const startPreview = useCallback((url, videoEl) => {
     if (!url || !videoEl) return
 
-    // Cancel any existing preview
-    cancelPreview()
+    // Cancel any existing preview (use shared function)
+    cancelActivePreview(timerRef)
 
     const abort = new AbortController()
     activeAbort = abort
@@ -55,24 +79,7 @@ export default function useHoverPreview() {
   }, [])
 
   const cancelPreview = useCallback(() => {
-    // Clear debounce timer
-    clearTimeout(timerRef.current)
-    timerRef.current = null
-
-    // Abort any in-flight fetch
-    if (activeAbort) {
-      activeAbort.abort()
-      activeAbort = null
-    }
-
-    // Stop and hide any playing video
-    if (activeVideo) {
-      activeVideo.pause()
-      activeVideo.removeAttribute('src')
-      activeVideo.load()
-      activeVideo.style.opacity = '0'
-      activeVideo = null
-    }
+    cancelActivePreview(timerRef)
   }, [])
 
   return { startPreview, cancelPreview }

@@ -9,7 +9,7 @@ import useHoverPreview from '../../hooks/useHoverPreview'
 // ============================================================
 
 export default function CategoryRow({ category }) {
-  const { setHeroItem } = useHomeStore()
+  const { setHeroItem, setTheatreMode } = useHomeStore()
   const { startPreview, cancelPreview } = useHoverPreview()
   const rowRef = useRef(null)
 
@@ -43,6 +43,7 @@ export default function CategoryRow({ category }) {
 
   const handleCardClick = (item) => {
     setHeroItem(item)
+    setTheatreMode(true)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -86,18 +87,18 @@ export default function CategoryRow({ category }) {
               loading="lazy"
               className="w-full h-[113px] object-cover block bg-overlay"
             />
-            {/* Hover preview video */}
+            {/* Hover play overlay — shows on hover, hidden when preview video plays */}
+            <div className="absolute top-0 left-0 right-0 h-[113px] bg-black/45 flex items-center justify-center text-[28px] text-white opacity-0 hover:opacity-100 transition-opacity z-[1]">
+              &#9654;
+            </div>
+            {/* Hover preview video — above overlay so it's visible when playing */}
             <video
-              className="absolute top-0 left-0 w-full h-[113px] object-cover z-[1] pointer-events-none transition-opacity duration-300"
+              className="absolute top-0 left-0 w-full h-[113px] object-cover z-[2] pointer-events-none transition-opacity duration-300"
               style={{ opacity: 0 }}
               muted
               playsInline
               loop
             />
-            {/* Hover play overlay */}
-            <div className="absolute top-0 left-0 right-0 h-[113px] bg-black/45 flex items-center justify-center text-[28px] text-white opacity-0 hover:opacity-100 transition-opacity z-[2]">
-              &#9654;
-            </div>
             {/* Duration badge */}
             <span className="absolute top-[90px] right-[7px] bg-black/80 text-[10px] font-semibold px-1.5 py-0.5 rounded z-[3]">
               {item.duration}

@@ -61,9 +61,9 @@ export default function VideoCard({ video, onClick }) {
           </div>
         )}
 
-        {/* Hover preview video */}
+        {/* Hover preview video — above overlay so it's visible when playing */}
         <video
-          className="absolute inset-0 w-full h-full object-cover z-[1] pointer-events-none transition-opacity duration-300"
+          className="absolute inset-0 w-full h-full object-cover z-[2] pointer-events-none transition-opacity duration-300"
           style={{ opacity: 0 }}
           muted
           playsInline
@@ -75,8 +75,8 @@ export default function VideoCard({ video, onClick }) {
           {display.duration}
         </div>
 
-        {/* Hover overlay with actions */}
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100 z-[2]">
+        {/* Hover overlay with actions — below preview video */}
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100 z-[1]">
           <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
             {/* Add to queue */}
             <button

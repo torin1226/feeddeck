@@ -195,7 +195,7 @@ async function fetchFeedBatch(getState) {
   if (!res.ok) throw new Error('Feed fetch failed')
   const data = await res.json()
   // Filter out already-watched and already-buffered videos
-  return (data.videos || []).filter(v => !watchedIds.has(v.id) && !bufferIds.has(v.id))
+  return (data.videos || []).filter(v => !watchedIds.has(v.id) && !bufferIds.has(v.id) && v.duration > 0)
 }
 
 // AbortController for cancelling in-flight warm requests on reset

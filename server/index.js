@@ -1245,7 +1245,7 @@ app.get('/api/homepage', (req, res) => {
       const videos = db.prepare(
         `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, tags, viewed
          FROM homepage_cache
-         WHERE category_key = ? AND expires_at > datetime('now')
+         WHERE category_key = ? AND expires_at > datetime('now') AND duration > 0
          ORDER BY fetched_at DESC
          LIMIT 20`
       ).all(cat.key)
@@ -1416,7 +1416,7 @@ app.get('/api/feed/next', (req, res) => {
              fc.duration, fc.orientation, fc.source_domain AS source, fc.tags
       FROM feed_cache fc
       LEFT JOIN sources s ON fc.source_domain = s.domain
-      WHERE fc.mode = ? AND fc.watched = 0${whereExtra}
+      WHERE fc.mode = ? AND fc.watched = 0 AND fc.duration > 0${whereExtra}
       ORDER BY COALESCE(s.weight, 1.0) DESC, RANDOM()
       LIMIT ?
     `).all(...params)
@@ -1635,6 +1635,9 @@ async function _refillFeedCacheImpl(mode) {
       let added = 0
       const newVideoUrls = []
       for (const v of videos) {
+        // Skip videos with no duration (unplayable: live streams, metadata failures)
+        if (!v.duration || v.duration <= 0) continue
+
         try {
           const tags = Array.isArray(v.tags) ? JSON.stringify(v.tags) : (v.tags || '[]')
           const result = insert.run(
