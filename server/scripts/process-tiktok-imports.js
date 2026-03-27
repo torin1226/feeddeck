@@ -8,7 +8,7 @@
 // inserts into the videos table, and marks imports as done/failed.
 
 import { DatabaseSync } from 'node:sqlite'
-import { execSync } from 'child_process'
+import { execFileSync } from 'child_process'
 import { existsSync } from 'fs'
 import { resolve, join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -63,14 +63,16 @@ const insertVideo = db.prepare(`
 `)
 
 function extractMetadata(url) {
-  const cookieArgs = existsSync(cookiesPath) ? `--cookies "${cookiesPath}"` : ''
-  const cmd = `yt-dlp --dump-json --no-download --no-warnings ${cookieArgs} "${url}"`
+  const args = ['--dump-json', '--no-download', '--no-warnings']
+  if (existsSync(cookiesPath)) args.push('--cookies', cookiesPath)
+  args.push(url)
 
   try {
-    const output = execSync(cmd, {
+    const output = execFileSync('yt-dlp', args, {
       timeout: 30000,
       encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     })
     return JSON.parse(output)
   } catch (err) {

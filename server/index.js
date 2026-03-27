@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import { networkInterfaces } from 'os'
 import { existsSync, writeFileSync, unlinkSync, statSync, readFileSync } from 'fs'
+import { writeFile, stat, readFile, unlink, access } from 'fs/promises'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { randomBytes } from 'crypto'
@@ -461,7 +462,7 @@ app.get('/api/videos/watch-later', (req, res) => {
 const COOKIES_PATH = join(__dirname, '..', 'data', 'cookies.txt')
 
 // POST /api/cookies — upload cookies.txt content
-app.post('/api/cookies', express.text({ limit: '5mb' }), (req, res) => {
+app.post('/api/cookies', express.text({ limit: '5mb' }), async (req, res) => {
   const content = req.body
   if (!content || typeof content !== 'string') return res.status(400).json({ error: 'Cookie content required (text/plain)' })
 
@@ -475,7 +476,7 @@ app.post('/api/cookies', express.text({ limit: '5mb' }), (req, res) => {
   }
 
   try {
-    writeFileSync(COOKIES_PATH, content, 'utf8')
+    await writeFile(COOKIES_PATH, content, 'utf8')
     const cookieCount = lines.filter(l => !l.startsWith('#') && l.trim() && l.split('\t').length >= 7).length
     logger.info('Cookies imported', { cookies: cookieCount })
     res.json({ ok: true, cookies: cookieCount })
@@ -486,24 +487,25 @@ app.post('/api/cookies', express.text({ limit: '5mb' }), (req, res) => {
 })
 
 // GET /api/cookies/status — check if cookies are installed
-app.get('/api/cookies/status', (req, res) => {
+app.get('/api/cookies/status', async (req, res) => {
   try {
-    if (!existsSync(COOKIES_PATH)) return res.json({ installed: false })
-    const stat = statSync(COOKIES_PATH)
-    const content = readFileSync(COOKIES_PATH, 'utf8')
+    await access(COOKIES_PATH)
+    const [fileStat, content] = await Promise.all([stat(COOKIES_PATH), readFile(COOKIES_PATH, 'utf8')])
     const cookieCount = content.split('\n').filter(l => !l.startsWith('#') && l.trim() && l.split('\t').length >= 7).length
-    res.json({ installed: true, cookies: cookieCount, size: stat.size, modified: stat.mtime.toISOString() })
+    res.json({ installed: true, cookies: cookieCount, size: fileStat.size, modified: fileStat.mtime.toISOString() })
   } catch (err) {
+    if (err.code === 'ENOENT') return res.json({ installed: false })
     res.json({ installed: false, error: err.message })
   }
 })
 
 // DELETE /api/cookies — remove cookies file
-app.delete('/api/cookies', (req, res) => {
+app.delete('/api/cookies', async (req, res) => {
   try {
-    if (existsSync(COOKIES_PATH)) unlinkSync(COOKIES_PATH)
+    await unlink(COOKIES_PATH)
     res.json({ ok: true })
   } catch (err) {
+    if (err.code === 'ENOENT') return res.json({ ok: true })
     logger.error('Cookie delete error', { error: err.message })
     res.status(500).json({ error: 'Failed to delete cookies' })
   }
@@ -960,7 +962,7 @@ app.get('/api/search', (req, res) => {
     'Connection': 'keep-alive',
   })
 
-  const limit = parseInt(count, 10)
+  const limit = Math.min(Math.max(parseInt(count, 10) || 12, 1), 50)
 
   // Use the yt-dlp adapter's streaming search for SSE
   const stream = ytdlpAdapter.streamSearch(q, { site, limit })
@@ -1240,28 +1242,36 @@ app.get('/api/homepage', (req, res) => {
       'SELECT key, label, query FROM categories WHERE mode = ? ORDER BY sort_order'
     ).all(mode)
 
-    // Get cached videos for each category
-    const result = categories.map(cat => {
-      const videos = db.prepare(
-        `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, tags, viewed
-         FROM homepage_cache
-         WHERE category_key = ? AND expires_at > datetime('now') AND duration > 0
-         ORDER BY fetched_at DESC
-         LIMIT 20`
-      ).all(cat.key)
+    // Fetch all non-expired videos in one query instead of N per-category queries
+    const categoryKeys = categories.map(c => c.key)
+    const allVideos = categoryKeys.length > 0
+      ? db.prepare(
+          `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, tags, viewed, category_key
+           FROM homepage_cache
+           WHERE category_key IN (${categoryKeys.map(() => '?').join(',')})
+             AND expires_at > datetime('now') AND duration > 0
+           ORDER BY fetched_at DESC`
+        ).all(...categoryKeys)
+      : []
 
-      return {
-        key: cat.key,
-        label: cat.label,
-        videos: videos.map(v => ({
-          ...v,
-          // Strip composite category::id prefix for client
-          id: v.id.includes('::') ? v.id.split('::').slice(1).join('::') : v.id,
-          tags: v.tags ? JSON.parse(v.tags) : [],
-          durationFormatted: formatDuration(v.duration),
-        })),
-      }
-    })
+    // Group by category, limit 20 per category
+    const videoByCat = {}
+    for (const v of allVideos) {
+      if (!videoByCat[v.category_key]) videoByCat[v.category_key] = []
+      if (videoByCat[v.category_key].length < 20) videoByCat[v.category_key].push(v)
+    }
+
+    const result = categories.map(cat => ({
+      key: cat.key,
+      label: cat.label,
+      videos: (videoByCat[cat.key] || []).map(v => ({
+        ...v,
+        // Strip composite category::id prefix for client
+        id: v.id.includes('::') ? v.id.split('::').slice(1).join('::') : v.id,
+        tags: v.tags ? JSON.parse(v.tags) : [],
+        durationFormatted: formatDuration(v.duration),
+      })),
+    }))
 
     // Check if any category needs refill (below 8 videos)
     const needsRefill = result.some(cat => cat.videos.length < 8)
