@@ -1,0 +1,11 @@
+services:
+  feeddeck:
+    build: .
+    ports:
+      - "3001:3001"
+    volumes:
+      # Persist database and cookie temp files
+      - ./data:/app/data
+      # Mount cookie files (yt-dlp auth)
+      - ./cookies:/app/cookies
+    restart: unless-stopped
