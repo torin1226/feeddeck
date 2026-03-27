@@ -1864,7 +1864,7 @@ function startStreamUrlTTLMonitor() {
     try {
       // First pass: clear already-expired URLs (they'll be resolved on demand)
       const cleared = db.prepare(`
-        UPDATE feed_cache SET stream_url = NULL
+        UPDATE feed_cache SET stream_url = NULL, expires_at = NULL
         WHERE stream_url IS NOT NULL
           AND expires_at IS NOT NULL
           AND expires_at < datetime('now')
