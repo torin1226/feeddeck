@@ -96,8 +96,10 @@ function loadSource(vid, url) {
     let done = false
     const finish = () => { if (!done) { done = true; resolve() } }
     vid.addEventListener('canplay', finish, { once: true })
+    vid.addEventListener('loadeddata', finish, { once: true })
     vid.src = proxyUrl
-    setTimeout(finish, 5000)
+    vid.load()
+    setTimeout(finish, 1500) // Reduced from 5s — don't block UI waiting for slow streams
   })
 }
 
@@ -123,6 +125,13 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
   useEffect(() => {
     setRef(index, containerEl.current)
   }, [index, setRef])
+
+  // Pick up pre-warmed stream URLs from buffer updates
+  useEffect(() => {
+    if (!streamUrl && !streamLoading && video.streamUrl) {
+      setStreamUrl(video.streamUrl)
+    }
+  }, [video.streamUrl])
 
   // Resolve stream URL when within preload range
   useEffect(() => {

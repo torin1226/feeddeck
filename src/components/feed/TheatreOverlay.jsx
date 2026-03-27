@@ -4,6 +4,7 @@ import useTheatreControls from '../../hooks/useTheatreControls'
 
 export default function TheatreOverlay({ videoRef }) {
   const { controlsVisible, scrubSpeed, startHold, endHold } = useTheatreControls(videoRef)
+  const theatreMode = useFeedStore(s => s.theatreMode)
   const [paused, setPaused] = useState(false)
 
   // Track play/pause state
@@ -34,16 +35,26 @@ export default function TheatreOverlay({ videoRef }) {
       }`}
       style={{ cursor: controlsVisible ? 'default' : 'none' }}
     >
-      {/* Exit button — top right */}
-      <button
-        onClick={() => useFeedStore.getState().setTheatreMode(false)}
-        className="absolute top-6 right-6 w-10 h-10 rounded-full bg-black/40 backdrop-blur-lg flex items-center justify-center text-white/70 hover:text-white hover:bg-black/60 border border-white/10 transition-colors"
-        aria-label="Exit theatre mode"
-      >
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <path d="M1 1l12 12M13 1L1 13" />
-        </svg>
-      </button>
+      {/* Theatre toggle — top right */}
+      {theatreMode ? (
+        <button
+          onClick={() => useFeedStore.getState().setTheatreMode(false)}
+          className="absolute top-6 right-6 w-10 h-10 rounded-full bg-black/40 backdrop-blur-lg flex items-center justify-center text-white/70 hover:text-white hover:bg-black/60 border border-white/10 transition-colors"
+          aria-label="Exit theatre mode"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M1 1l12 12M13 1L1 13" />
+          </svg>
+        </button>
+      ) : (
+        <button
+          onClick={() => useFeedStore.getState().setTheatreMode(true)}
+          className="absolute top-6 right-6 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-lg text-white/70 text-sm font-medium border border-white/10 hover:bg-black/60 hover:text-white transition-colors"
+          aria-label="Enter theatre mode"
+        >
+          ⛶ Theatre
+        </button>
+      )}
 
       {/* Centre control cluster */}
       <div className="absolute inset-0 flex items-center justify-center gap-8 pointer-events-auto">

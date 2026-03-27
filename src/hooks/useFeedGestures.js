@@ -10,6 +10,7 @@ import { useRef, useEffect } from 'react'
 const SWIPE_THRESHOLD = 50     // px minimum for horizontal swipe
 const SWIPE_ANGLE_MAX = 30     // degrees — must be clearly horizontal
 const DOUBLE_TAP_MS = 300      // max time between taps
+const LONG_PRESS_MS = 800      // hold duration for long-press
 
 export default function useFeedGestures({
   containerRef,
@@ -38,11 +39,10 @@ export default function useFeedGestures({
       touchStart.current = { x: touch.clientX, y: touch.clientY, time: Date.now() }
       gestureConsumed.current = false
 
-      // Long-press disabled for now (was interfering with playback)
-      // longPressTimer.current = setTimeout(() => {
-      //   gestureConsumed.current = true
-      //   callbacksRef.current.onLongPress?.(e)
-      // }, LONG_PRESS_MS)
+      longPressTimer.current = setTimeout(() => {
+        gestureConsumed.current = true
+        callbacksRef.current.onLongPress?.(e)
+      }, LONG_PRESS_MS)
     }
 
     function handleTouchMove(e) {

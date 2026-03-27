@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, memo } from 'react'
+import { useRef, useEffect, memo, useState } from 'react'
 import Hls from 'hls.js'
 import useFeedStore from '../../stores/feedStore'
 
@@ -7,7 +7,6 @@ const ForYouSlot = memo(function ForYouSlot({ video, index, isActive, onVideoRef
   const hlsRef = useRef(null)
   const theatreMode = useFeedStore(s => s.theatreMode)
   const muted = useFeedStore(s => s.muted)
-  const [progress, setProgress] = useState(0)
   const [resolving, setResolving] = useState(false)
 
   // Expose video element to parent when active
@@ -82,16 +81,6 @@ const ForYouSlot = memo(function ForYouSlot({ video, index, isActive, onVideoRef
     if (videoRef.current) videoRef.current.muted = muted
   }, [muted])
 
-  // Track progress
-  useEffect(() => {
-    const vid = videoRef.current
-    if (!vid || !isActive) return
-    const onTime = () => {
-      if (vid.duration) setProgress(vid.currentTime / vid.duration)
-    }
-    vid.addEventListener('timeupdate', onTime)
-    return () => vid.removeEventListener('timeupdate', onTime)
-  }, [isActive])
 
   return (
     <div
@@ -114,32 +103,14 @@ const ForYouSlot = memo(function ForYouSlot({ video, index, isActive, onVideoRef
         </div>
       )}
 
-      {/* Light overlay — hidden in theatre mode */}
+      {/* Metadata overlay — hidden in theatre mode */}
       {!theatreMode && (
         <>
-          {/* Bottom gradient + metadata */}
           <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black/80 via-black/30 to-transparent pointer-events-none" />
-          <div className="absolute bottom-8 left-8 z-10 max-w-md">
+          <div className="absolute bottom-8 left-8 z-10 max-w-md pointer-events-none">
             <p className="text-white/50 text-xs uppercase tracking-widest mb-1 font-medium">{video.source}</p>
             <h2 className="text-white text-2xl font-bold leading-tight">{video.title}</h2>
             {video.creator && <p className="text-white/60 text-sm mt-1">{video.creator}</p>}
-          </div>
-
-          {/* Theatre button — top right */}
-          <button
-            onClick={() => useFeedStore.getState().setTheatreMode(true)}
-            className="absolute top-8 right-8 z-10 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-lg text-white/70 text-sm font-medium border border-white/10 hover:bg-black/60 hover:text-white transition-colors"
-            aria-label="Enter theatre mode"
-          >
-            ⛶ Theatre
-          </button>
-
-          {/* Thin progress bar at bottom */}
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10 z-10">
-            <div
-              className="h-full bg-white/40 transition-[width] duration-300"
-              style={{ width: `${progress * 100}%` }}
-            />
           </div>
         </>
       )}

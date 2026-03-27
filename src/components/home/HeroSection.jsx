@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import useHomeStore from '../../stores/homeStore'
 import usePlayerStore from '../../stores/playerStore'
 import useQueueStore from '../../stores/queueStore'
+import useLibraryStore from '../../stores/libraryStore'
 import HeroCarousel from './HeroCarousel'
 
 // ============================================================
@@ -16,6 +17,7 @@ import HeroCarousel from './HeroCarousel'
 export default function HeroSection() {
   const { heroItem, theatreMode, toggleTheatre } = useHomeStore()
   const { addToQueue, advance, queue } = useQueueStore()
+  const toggleFavorite = useLibraryStore(s => s.toggleFavorite)
   const {
     _activeVideo, setActiveVideo, isPlaying, setPlaying,
     currentTime, setCurrentTime, duration, setDuration,
@@ -335,10 +337,12 @@ export default function HeroSection() {
             +
           </button>
           <button
+            onClick={() => heroItem?.id && toggleFavorite(heroItem.id)}
             className="w-[42px] h-[42px] rounded-full bg-white/[0.08] border border-white/[0.12]
               text-text-primary text-sm flex items-center justify-center
-              hover:bg-white/[0.16] transition-all"
+              hover:bg-white/[0.16] hover:text-accent transition-all active:scale-95"
             title="Like"
+            aria-label="Toggle favorite"
           >
             &#9825;
           </button>

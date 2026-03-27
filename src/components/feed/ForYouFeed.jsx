@@ -64,30 +64,12 @@ export default function ForYouFeed() {
     return () => observer.disconnect()
   }, [buffer.length, setCurrentIndex])
 
-  // Keyboard: left/right navigate (only when NOT in theatre mode — theatre handles its own keys)
+  // Scroll to current index when it changes (keyboard/programmatic navigation)
   useEffect(() => {
-    if (theatreMode) return
-    const onKey = (e) => {
-      const el = containerRef.current
-      if (!el) return
-      if (e.key === 'ArrowRight') {
-        e.preventDefault()
-        const next = Math.min(currentIndex + 1, buffer.length - 1)
-        el.children[next]?.scrollIntoView({ behavior: 'smooth', inline: 'start' })
-      } else if (e.key === 'ArrowLeft') {
-        e.preventDefault()
-        const prev = Math.max(currentIndex - 1, 0)
-        el.children[prev]?.scrollIntoView({ behavior: 'smooth', inline: 'start' })
-      } else if (e.key === ' ') {
-        e.preventDefault()
-        // Play/pause handled by slot
-      } else if (e.key === 't' || e.key === 'T') {
-        useFeedStore.getState().setTheatreMode(true)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [theatreMode, currentIndex, buffer.length])
+    const el = containerRef.current
+    if (!el) return
+    el.children[currentIndex]?.scrollIntoView({ behavior: 'smooth', inline: 'start' })
+  }, [currentIndex])
 
   // Receive active video element from the active slot
   const handleVideoRef = useCallback((el) => {
@@ -137,18 +119,14 @@ export default function ForYouFeed() {
         ))}
       </div>
 
-      {/* Theatre mode overlays — rendered outside the scroll container */}
-      {theatreMode && (
-        <>
-          <TheatreOverlay videoRef={activeVideoRef} />
-          <TheatreTimeline videoRef={activeVideoRef} nextUpVisible={nextUpVisible} />
-          <NextUpDialog
-            videoRef={activeVideoRef}
-            nextVideo={nextVideo}
-            onAdvance={advanceToNext}
-          />
-        </>
-      )}
+      {/* Overlays — always rendered so hover controls, timeline, and NextUp work */}
+      <TheatreOverlay videoRef={activeVideoRef} />
+      <TheatreTimeline videoRef={activeVideoRef} nextUpVisible={nextUpVisible} />
+      <NextUpDialog
+        videoRef={activeVideoRef}
+        nextVideo={nextVideo}
+        onAdvance={advanceToNext}
+      />
     </div>
   )
 }

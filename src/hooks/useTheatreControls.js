@@ -29,16 +29,14 @@ export default function useTheatreControls(videoRef) {
     }
   }, [showControls])
 
-  // Keyboard shortcuts for theatre mode
+  // Keyboard shortcuts (work in both normal and theatre mode)
   useEffect(() => {
-    const theatreMode = useFeedStore.getState().theatreMode
-    if (!theatreMode) return
-
     const onKey = (e) => {
       const video = videoRef?.current
       if (!video) return
       showControls()
 
+      const isTheatre = useFeedStore.getState().theatreMode
       switch (e.key) {
         case ' ':
           e.preventDefault()
@@ -46,28 +44,34 @@ export default function useTheatreControls(videoRef) {
           break
         case 'ArrowLeft':
           e.preventDefault()
-          if (e.shiftKey) {
-            // Navigate to previous video
+          if (isTheatre && !e.shiftKey) {
+            // Theatre: seek backward 10s
+            video.currentTime = Math.max(0, video.currentTime - 10)
+          } else {
+            // Normal mode or Shift: navigate to previous video
             const { currentIndex } = useFeedStore.getState()
             if (currentIndex > 0) useFeedStore.getState().setCurrentIndex(currentIndex - 1)
-          } else {
-            video.currentTime = Math.max(0, video.currentTime - 10)
           }
           break
         case 'ArrowRight':
           e.preventDefault()
-          if (e.shiftKey) {
+          if (isTheatre && !e.shiftKey) {
+            // Theatre: seek forward 10s
+            video.currentTime = Math.min(video.duration || 0, video.currentTime + 10)
+          } else {
+            // Normal mode or Shift: navigate to next video
             const { currentIndex, buffer } = useFeedStore.getState()
             if (currentIndex < buffer.length - 1) useFeedStore.getState().setCurrentIndex(currentIndex + 1)
-          } else {
-            video.currentTime = Math.min(video.duration || 0, video.currentTime + 10)
           }
           break
         case 'Escape':
+          e.preventDefault()
+          useFeedStore.getState().setTheatreMode(false)
+          break
         case 't':
         case 'T':
           e.preventDefault()
-          useFeedStore.getState().setTheatreMode(false)
+          useFeedStore.getState().setTheatreMode(!isTheatre)
           break
         case 'n':
         case 'N': {
