@@ -21,7 +21,7 @@ const MAX_BUFFER = 50 * 1024 * 1024
 // Safe yt-dlp execution — uses execFile (no shell) to prevent command injection
 // Routes cookies per-domain based on the URL being fetched
 async function ytdlp(args, url, options = {}) {
-  const finalArgs = [...getCookieArgs(url), ...args]
+  const finalArgs = ['--js-runtimes', 'node', ...getCookieArgs(url), ...args]
   const { stdout } = await execFileAsync('yt-dlp', finalArgs, {
     encoding: 'utf8',
     timeout: options.timeout || YTDLP_TIMEOUT,
@@ -216,7 +216,7 @@ export class YtDlpAdapter extends SourceAdapter {
       searchUrl = `ytsearch${limit}:${query}`
     }
 
-    const child = spawn('yt-dlp', [...getCookieArgs(searchUrl), '--dump-json', '--playlist-end', String(limit), searchUrl])
+    const child = spawn('yt-dlp', ['--js-runtimes', 'node', ...getCookieArgs(searchUrl), '--dump-json', '--playlist-end', String(limit), searchUrl])
 
     // Kill subprocess after 60s to prevent resource leaks
     const timeout = setTimeout(() => { try { child.kill('SIGTERM') } catch {} }, 60000)

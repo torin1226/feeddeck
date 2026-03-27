@@ -14,7 +14,8 @@ import { logger } from './logger.js'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const COOKIES_DIR = join(__dirname, '..', 'cookies')
 const DATA_DIR = join(__dirname, '..', 'data')
-const COOKIES_TMP = join(DATA_DIR, '.cookie-tmp')
+// Use /tmp in Docker (avoids permission issues with mounted volumes), fallback to data dir locally
+const COOKIES_TMP = process.env.COOKIE_TMP_DIR || join(DATA_DIR, '.cookie-tmp')
 const TEMP_COOKIE_TTL_MS = 180_000 // 3 min — yt-dlp search can take up to 2min
 
 // Mode-based cookie files (fallback when per-domain file is missing)
