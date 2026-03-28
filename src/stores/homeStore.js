@@ -157,13 +157,20 @@ const useHomeStore = create((set, get) => ({
 
       if (allVideos.length === 0) {
         if (data.needsRefill) {
-          // Backend is refilling — retry after a delay instead of showing placeholders
-          setTimeout(() => get().fetchHomepage(mode), 4000)
+          // Exponential backoff: 4s, 8s, 16s, max 60s. Give up after 5 retries.
+          const retries = get()._refillRetries || 0
+          if (retries < 5) {
+            const delay = Math.min(4000 * Math.pow(2, retries), 60000)
+            set({ _refillRetries: retries + 1 })
+            setTimeout(() => get().fetchHomepage(mode), delay)
+          }
         }
         // Show placeholders while waiting for refill
         get().generateData()
         return
       }
+      // Reset retry counter on success
+      set({ _refillRetries: 0 })
 
       // Hero carousel: first 24 videos (or all if fewer)
       const carouselItems = allVideos.slice(0, 24)

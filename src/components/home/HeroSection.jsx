@@ -89,14 +89,20 @@ export default function HeroSection() {
 
     const onTime = () => setCurrentTime(vid.currentTime)
     const onDur = () => setDuration(vid.duration)
-    const onEnd = () => {
+    const onEnd = async () => {
       setPlaying(false)
       // Queue autoadvance: play next video in queue when current ends
       const nextItem = advance()
       if (nextItem) {
         setActiveVideo(nextItem)
-        if (nextItem.url) resolveStream(nextItem.url)
-        setPlaying(true)
+        if (nextItem.url) {
+          try {
+            await resolveStream(nextItem.url)
+            setPlaying(true)
+          } catch {
+            // Stream resolution failed — stay paused, user can retry manually
+          }
+        }
       }
     }
 

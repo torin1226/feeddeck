@@ -70,10 +70,15 @@ export default function HeroCarousel() {
   )
 
   const clearSearch = useCallback(() => {
+    // If current hero was a search result, reset to first carousel item
+    const { heroItem, carouselItems } = useHomeStore.getState()
+    if (heroItem && carouselItems.length > 0 && !carouselItems.find(c => c.id === heroItem.id)) {
+      setHeroItem(carouselItems[0])
+    }
     setQuery('')
     setSearchResults(null)
     setSavedItems(null)
-  }, [])
+  }, [setHeroItem])
 
   // Scroll active card into view
   useEffect(() => {

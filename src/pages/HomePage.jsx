@@ -23,11 +23,11 @@ export default function HomePage() {
   const theatreMode = useHomeStore(s => s.theatreMode)
   const isSFW = useModeStore((s) => s.isSFW)
 
-  // Fetch homepage data on mount and when mode changes
+  // Fetch homepage data on mount and when mode changes.
+  // Don't reset before fetching — keep showing current content until new data arrives.
+  // This prevents the jarring flash-to-skeletons on mode switch.
   useEffect(() => {
     const mode = isSFW ? 'social' : 'nsfw'
-    // Reset to show skeletons while loading new mode's data
-    useHomeStore.getState().resetHome()
     fetchHomepage(mode)
   }, [isSFW, fetchHomepage])
 

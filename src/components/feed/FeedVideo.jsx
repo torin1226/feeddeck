@@ -99,7 +99,10 @@ function loadSource(vid, url) {
     vid.addEventListener('loadeddata', finish, { once: true })
     vid.src = proxyUrl
     vid.load()
-    setTimeout(finish, 1500) // Reduced from 5s — don't block UI waiting for slow streams
+    // Adaptive timeout: fast on good connections, generous on slow ones
+    const ect = navigator.connection?.effectiveType
+    const timeout = ect === '4g' ? 2000 : ect === '3g' ? 4000 : 5000
+    setTimeout(finish, timeout)
   })
 }
 

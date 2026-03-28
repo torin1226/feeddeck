@@ -106,15 +106,17 @@ const useFeedStore = create((set, get) => ({
       } else {
         set(s => {
           const MAX_BUFFER = 200
+          const TRIM_SAFE_MARGIN = 20 // only trim if user is this far past trimmed items
           const newBuffer = [...s.buffer, ...videos]
-          // Evict oldest items if buffer grows too large
+          // Evict oldest items if buffer grows too large,
+          // but only if user has scrolled far enough past to avoid jarring jumps
           if (newBuffer.length > MAX_BUFFER) {
             const trimCount = newBuffer.length - MAX_BUFFER
-            if (trimCount > 0) {
+            if (trimCount > 0 && s.currentIndex > trimCount + TRIM_SAFE_MARGIN) {
               const newBuf = newBuffer.slice(trimCount)
               return {
                 buffer: newBuf,
-                currentIndex: Math.max(0, s.currentIndex - trimCount),
+                currentIndex: s.currentIndex - trimCount,
                 loading: false,
               }
             }
