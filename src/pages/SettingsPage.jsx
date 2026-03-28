@@ -7,8 +7,9 @@ const API = '/api'
 
 export default function SettingsPage() {
   const navigate = useNavigate()
-  const { theme, toggleTheme } = useThemeStore()
-  const { isSFW } = useModeStore()
+  const theme = useThemeStore(s => s.theme)
+  const toggleTheme = useThemeStore(s => s.toggleTheme)
+  const isSFW = useModeStore(s => s.isSFW)
   const [sources, setSources] = useState([])
   const [adapterHealth, setAdapterHealth] = useState(null)
   const [loading, setLoading] = useState(true)

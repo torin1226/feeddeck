@@ -14,8 +14,8 @@ import ContextMenu from './ContextMenu'
 // ============================================================
 
 export default memo(function VideoCard({ video, onClick }) {
-  const { addToQueue } = useQueueStore()
-  const { toggleFavorite } = useLibraryStore()
+  const addToQueue = useQueueStore(s => s.addToQueue)
+  const toggleFavorite = useLibraryStore(s => s.toggleFavorite)
   const [ctxMenu, setCtxMenu] = useState(null)
   const { startPreview, cancelPreview } = useHoverPreview()
 

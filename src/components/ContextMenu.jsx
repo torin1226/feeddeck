@@ -11,8 +11,11 @@ import useLibraryStore from '../stores/libraryStore'
 
 export default function ContextMenu({ video, position, onClose }) {
   const menuRef = useRef(null)
-  const { addToQueue, insertNext } = useQueueStore()
-  const { toggleFavorite, toggleWatchLater, setRating } = useLibraryStore()
+  const addToQueue = useQueueStore(s => s.addToQueue)
+  const insertNext = useQueueStore(s => s.insertNext)
+  const toggleFavorite = useLibraryStore(s => s.toggleFavorite)
+  const toggleWatchLater = useLibraryStore(s => s.toggleWatchLater)
+  const setRating = useLibraryStore(s => s.setRating)
 
   // Close on click outside or Escape
   useEffect(() => {

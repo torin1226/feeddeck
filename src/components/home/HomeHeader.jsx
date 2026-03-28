@@ -1,5 +1,4 @@
 import { useNavigate, useLocation } from 'react-router-dom'
-import useHomeStore from '../../stores/homeStore'
 import useModeStore from '../../stores/modeStore'
 import useThemeStore from '../../stores/themeStore'
 
@@ -12,9 +11,10 @@ import useThemeStore from '../../stores/themeStore'
 export default function HomeHeader() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { _theatreMode } = useHomeStore()
-  const { isSFW, toggleMode } = useModeStore()
-  const { theme, toggleTheme } = useThemeStore()
+  const isSFW = useModeStore(s => s.isSFW)
+  const toggleMode = useModeStore(s => s.toggleMode)
+  const theme = useThemeStore(s => s.theme)
+  const toggleTheme = useThemeStore(s => s.toggleTheme)
 
   const navItems = [
     { label: 'Home', path: '/' },

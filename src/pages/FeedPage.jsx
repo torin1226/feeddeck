@@ -22,11 +22,18 @@ import QueueSwipeAnimation from '../components/feed/QueueSwipeAnimation'
 // ============================================================
 
 export default function FeedPage() {
-  const { buffer, currentIndex, loading, initialized, exhausted, initFeed, setCurrentIndex, resetFeed } = useFeedStore()
+  const buffer = useFeedStore(s => s.buffer)
+  const currentIndex = useFeedStore(s => s.currentIndex)
+  const loading = useFeedStore(s => s.loading)
+  const initialized = useFeedStore(s => s.initialized)
+  const exhausted = useFeedStore(s => s.exhausted)
+  const initFeed = useFeedStore(s => s.initFeed)
+  const setCurrentIndex = useFeedStore(s => s.setCurrentIndex)
+  const resetFeed = useFeedStore(s => s.resetFeed)
   const immersive = useFeedStore(s => s.immersive)
   const overlayVisible = useFeedStore(s => s.overlayVisible)
-  const { isSFW } = useModeStore()
-  const { addToQueue } = useQueueStore()
+  const isSFW = useModeStore(s => s.isSFW)
+  const addToQueue = useQueueStore(s => s.addToQueue)
   const containerRef = useRef(null)
   const prevMode = useRef(isSFW)
 

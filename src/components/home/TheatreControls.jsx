@@ -17,9 +17,14 @@ function fmtTime(s) {
 }
 
 export default function TheatreControls() {
-  const { heroItem, theatreMode, toggleTheatre } = useHomeStore()
-  const { isPlaying, setPlaying, currentTime, duration } = usePlayerStore()
-  const { advance } = useQueueStore()
+  const heroItem = useHomeStore(s => s.heroItem)
+  const theatreMode = useHomeStore(s => s.theatreMode)
+  const toggleTheatre = useHomeStore(s => s.toggleTheatre)
+  const isPlaying = usePlayerStore(s => s.isPlaying)
+  const setPlaying = usePlayerStore(s => s.setPlaying)
+  const currentTime = usePlayerStore(s => s.currentTime)
+  const duration = usePlayerStore(s => s.duration)
+  const advance = useQueueStore(s => s.advance)
   const progressRef = useRef(null)
 
   if (!theatreMode || !heroItem) return null

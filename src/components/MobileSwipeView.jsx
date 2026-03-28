@@ -13,9 +13,12 @@ import useQueueStore from '../stores/queueStore'
 // ============================================================
 
 export default function MobileSwipeView() {
-  const { isSFW, toggleMode } = useModeStore()
-  const { videos, toggleFavorite, markWatched } = useLibraryStore()
-  const { addToQueue } = useQueueStore()
+  const isSFW = useModeStore(s => s.isSFW)
+  const toggleMode = useModeStore(s => s.toggleMode)
+  const videos = useLibraryStore(s => s.videos)
+  const toggleFavorite = useLibraryStore(s => s.toggleFavorite)
+  const markWatched = useLibraryStore(s => s.markWatched)
+  const addToQueue = useQueueStore(s => s.addToQueue)
 
   const displayVideos = videos
 

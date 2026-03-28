@@ -7,7 +7,8 @@ import CategoryRow from './CategoryRow'
 // ============================================================
 
 export default function CategoryRows() {
-  const { categories, theatreMode } = useHomeStore()
+  const categories = useHomeStore(s => s.categories)
+  const theatreMode = useHomeStore(s => s.theatreMode)
 
   return (
     <div

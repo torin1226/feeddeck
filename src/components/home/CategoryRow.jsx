@@ -17,7 +17,8 @@ const ROW_SCROLL_STYLE = {
 }
 
 export default memo(function CategoryRow({ category }) {
-  const { setHeroItem, setTheatreMode } = useHomeStore()
+  const setHeroItem = useHomeStore(s => s.setHeroItem)
+  const setTheatreMode = useHomeStore(s => s.setTheatreMode)
   const { startPreview, cancelPreview } = useHoverPreview()
   const rowRef = useRef(null)
 

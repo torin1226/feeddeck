@@ -20,8 +20,9 @@ const navItems = [
 export default function Header({ onSearch, onSearchSubmit }) {
   const navigate = useNavigate()
   const location = useLocation()
-  const { isSFW } = useModeStore()
-  const { theme, toggleTheme } = useThemeStore()
+  const isSFW = useModeStore(s => s.isSFW)
+  const theme = useThemeStore(s => s.theme)
+  const toggleTheme = useThemeStore(s => s.toggleTheme)
   const [showAdd, setShowAdd] = useState(false)
   const [query, setQuery] = useState('')
 

@@ -19,7 +19,7 @@ export default function FloatingQueue() {
   const dragFromIdx = useRef(null)
   const prevLength = useRef(0)
 
-  const { isSFW } = useModeStore()
+  const isSFW = useModeStore(s => s.isSFW)
   const {
     queue,
     currentIndex,

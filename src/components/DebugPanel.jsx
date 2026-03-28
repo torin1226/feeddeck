@@ -12,9 +12,9 @@ import useQueueStore from '../stores/queueStore'
 // ============================================================
 
 export default function DebugPanel({ open, onClose }) {
-  const { isSFW } = useModeStore()
-  const { videos } = useLibraryStore()
-  const { queue } = useQueueStore()
+  const isSFW = useModeStore(s => s.isSFW)
+  const videos = useLibraryStore(s => s.videos)
+  const queue = useQueueStore(s => s.queue)
   const [logs, setLogs] = useState([])
   const [activeTab, setActiveTab] = useState('state')
 

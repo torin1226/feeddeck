@@ -14,9 +14,10 @@ const SFW_VIDEO = 'https://videos.pexels.com/video-files/856974/856974-hd_1280_7
 
 export default function VideoPlayer({ video, onClose, onPlayVideo }) {
   const videoRef = useRef(null)
-  const { isSFW } = useModeStore()
-  const { advance, queue } = useQueueStore()
-  const { markWatched } = useLibraryStore()
+  const isSFW = useModeStore(s => s.isSFW)
+  const advance = useQueueStore(s => s.advance)
+  const queue = useQueueStore(s => s.queue)
+  const markWatched = useLibraryStore(s => s.markWatched)
   const [_isPlaying, setIsPlaying] = useState(false)
   const [streamUrl, setStreamUrl] = useState(null)
   const [streamLoading, setStreamLoading] = useState(false)

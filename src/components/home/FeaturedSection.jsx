@@ -10,7 +10,10 @@ import useFeaturedScroll from '../../hooks/useFeaturedScroll'
 // ============================================================
 
 export default function FeaturedSection() {
-  const { featuredItems, featuredIndex, setFeaturedIndex, advanceFeatured } = useHomeStore()
+  const featuredItems = useHomeStore(s => s.featuredItems)
+  const featuredIndex = useHomeStore(s => s.featuredIndex)
+  const setFeaturedIndex = useHomeStore(s => s.setFeaturedIndex)
+  const advanceFeatured = useHomeStore(s => s.advanceFeatured)
 
   const zoneRef = useRef(null)
   const stickyRef = useRef(null)

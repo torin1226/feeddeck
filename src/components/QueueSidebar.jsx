@@ -8,7 +8,9 @@ import useQueueStore from '../stores/queueStore'
 // ============================================================
 
 export default function QueueSidebar() {
-  const { queue, removeFromQueue, clearQueue } = useQueueStore()
+  const queue = useQueueStore(s => s.queue)
+  const removeFromQueue = useQueueStore(s => s.removeFromQueue)
+  const clearQueue = useQueueStore(s => s.clearQueue)
 
   return (
     <aside className="w-72 border-l border-surface-border bg-surface-raised flex flex-col h-full">

@@ -13,8 +13,8 @@ import VideoPlayer from './VideoPlayer'
 // ============================================================
 
 export default function VideoGrid({ searchQuery, remoteQuery, filter = 'all' }) {
-  const { videos } = useLibraryStore()
-  const { isSFW } = useModeStore()
+  const videos = useLibraryStore(s => s.videos)
+  const isSFW = useModeStore(s => s.isSFW)
   const [activeVideo, setActiveVideo] = useState(null)
 
   // Filter local library by keystroke query and filter tab

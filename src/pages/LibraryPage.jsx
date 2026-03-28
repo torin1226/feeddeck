@@ -25,7 +25,9 @@ const TABS = [
 export default function LibraryPage() {
   const navigate = useNavigate()
   const isSFW = useModeStore((s) => s.isSFW)
-  const { videos, loadFromServer, seedDemoData } = useLibraryStore()
+  const videos = useLibraryStore(s => s.videos)
+  const loadFromServer = useLibraryStore(s => s.loadFromServer)
+  const seedDemoData = useLibraryStore(s => s.seedDemoData)
   const [activeTab, setActiveTab] = useState('all')
   const [activeVideo, setActiveVideo] = useState(null)
   const [debugOpen, setDebugOpen] = useState(false)

@@ -9,7 +9,9 @@ import useModeStore from '../../stores/modeStore'
 // ============================================================
 
 export default function HeroCarousel() {
-  const { carouselItems, heroItem, setHeroItem } = useHomeStore()
+  const carouselItems = useHomeStore(s => s.carouselItems)
+  const heroItem = useHomeStore(s => s.heroItem)
+  const setHeroItem = useHomeStore(s => s.setHeroItem)
   const scrollRef = useRef(null)
   const [query, setQuery] = useState('')
   const [searchResults, setSearchResults] = useState(null)

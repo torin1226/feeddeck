@@ -11,7 +11,7 @@ export default function AddVideoModal({ onClose }) {
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const { addVideo } = useLibraryStore()
+  const addVideo = useLibraryStore(s => s.addVideo)
 
   const handleSubmit = async (e) => {
     e.preventDefault()

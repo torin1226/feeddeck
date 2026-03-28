@@ -22,14 +22,25 @@ const GRADIENT_TOP_BG = 'linear-gradient(to top, var(--color-surface) 0%, var(--
 const GRADIENT_RIGHT_BG = 'linear-gradient(to right, var(--color-gradient-solid) 0%, var(--color-gradient-mid) 40%, transparent 75%)'
 
 export default function HeroSection() {
-  const { heroItem, theatreMode, toggleTheatre } = useHomeStore()
-  const { addToQueue, advance, queue } = useQueueStore()
+  const heroItem = useHomeStore(s => s.heroItem)
+  const theatreMode = useHomeStore(s => s.theatreMode)
+  const toggleTheatre = useHomeStore(s => s.toggleTheatre)
+  const addToQueue = useQueueStore(s => s.addToQueue)
+  const advance = useQueueStore(s => s.advance)
+  const queue = useQueueStore(s => s.queue)
   const toggleFavorite = useLibraryStore(s => s.toggleFavorite)
-  const {
-    _activeVideo, setActiveVideo, isPlaying, setPlaying,
-    currentTime, setCurrentTime, duration, setDuration,
-    streamUrl, streamLoading, streamError, resolveStream, handleStreamError,
-  } = usePlayerStore()
+  const setActiveVideo = usePlayerStore(s => s.setActiveVideo)
+  const isPlaying = usePlayerStore(s => s.isPlaying)
+  const setPlaying = usePlayerStore(s => s.setPlaying)
+  const currentTime = usePlayerStore(s => s.currentTime)
+  const setCurrentTime = usePlayerStore(s => s.setCurrentTime)
+  const duration = usePlayerStore(s => s.duration)
+  const setDuration = usePlayerStore(s => s.setDuration)
+  const streamUrl = usePlayerStore(s => s.streamUrl)
+  const streamLoading = usePlayerStore(s => s.streamLoading)
+  const streamError = usePlayerStore(s => s.streamError)
+  const resolveStream = usePlayerStore(s => s.resolveStream)
+  const handleStreamError = usePlayerStore(s => s.handleStreamError)
 
   const [previewing, setPreviewing] = useState(false)
   const [showBadge, setShowBadge] = useState(false)

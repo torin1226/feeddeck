@@ -18,7 +18,9 @@ import { SkeletonHero, SkeletonFeatured, SkeletonCategoryRow } from '../componen
 // ============================================================
 
 export default function HomePage() {
-  const { fetchHomepage, heroItem, theatreMode } = useHomeStore()
+  const fetchHomepage = useHomeStore(s => s.fetchHomepage)
+  const heroItem = useHomeStore(s => s.heroItem)
+  const theatreMode = useHomeStore(s => s.theatreMode)
   const isSFW = useModeStore((s) => s.isSFW)
 
   // Fetch homepage data on mount and when mode changes

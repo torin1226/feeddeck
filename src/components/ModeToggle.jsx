@@ -8,7 +8,8 @@ import clsx from 'clsx'
 // ============================================================
 
 export default function ModeToggle() {
-  const { isSFW, toggleMode } = useModeStore()
+  const isSFW = useModeStore(s => s.isSFW)
+  const toggleMode = useModeStore(s => s.toggleMode)
   const [announcement, setAnnouncement] = useState('')
 
   const handleToggle = () => {
