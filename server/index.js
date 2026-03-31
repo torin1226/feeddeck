@@ -1,7 +1,7 @@
 import express from 'express'
 import cors from 'cors'
 import { networkInterfaces } from 'os'
-import { existsSync, writeFileSync, unlinkSync, statSync, readFileSync } from 'fs'
+import { existsSync, writeFileSync, unlinkSync, statSync, readFileSync, mkdirSync, readdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { randomBytes } from 'crypto'
@@ -285,9 +285,18 @@ app.get('/api/proxy-stream', async (req, res) => {
     // Pipe the body using Node streams (more robust than manual reader pump)
     const { Readable } = await import('stream')
     const nodeStream = Readable.fromWeb(upstream.body)
+
+    // Per-chunk inactivity timeout: if no data arrives for 30s, kill the stream
+    let chunkTimer = setTimeout(() => { nodeStream.destroy(new Error('chunk timeout')) }, 30_000)
+    nodeStream.on('data', () => {
+      clearTimeout(chunkTimer)
+      chunkTimer = setTimeout(() => { nodeStream.destroy(new Error('chunk timeout')) }, 30_000)
+    })
+    nodeStream.on('end', () => clearTimeout(chunkTimer))
+
     nodeStream.pipe(res)
-    nodeStream.on('error', () => { if (!res.writableEnded) res.end() })
-    res.on('close', () => { nodeStream.destroy() })
+    nodeStream.on('error', () => { clearTimeout(chunkTimer); if (!res.writableEnded) res.end() })
+    res.on('close', () => { clearTimeout(chunkTimer); nodeStream.destroy() })
   } catch (err) {
     logger.error('Proxy stream error:', { error: err.message })
     if (!res.headersSent) res.status(500).send('Stream proxy failed')
@@ -454,54 +463,167 @@ app.get('/api/videos/watch-later', (req, res) => {
 })
 
 // -----------------------------------------------------------
-// Cookie Auth (3.4) — import browser cookies for yt-dlp
+// Cookie Auth (3.4 + 3.4.1) — per-mode cookie imports
 // -----------------------------------------------------------
 
-// Legacy cookie path kept for cookie management API endpoints
-const COOKIES_PATH = join(__dirname, '..', 'data', 'cookies.txt')
+const COOKIES_DIR = join(__dirname, '..', 'cookies')
+const COOKIES_LEGACY_PATH = join(__dirname, '..', 'data', 'cookies.txt')
+
+// Ensure cookies directory exists
+try { mkdirSync(COOKIES_DIR, { recursive: true }) } catch {}
+
+// Domain → cookie filename mapping (matches cookies.js COOKIE_MAP)
+const MODE_DOMAINS = {
+  social: {
+    'youtube.com': 'youtube.txt',
+    'youtu.be': 'youtube.txt',
+    'tiktok.com': 'tiktok.txt',
+  },
+  nsfw: {
+    'pornhub.com': 'pornhub.txt',
+    'fikfap.com': 'fikfap.txt',
+    'redgifs.com': 'redgifs.txt',
+  },
+}
+
+function _parseCookieFile(content) {
+  const lines = content.trim().split('\n')
+  const hasHeader = lines.some(l => l.startsWith('# Netscape') || l.startsWith('# HTTP Cookie'))
+  const hasCookies = lines.some(l => !l.startsWith('#') && l.split('\t').length >= 7)
+  return { lines, hasHeader, hasCookies }
+}
+
+function _splitCookiesByDomain(lines) {
+  const header = lines.filter(l => l.startsWith('#')).join('\n')
+  const byFile = {}
+  for (const line of lines) {
+    if (line.startsWith('#') || !line.trim()) continue
+    const parts = line.split('\t')
+    if (parts.length < 7) continue
+    const domain = parts[0].replace(/^\./, '').toLowerCase()
+    // Match domain to a cookie file
+    for (const [mode, mapping] of Object.entries(MODE_DOMAINS)) {
+      for (const [domainKey, filename] of Object.entries(mapping)) {
+        if (domain === domainKey || domain.endsWith('.' + domainKey)) {
+          if (!byFile[filename]) byFile[filename] = []
+          byFile[filename].push(line)
+        }
+      }
+    }
+  }
+  // Prepend header to each file
+  for (const [file, cookieLines] of Object.entries(byFile)) {
+    byFile[file] = header + '\n' + cookieLines.join('\n') + '\n'
+  }
+  return byFile
+}
+
+function _getCookieFileStatus(filePath) {
+  if (!existsSync(filePath)) return null
+  const stat = statSync(filePath)
+  const content = readFileSync(filePath, 'utf8')
+  const count = content.split('\n').filter(l => !l.startsWith('#') && l.trim() && l.split('\t').length >= 7).length
+  return { cookies: count, size: stat.size, modified: stat.mtime.toISOString() }
+}
 
 // POST /api/cookies — upload cookies.txt content
+// ?mode=social|nsfw — writes only matching domain cookies to per-domain files
+// No mode param — auto-splits cookies to all matching per-domain files
 app.post('/api/cookies', express.text({ limit: '5mb' }), (req, res) => {
   const content = req.body
   if (!content || typeof content !== 'string') return res.status(400).json({ error: 'Cookie content required (text/plain)' })
 
-  // Basic validation: Netscape cookie format starts with # or domain lines
-  const lines = content.trim().split('\n')
-  const hasHeader = lines.some(l => l.startsWith('# Netscape') || l.startsWith('# HTTP Cookie'))
-  const hasCookies = lines.some(l => !l.startsWith('#') && l.split('\t').length >= 7)
-
+  const { lines, hasHeader, hasCookies } = _parseCookieFile(content)
   if (!hasHeader && !hasCookies) {
     return res.status(400).json({ error: 'Invalid cookie format. Expected Netscape/Mozilla cookie.txt format.' })
   }
 
   try {
-    writeFileSync(COOKIES_PATH, content, 'utf8')
-    const cookieCount = lines.filter(l => !l.startsWith('#') && l.trim() && l.split('\t').length >= 7).length
-    logger.info('Cookies imported', { cookies: cookieCount })
-    res.json({ ok: true, cookies: cookieCount })
+    const mode = req.query.mode
+    const byFile = _splitCookiesByDomain(lines)
+
+    // Filter by mode if specified
+    let targetFiles = byFile
+    if (mode && MODE_DOMAINS[mode]) {
+      const allowed = new Set(Object.values(MODE_DOMAINS[mode]))
+      targetFiles = {}
+      for (const [file, data] of Object.entries(byFile)) {
+        if (allowed.has(file)) targetFiles[file] = data
+      }
+    }
+
+    let totalCookies = 0
+    const written = []
+    for (const [file, data] of Object.entries(targetFiles)) {
+      writeFileSync(join(COOKIES_DIR, file), data, 'utf8')
+      const count = data.split('\n').filter(l => !l.startsWith('#') && l.trim() && l.split('\t').length >= 7).length
+      totalCookies += count
+      written.push({ file, cookies: count })
+    }
+
+    // Also write legacy combined file for backward compat
+    writeFileSync(COOKIES_LEGACY_PATH, content, 'utf8')
+
+    logger.info('Cookies imported', { mode: mode || 'all', files: written, total: totalCookies })
+    res.json({ ok: true, cookies: totalCookies, files: written })
   } catch (err) {
     logger.error('Cookie import error', { error: err.message })
     res.status(500).json({ error: 'Failed to save cookies' })
   }
 })
 
-// GET /api/cookies/status — check if cookies are installed
+// GET /api/cookies/status — check cookie status per mode
 app.get('/api/cookies/status', (req, res) => {
   try {
-    if (!existsSync(COOKIES_PATH)) return res.json({ installed: false })
-    const stat = statSync(COOKIES_PATH)
-    const content = readFileSync(COOKIES_PATH, 'utf8')
-    const cookieCount = content.split('\n').filter(l => !l.startsWith('#') && l.trim() && l.split('\t').length >= 7).length
-    res.json({ installed: true, cookies: cookieCount, size: stat.size, modified: stat.mtime.toISOString() })
+    const result = { social: {}, nsfw: {}, installed: false }
+
+    for (const [mode, mapping] of Object.entries(MODE_DOMAINS)) {
+      const uniqueFiles = [...new Set(Object.values(mapping))]
+      for (const file of uniqueFiles) {
+        const status = _getCookieFileStatus(join(COOKIES_DIR, file))
+        if (status) {
+          result[mode][file] = status
+          result.installed = true
+        }
+      }
+    }
+
+    // Legacy file status
+    const legacy = _getCookieFileStatus(COOKIES_LEGACY_PATH)
+    if (legacy) {
+      result.legacy = legacy
+      result.installed = true
+    }
+
+    res.json(result)
   } catch (err) {
     res.json({ installed: false, error: err.message })
   }
 })
 
-// DELETE /api/cookies — remove cookies file
+// DELETE /api/cookies — remove cookies file(s)
+// ?mode=social|nsfw — delete only that mode's files
+// No mode — delete all cookie files
 app.delete('/api/cookies', (req, res) => {
   try {
-    if (existsSync(COOKIES_PATH)) unlinkSync(COOKIES_PATH)
+    const mode = req.query.mode
+
+    if (mode && MODE_DOMAINS[mode]) {
+      const files = [...new Set(Object.values(MODE_DOMAINS[mode]))]
+      for (const file of files) {
+        const p = join(COOKIES_DIR, file)
+        if (existsSync(p)) unlinkSync(p)
+      }
+    } else {
+      // Delete all
+      if (existsSync(COOKIES_DIR)) {
+        for (const file of readdirSync(COOKIES_DIR)) {
+          try { unlinkSync(join(COOKIES_DIR, file)) } catch {}
+        }
+      }
+      if (existsSync(COOKIES_LEGACY_PATH)) unlinkSync(COOKIES_LEGACY_PATH)
+    }
+
     res.json({ ok: true })
   } catch (err) {
     logger.error('Cookie delete error', { error: err.message })
@@ -562,7 +684,7 @@ app.get('/api/tags/popular', (req, res) => {
           const t = tag.toLowerCase().trim()
           if (t) tagCounts[t] = (tagCounts[t] || 0) + 1
         }
-      } catch {}
+      } catch (err) { logger.warn('Malformed tags JSON in popular tags:', { tags: row.tags?.slice(0, 100), error: err.message }) }
     }
     const popular = Object.entries(tagCounts)
       .sort((a, b) => b[1] - a[1])
@@ -674,7 +796,7 @@ app.get('/api/recommendations/seed', async (req, res) => {
           const d = JSON.parse(line)
           const url = d.webpage_url || d.url
           if (url) allVideoUrls.push(url)
-        } catch {}
+        } catch (err) { logger.warn('Malformed yt-dlp JSON line:', { line: line.slice(0, 120), error: err.message }) }
       }
       send({ type: 'status', message: `${src.label}: found ${entries.length} videos` })
     } catch (err) {
@@ -830,7 +952,7 @@ app.get('/api/discover', (req, res) => {
           if (liked.has(t)) score += 2
           if (disliked.has(t)) score -= 5
         }
-      } catch {}
+      } catch (err) { logger.warn('Malformed tags JSON in scoring:', { videoId: v.id, error: err.message }) }
       // Bonus for favorited
       if (v.favorite) score += 1
       // Bonus for highly rated

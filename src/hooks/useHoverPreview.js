@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react'
+import { useRef, useCallback, useEffect } from 'react'
 
 // ============================================================
 // useHoverPreview Hook
@@ -74,6 +74,11 @@ export default function useHoverPreview() {
       activeVideo = null
     }
   }, [])
+
+  // Clean up on unmount to prevent leaked video playback
+  useEffect(() => {
+    return () => cancelPreview()
+  }, [cancelPreview])
 
   return { startPreview, cancelPreview }
 }

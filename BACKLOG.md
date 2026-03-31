@@ -417,22 +417,18 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 - [x] Cookie status indicator: green dot with count and last-modified date
 - [x] `GET /api/cookies/status` and `DELETE /api/cookies` endpoints
 
-#### 3.4.1 Per-Mode Cookie Files — NEEDS ADAPTER UPDATE
+#### 3.4.1 Per-Mode Cookie Files — DONE
 
-**Architecture:** Separate cookie files per mode so NSFW alt accounts don't leak into Social requests and vice versa.
+**Architecture:** Per-domain cookie routing via `server/cookies.js` — each domain (YouTube, TikTok, PornHub, etc.) gets its own cookie file in `cookies/` directory. Cookies auto-split by domain on import, temp-copied for concurrent yt-dlp access.
 
-**Cookie files (already created in `data/`):**
-- `cookies-social.txt` — YouTube, Google, main Instagram account
-- `cookies-nsfw.txt` — PornHub, NSFW Instagram alt account
-- `cookies.txt` — legacy combined file (keep for backward compat until adapter is updated)
-
-**Adapter changes needed:**
-- [ ] Update `server/sources/ytdlp.js` to accept a mode parameter and pick the right cookie file: `cookies-social.txt` for social mode, `cookies-nsfw.txt` for nsfw mode
-- [ ] Update all callers that pass mode context (refillCategory, feed refill, search, metadata extraction) to forward mode to the adapter
-- [ ] Update `POST /api/cookies` endpoint to accept a `mode` param (social|nsfw) and write to the correct file
-- [ ] Update `GET /api/cookies/status` to return status for both files
-- [ ] Update Settings UI: two cookie import sections (Social cookies / NSFW cookies) with independent status indicators
-- [ ] Fallback: if mode-specific file missing, try `cookies.txt` (combined), then no cookies
+**Completed:**
+- [x] `server/cookies.js`: per-domain COOKIE_MAP routing with temp-file copy for concurrent access
+- [x] `server/sources/ytdlp.js`: uses `getCookieArgs(url)` which auto-resolves the right cookie file by domain
+- [x] `POST /api/cookies?mode=social|nsfw` endpoint accepts mode param, auto-splits cookies by domain into `cookies/` directory
+- [x] `GET /api/cookies/status` returns per-mode status (social/nsfw files + legacy)
+- [x] `DELETE /api/cookies?mode=social|nsfw` deletes mode-specific or all cookie files
+- [x] Settings UI: two cookie import sections (Social / NSFW) with per-domain status indicators + bulk import option
+- [x] Fallback: `getCookieArgs()` tries domain-specific file, falls back gracefully to empty args
 
 ### 3.5 Organization Features
 
@@ -706,15 +702,15 @@ _Claude Code adds tasks here as they come up during implementation. Move to the 
 - [x] Clean up 3 stale `vite.config.js.timestamp-*` files in project root
 - [x] **CRITICAL:** Fix missing `crypto` import in `server/index.js` — playlist creation crashed at runtime. Fixed: imported `randomBytes` from `crypto` (Cowork morning sprint 2026-03-22)
 - [x] Wire tag preferences into `refillCategory()` and `_refillFeedCacheImpl()` — both now query liked tags and append up to 2 random liked tags to search queries for personalized discovery. Discovered during personalization audit (morning sprint 2026-03-22)
-- [ ] Hover preview video element cleanup — found 54 `<video>` elements in DOM, likely from hover previews not being properly destroyed. Potential memory leak. Discovered during 5a.2 playback testing
+- [x] Hover preview video element cleanup — added useEffect cleanup to useHoverPreview hook to cancel previews on component unmount. The 54 video elements are inline per-card (not dynamically created), so count is expected; the fix prevents leaked playback on navigation
 - [x] (2026-03-26) TikTok GDPR import pipeline — `import-tiktok.js` parses exports, `server/scripts/process-tiktok-imports.js` enriches via yt-dlp, API routes added (`/api/tiktok/status`, `/api/tiktok/recent`, `/api/tiktok/failed`, `/api/tiktok/watch-history`). 56K+ imports seeded, processor running.
 - [x] **HIGH:** Add timeout to yt-dlp `streamSearch()` spawn — 60s kill timer prevents leaked processes (Cowork morning sprint 2026-03-22)
 - [x] **HIGH:** Cap feed buffer at 200 items with safe eviction in `feedStore.js` — prevents OOM on long sessions (Cowork morning sprint 2026-03-22)
-- [ ] **HIGH:** Close Puppeteer browser on scrape failure in `server/sources/scraper.js` (~line 195) — failed scrapes leave browser instances alive
-- [ ] Add SIGTERM handler to clear background `setInterval` callbacks in `server/index.js` (~lines 1392, 1423, 1460) and close DB
-- [ ] Add per-chunk timeout to proxy-stream pipe in `server/index.js` (~line 240) — stalled upstream blocks response forever
-- [ ] Add AbortController to `_warmStreamUrls()` in feedStore, abort on `resetFeed()` — fire-and-forget fetches update stale buffer
-- [ ] Log malformed JSON parse failures in `server/index.js` tag processing instead of silently skipping
+- [x] **HIGH:** Close Puppeteer browser on scrape failure in `server/sources/scraper.js` — now always closes browser on failure instead of waiting for 5 consecutive failures
+- [x] Add SIGTERM handler to clear background `setInterval` callbacks in `server/index.js` and close DB (already implemented)
+- [x] Add per-chunk timeout to proxy-stream pipe in `server/index.js` — 30s inactivity timeout kills stalled upstream streams
+- [x] Add AbortController to `_warmStreamUrls()` in feedStore, abort on `resetFeed()` (already implemented)
+- [x] Log malformed JSON parse failures in `server/index.js` tag processing — added logger.warn to 3 silent catch blocks (popular tags, yt-dlp ndjson, scoring)
 - [ ] Wire tag preferences into `refillCategory()` — currently uses hardcoded generic queries, ignoring liked/disliked tags entirely
 - [ ] Remaining 16 `react-hooks/exhaustive-deps` ESLint warnings — need per-hook manual review to avoid infinite loops
 - [x] Remove debug `console.log('Queue: advancing to')` from `VideoPlayer.jsx:136` and `useKeyboard.js:41` (Cowork morning sprint 2026-03-22)

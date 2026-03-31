@@ -307,9 +307,10 @@ export class ScraperAdapter extends SourceAdapter {
       }))
     } catch (err) {
       this._consecutiveFailures++
+      // Always close browser on failure to prevent leaked Chromium processes
+      await this.browser?.close().catch(() => {})
+      this.browser = null
       if (this._consecutiveFailures >= 5) {
-        await this.browser?.close().catch(() => {})
-        this.browser = null
         this._consecutiveFailures = 0
       }
       throw err

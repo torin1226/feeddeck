@@ -146,11 +146,12 @@ export default function SettingsPage() {
     }
   }
 
-  const handleCookieUpload = async (e) => {
+  const handleCookieUpload = async (e, mode) => {
     const file = e.target.files?.[0]
     if (!file) return
     const text = await file.text()
-    const res = await fetch(`${API}/cookies`, {
+    const url = mode ? `${API}/cookies?mode=${mode}` : `${API}/cookies`
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: text,
@@ -164,8 +165,9 @@ export default function SettingsPage() {
     e.target.value = '' // reset file input
   }
 
-  const handleCookieDelete = async () => {
-    await fetch(`${API}/cookies`, { method: 'DELETE' })
+  const handleCookieDelete = async (mode) => {
+    const url = mode ? `${API}/cookies?mode=${mode}` : `${API}/cookies`
+    await fetch(url, { method: 'DELETE' })
     fetchSources()
   }
 
@@ -283,41 +285,80 @@ export default function SettingsPage() {
         {/* Cookie Auth */}
         <section>
           <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-3">Browser Cookies</h2>
-          <div className="bg-surface-raised rounded-xl border border-surface-border p-4">
-            <p className="text-text-muted text-sm mb-3">
-              Import browser cookies to access personalized feeds, subscriptions, and premium content via yt-dlp.
+          <div className="bg-surface-raised rounded-xl border border-surface-border p-4 space-y-4">
+            <p className="text-text-muted text-sm">
+              Import browser cookies to access personalized feeds, subscriptions, and premium content.
               Export cookies using a browser extension (e.g. "Get cookies.txt LOCALLY").
+              Cookies are automatically split by domain into separate files per mode.
             </p>
-            {cookieStatus?.installed ? (
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-green-500" />
-                    <span className="text-text-primary text-sm font-medium">Cookies installed</span>
-                  </div>
-                  <div className="text-text-muted text-xs mt-1">
-                    {cookieStatus.cookies} cookies · Updated {new Date(cookieStatus.modified).toLocaleDateString()}
+
+            {/* Social cookies */}
+            <div className="border border-surface-border rounded-lg p-3">
+              <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">Social (YouTube, TikTok)</h3>
+              {cookieStatus?.social && Object.keys(cookieStatus.social).length > 0 ? (
+                <div className="space-y-1.5">
+                  {Object.entries(cookieStatus.social).map(([file, info]) => (
+                    <div key={file} className="flex items-center gap-2 text-xs">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                      <span className="text-text-primary font-medium">{file.replace('.txt', '')}</span>
+                      <span className="text-text-muted">{info.cookies} cookies</span>
+                    </div>
+                  ))}
+                  <div className="flex gap-2 mt-2">
+                    <label className="px-3 py-1.5 rounded-lg text-xs border border-surface-border text-text-secondary hover:text-text-primary hover:border-text-muted transition-colors cursor-pointer">
+                      Re-import
+                      <input type="file" accept=".txt" className="hidden" onChange={(e) => handleCookieUpload(e, 'social')} />
+                    </label>
+                    <button onClick={() => handleCookieDelete('social')} className="px-3 py-1.5 rounded-lg text-xs border border-accent/30 text-accent hover:bg-accent/10 transition-colors cursor-pointer">
+                      Remove
+                    </button>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <label className="px-3 py-1.5 rounded-lg text-xs border border-surface-border text-text-secondary hover:text-text-primary hover:border-text-muted transition-colors cursor-pointer">
-                    Re-import
-                    <input type="file" accept=".txt" className="hidden" onChange={handleCookieUpload} />
-                  </label>
-                  <button
-                    onClick={handleCookieDelete}
-                    className="px-3 py-1.5 rounded-lg text-xs border border-accent/30 text-accent hover:bg-accent/10 transition-colors cursor-pointer"
-                  >
-                    Remove
-                  </button>
+              ) : (
+                <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs bg-accent/90 text-white hover:bg-accent transition-colors font-medium cursor-pointer">
+                  Import social cookies
+                  <input type="file" accept=".txt" className="hidden" onChange={(e) => handleCookieUpload(e, 'social')} />
+                </label>
+              )}
+            </div>
+
+            {/* NSFW cookies */}
+            <div className="border border-surface-border rounded-lg p-3">
+              <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">NSFW (PornHub, FikFap, RedGifs)</h3>
+              {cookieStatus?.nsfw && Object.keys(cookieStatus.nsfw).length > 0 ? (
+                <div className="space-y-1.5">
+                  {Object.entries(cookieStatus.nsfw).map(([file, info]) => (
+                    <div key={file} className="flex items-center gap-2 text-xs">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                      <span className="text-text-primary font-medium">{file.replace('.txt', '')}</span>
+                      <span className="text-text-muted">{info.cookies} cookies</span>
+                    </div>
+                  ))}
+                  <div className="flex gap-2 mt-2">
+                    <label className="px-3 py-1.5 rounded-lg text-xs border border-surface-border text-text-secondary hover:text-text-primary hover:border-text-muted transition-colors cursor-pointer">
+                      Re-import
+                      <input type="file" accept=".txt" className="hidden" onChange={(e) => handleCookieUpload(e, 'nsfw')} />
+                    </label>
+                    <button onClick={() => handleCookieDelete('nsfw')} className="px-3 py-1.5 rounded-lg text-xs border border-accent/30 text-accent hover:bg-accent/10 transition-colors cursor-pointer">
+                      Remove
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm bg-accent/90 text-white hover:bg-accent transition-colors font-medium cursor-pointer">
-                Import cookies.txt
-                <input type="file" accept=".txt" className="hidden" onChange={handleCookieUpload} />
+              ) : (
+                <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs bg-accent/90 text-white hover:bg-accent transition-colors font-medium cursor-pointer">
+                  Import NSFW cookies
+                  <input type="file" accept=".txt" className="hidden" onChange={(e) => handleCookieUpload(e, 'nsfw')} />
+                </label>
+              )}
+            </div>
+
+            {/* Bulk import option */}
+            <div className="pt-2 border-t border-surface-border">
+              <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs border border-surface-border text-text-secondary hover:text-text-primary hover:border-text-muted transition-colors cursor-pointer">
+                Import all cookies (auto-split by domain)
+                <input type="file" accept=".txt" className="hidden" onChange={(e) => handleCookieUpload(e)} />
               </label>
-            )}
+            </div>
           </div>
         </section>
 
