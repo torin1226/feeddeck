@@ -50,7 +50,7 @@ export default function LibraryPage() {
         seedDemoData()
       }
     })
-  }, [])
+  }, [loadFromServer, seedDemoData])
 
   // Continue Watching — videos with progress between 5% and 95%
   const continueWatching = useMemo(() => {

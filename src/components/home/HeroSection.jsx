@@ -51,7 +51,7 @@ export default function HeroSection() {
     } else if (!theatreMode) {
       setPlaying(false)
     }
-  }, [theatreMode, heroItem?.id])
+  }, [theatreMode, heroItem, resolveStream, setActiveVideo, setPlaying])
 
   // Sync video element with playerStore state
   useEffect(() => {
@@ -90,7 +90,7 @@ export default function HeroSection() {
       vid.removeEventListener('loadedmetadata', onDur)
       vid.removeEventListener('ended', onEnd)
     }
-  }, [streamUrl])
+  }, [streamUrl, advance, resolveStream, setActiveVideo, setCurrentTime, setDuration, setPlaying])
 
   // Listen for seek events from TheatreControls
   useEffect(() => {
@@ -149,7 +149,7 @@ export default function HeroSection() {
 
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [theatreMode])
+  }, [theatreMode, setPlaying])
 
   if (!heroItem) return null
 
@@ -158,7 +158,7 @@ export default function HeroSection() {
       className={`relative overflow-hidden transition-[height] duration-500 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] ${
         theatreMode ? 'h-screen min-h-screen' : ''
       }`}
-      style={theatreMode ? {} : { height: '100vh', minHeight: '540px' }}
+      style={theatreMode ? {} : { height: '85vh', minHeight: '540px' }}
     >
       {/* Background image with Ken Burns */}
       {/* Hero thumbnail — uses object-contain to avoid cropping + blurred fill behind for letterbox */}

@@ -8,15 +8,15 @@ import { useRef, useEffect } from 'react'
 // Only animates compositor-friendly properties (transform, opacity,
 // border-radius).
 //
-// Phase 1 (0 → 0.20):    Full-bleed hold, overlay fades in
-// Phase 2 (0.20 → 0.40): Zoom out to carousel, sides fade in, chrome in
-// Phase 3 (0.40 → 0.90): Carousel hold (interactive)
-// Phase 4 (0.90 → 1.0):  Exit — scale down, fade, chrome out
+// Phase 1 (0 → 0.15):    Full-bleed hold, overlay fades in
+// Phase 2 (0.15 → 0.35): Zoom out to carousel, sides fade in, chrome in
+// Phase 3 (0.35 → 0.85): Carousel hold (interactive)
+// Phase 4 (0.85 → 1.0):  Exit — scale down, fade, chrome out
 // ============================================================
 
-const P1_END = 0.20
-const P2_END = 0.40
-const P3_END = 0.90
+const P1_END = 0.15
+const P2_END = 0.35
+const P3_END = 0.85
 const FC_INTERVAL = 5000
 
 const CAROUSEL_TRANSITION =
@@ -338,6 +338,7 @@ export default function useFeaturedScroll({
       applyProgress(getProgress())
     }
     prevTotalRef.current = totalCards
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- internal ref-only functions, stable
   }, [totalCards])
 
   // activeIndex watcher: update carousel if in Phase 4
@@ -346,6 +347,7 @@ export default function useFeaturedScroll({
       applyCarousel()
       resetProgressBar()
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- internal ref-only functions, stable
   }, [activeIndex])
 
   return {

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
+import useViewTransitionNavigate from '../hooks/useViewTransitionNavigate'
 import ModeToggle from './ModeToggle'
 import AddVideoModal from './AddVideoModal'
 import useModeStore from '../stores/modeStore'
@@ -18,7 +19,7 @@ const navItems = [
 ]
 
 export default function Header({ onSearch, onSearchSubmit }) {
-  const navigate = useNavigate()
+  const navigate = useViewTransitionNavigate()
   const location = useLocation()
   const { isSFW } = useModeStore()
   const { theme, toggleTheme } = useThemeStore()

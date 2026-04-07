@@ -1,4 +1,5 @@
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
+import useViewTransitionNavigate from '../../hooks/useViewTransitionNavigate'
 import useHomeStore from '../../stores/homeStore'
 import useModeStore from '../../stores/modeStore'
 import useThemeStore from '../../stores/themeStore'
@@ -10,7 +11,7 @@ import useThemeStore from '../../stores/themeStore'
 // ============================================================
 
 export default function HomeHeader() {
-  const navigate = useNavigate()
+  const navigate = useViewTransitionNavigate()
   const location = useLocation()
   const { _theatreMode } = useHomeStore()
   const { isSFW, toggleMode } = useModeStore()

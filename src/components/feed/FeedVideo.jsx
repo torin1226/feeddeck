@@ -153,7 +153,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
       })
 
     return () => { cancelled = true }
-  }, [shouldLoad, video.url, streamUrl, streamLoading])
+  }, [shouldLoad, video.url, video.streamUrl, streamUrl, streamLoading])
 
   // Claim the shared video element when this slot becomes active
   useEffect(() => {

@@ -26,6 +26,25 @@ function normalizeQueue(items) {
   return (items || []).map(normalizeItem)
 }
 
+// Process a pending reorder that queued while another was in-flight
+async function _processPendingReorder(pending, set) {
+  _reorderInFlight = true
+  try {
+    const res = await fetch(`${API}/queue`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order: pending.order }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    set({ queue: normalizeQueue(data.queue), online: true, lastSynced: Date.now() })
+  } catch {
+    set({ queue: pending.prevQueue, currentIndex: pending.prevIndex, online: false })
+  } finally {
+    _reorderInFlight = false
+  }
+}
+
 const useQueueStore = create(persist((set, get) => ({
   // State
   queue: [],          // Array of { id, position, video_url, title, thumbnail, duration, duration_formatted }
@@ -199,21 +218,7 @@ const useQueueStore = create(persist((set, get) => ({
       if (_pendingReorder) {
         const pending = _pendingReorder
         _pendingReorder = null
-        _reorderInFlight = true
-        try {
-          const res = await fetch(`${API}/queue`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ order: pending.order }),
-          })
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          const data = await res.json()
-          set({ queue: normalizeQueue(data.queue), online: true, lastSynced: Date.now() })
-        } catch {
-          set({ queue: pending.prevQueue, currentIndex: pending.prevIndex, online: false })
-        } finally {
-          _reorderInFlight = false
-        }
+        _processPendingReorder(pending, set)
       }
     }
   },

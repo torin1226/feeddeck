@@ -24,7 +24,7 @@ export default function HomePage() {
   // Fetch homepage data on mount and when mode changes
   useEffect(() => {
     fetchHomepage(isSFW ? 'social' : 'nsfw')
-  }, [isSFW])
+  }, [isSFW, fetchHomepage])
 
   // Pre-warm feed buffer so /feed loads instantly when navigated to
   useEffect(() => {

@@ -649,13 +649,13 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
   - Currently: VideoCard scale-105, CategoryRow scale-105/-translate-y-1, CarouselCard scale-[1.06]/-translate-y-1 (three different behaviors)
 - [x] Add `active:scale-[0.97]` pressed states to all interactive elements globally
   - Feed buttons currently at `active:scale-90` (too aggressive) → soften to `active:scale-95`
-- [ ] Add page transition animation between routes (150ms opacity crossfade via CSS View Transitions API or plain CSS)
-  > DECISION (2026-03-22): CSS-only, no framer-motion. Use View Transitions API (native Chrome) or plain CSS crossfade. Low priority.
+- [x] Add page transition animation between routes (150ms opacity crossfade via CSS View Transitions API)
+  > Implemented: CSS `::view-transition-*` rules + `useViewTransitionNavigate` hook wrapping react-router. Falls back to plain navigation when API unsupported. Respects reduced-motion.
 - [x] Queue pulse animation: extend from 0.2s to 0.35s with spring easing `cubic-bezier(0.34, 1.56, 0.64, 1)` + glow ring `box-shadow: 0 0 0 4px rgba(accent, 0.3)`
-- [ ] Hero scroll affordance: reduce hero to ~85vh so featured content peeks above fold
-  > DECISION (2026-03-22): Peek, not chevron. 85vh is self-documenting UX.
-- [ ] Tighten FeaturedSection scroll zone from 550vh to ~300vh, show progress bar during scroll, add "skip" affordance
-  > DECISION (2026-03-22): Yes, shorten to ~300vh. Retune phase breakpoints accordingly. Add progress indicator or skip.
+- [x] Hero scroll affordance: reduce hero to ~85vh so featured content peeks above fold
+  > Implemented: HeroSection height 100vh → 85vh (non-theatre). FeaturedSection naturally peeks above fold.
+- [x] Tighten FeaturedSection scroll zone from 550vh to ~300vh, retune phase breakpoints
+  > Implemented: 550vh → 300vh, phase breakpoints retuned (P1 0.15, P2 0.35, P3 0.85). Sticky container 100vh → 85vh.
 
 ### 5.6 Spacing & Layout Rhythm (P1)
 
@@ -711,12 +711,12 @@ _Claude Code adds tasks here as they come up during implementation. Move to the 
 - [x] **HIGH:** Add timeout to yt-dlp `streamSearch()` spawn — 60s kill timer prevents leaked processes (Cowork morning sprint 2026-03-22)
 - [x] **HIGH:** Cap feed buffer at 200 items with safe eviction in `feedStore.js` — prevents OOM on long sessions (Cowork morning sprint 2026-03-22)
 - [x] **HIGH:** Close Puppeteer browser on scrape failure in `server/sources/scraper.js` — reduced threshold from 5 to 3 consecutive failures, added logging
-- [ ] Add SIGTERM handler to clear background `setInterval` callbacks in `server/index.js` (~lines 1392, 1423, 1460) and close DB
+- [x] Add SIGTERM handler to clear background `setInterval` callbacks in `server/index.js` and close DB (already implemented)
 - [x] Add per-chunk timeout to proxy-stream pipe in `server/index.js` — 30s inactivity timeout aborts stalled streams
-- [ ] Add AbortController to `_warmStreamUrls()` in feedStore, abort on `resetFeed()` — fire-and-forget fetches update stale buffer
+- [x] Add AbortController to `_warmStreamUrls()` in feedStore, abort on `resetFeed()` (already implemented)
 - [x] Log malformed JSON parse failures in `server/index.js` tag processing — popular-tags and feed filter now log warnings
-- [ ] Wire tag preferences into `refillCategory()` — currently uses hardcoded generic queries, ignoring liked/disliked tags entirely
-- [ ] Remaining 16 `react-hooks/exhaustive-deps` ESLint warnings — need per-hook manual review to avoid infinite loops
+- [x] Wire tag preferences into `refillCategory()` — already done per morning sprint 2026-03-22 (duplicate of item above)
+- [x] Remaining 18 `react-hooks/exhaustive-deps` ESLint warnings — all resolved: safe deps added where possible, eslint-disable with comments for intentional omissions
 - [x] Remove debug `console.log('Queue: advancing to')` from `VideoPlayer.jsx:136` and `useKeyboard.js:41` (Cowork morning sprint 2026-03-22)
 
 ---

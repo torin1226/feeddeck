@@ -13,14 +13,35 @@ import { useRef, useCallback, useEffect } from 'react'
 let activeAbort = null
 let activeVideo = null
 
+// Module-level cancel — operates only on singletons, no React state
+function doCancel(timerRef) {
+  clearTimeout(timerRef.current)
+  timerRef.current = null
+
+  if (activeAbort) {
+    activeAbort.abort()
+    activeAbort = null
+  }
+
+  if (activeVideo) {
+    activeVideo.pause()
+    activeVideo.removeAttribute('src')
+    activeVideo.load()
+    activeVideo.style.opacity = '0'
+    activeVideo = null
+  }
+}
+
 export default function useHoverPreview() {
   const timerRef = useRef(null)
+
+  const cancelPreview = useCallback(() => doCancel(timerRef), [])
 
   const startPreview = useCallback((url, videoEl) => {
     if (!url || !videoEl) return
 
     // Cancel any existing preview
-    cancelPreview()
+    doCancel(timerRef)
 
     const abort = new AbortController()
     activeAbort = abort
@@ -54,31 +75,10 @@ export default function useHoverPreview() {
     }, 300)
   }, [])
 
-  const cancelPreview = useCallback(() => {
-    // Clear debounce timer
-    clearTimeout(timerRef.current)
-    timerRef.current = null
-
-    // Abort any in-flight fetch
-    if (activeAbort) {
-      activeAbort.abort()
-      activeAbort = null
-    }
-
-    // Stop and hide any playing video
-    if (activeVideo) {
-      activeVideo.pause()
-      activeVideo.removeAttribute('src')
-      activeVideo.load()
-      activeVideo.style.opacity = '0'
-      activeVideo = null
-    }
-  }, [])
-
   // Cleanup on unmount to prevent orphaned video elements
   useEffect(() => {
-    return () => cancelPreview()
-  }, [cancelPreview])
+    return () => doCancel(timerRef)
+  }, [])
 
   return { startPreview, cancelPreview }
 }

@@ -51,7 +51,7 @@ export default function MobileSwipeView() {
     if (current && !current.isDemo) {
       markWatched(current.id)
     }
-  }, [current?.id])
+  }, [current, markWatched])
 
   const goNext = () => index < displayVideos.length - 1 && setIndex(i => i + 1)
   const goPrev = () => index > 0 && setIndex(i => i - 1)

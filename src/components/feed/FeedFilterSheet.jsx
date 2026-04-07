@@ -91,7 +91,7 @@ export default function FeedFilterSheet({ onClose }) {
         setSearching(false)
       }
     }, 400)
-  }, [])
+  }, [isSFW])
 
   // Apply filters and close
   const applyFilters = useCallback(() => {

@@ -32,7 +32,7 @@ export default function HeroCarousel() {
         doSearch(value.trim())
       }, 380)
     },
-    [carouselItems]
+    [clearSearch, doSearch]
   )
 
   const [searching, setSearching] = useState(false)

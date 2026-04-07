@@ -1,4 +1,5 @@
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
+import useViewTransitionNavigate from '../../hooks/useViewTransitionNavigate'
 import useQueueStore from '../../stores/queueStore'
 import useFeedStore from '../../stores/feedStore'
 
@@ -17,7 +18,7 @@ const tabs = [
 ]
 
 export default function FeedBottomNav({ hidden = false, onFilterOpen }) {
-  const navigate = useNavigate()
+  const navigate = useViewTransitionNavigate()
   const location = useLocation()
   const queueCount = useQueueStore(s => s.queue.length)
   const filters = useFeedStore(s => s.filters)

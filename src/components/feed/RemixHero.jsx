@@ -51,6 +51,7 @@ export default function RemixHero({ video }) {
 
     load()
     return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- muted/video ref changes shouldn't reload hero
   }, [video?.id])
 
   // Sync mute

@@ -103,6 +103,29 @@ html {
   animation: fadeSlideIn 0.25s ease-out forwards;
 }
 
+/* Page transition via CSS View Transitions API */
+::view-transition-old(root) {
+  animation: 150ms ease-out both fade-out;
+}
+::view-transition-new(root) {
+  animation: 150ms ease-out both fade-in;
+}
+@keyframes fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0ms;
+  }
+}
+
 /* Snap scroll for mobile swipe view */
 .snap-container {
   scroll-snap-type: y mandatory;

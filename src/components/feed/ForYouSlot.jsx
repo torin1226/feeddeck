@@ -75,6 +75,7 @@ const ForYouSlot = memo(function ForYouSlot({ video, index, isActive, onVideoRef
 
     play()
     return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- muted/URL changes shouldn't restart playback
   }, [isActive, video.id])
 
   // Sync mute state

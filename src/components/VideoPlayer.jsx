@@ -43,12 +43,13 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
       .then(r => r.json())
       .then(data => { if (data.formats) setFormats(data.formats) })
       .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedQuality changes handled by handleQualityChange
   }, [video.url, isSFW])
 
   // Mark video as watched on mount
   useEffect(() => {
     markWatched(video.id)
-  }, [video.id])
+  }, [video.id, markWatched])
 
   // Player-specific keyboard shortcuts
   useEffect(() => {
@@ -99,6 +100,7 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- handleNext is unstable, captured via closure
   }, [video])
 
   const handleQualityChange = (quality) => {

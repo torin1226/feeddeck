@@ -4,8 +4,8 @@ import useFeaturedScroll from '../../hooks/useFeaturedScroll'
 
 // ============================================================
 // FeaturedSection
-// Scroll-driven 5-phase animation. A 350vh scroll zone with a
-// sticky 100vh container. Cards at fixed base size, animated
+// Scroll-driven 4-phase animation. A 300vh scroll zone with a
+// sticky 85vh container. Cards at fixed base size, animated
 // with transform: scale() only. See spec for phase details.
 // ============================================================
 
@@ -102,10 +102,10 @@ export default function FeaturedSection() {
   if (featuredItems.length === 0) return null
 
   return (
-    <div ref={zoneRef} className="relative" style={{ height: '550vh' }}>
+    <div ref={zoneRef} className="relative" style={{ height: '300vh' }}>
       <div
         ref={stickyRef}
-        className="sticky top-0 h-screen w-full flex flex-col items-center justify-center overflow-hidden bg-surface"
+        className="sticky top-0 h-[85vh] w-full flex flex-col items-center justify-center overflow-hidden bg-surface"
       >
         {/* Header — hidden until Phase 3+ */}
         <div

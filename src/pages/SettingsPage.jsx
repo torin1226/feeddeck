@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import useThemeStore from '../stores/themeStore'
 import useModeStore from '../stores/modeStore'
-import { useNavigate } from 'react-router-dom'
+import useViewTransitionNavigate from '../hooks/useViewTransitionNavigate'
 
 const API = '/api'
 
 export default function SettingsPage() {
-  const navigate = useNavigate()
+  const navigate = useViewTransitionNavigate()
   const { theme, toggleTheme } = useThemeStore()
   const { isSFW } = useModeStore()
   const [sources, setSources] = useState([])
