@@ -427,12 +427,12 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 - `cookies.txt` — legacy combined file (keep for backward compat until adapter is updated)
 
 **Adapter changes needed:**
-- [ ] Update `server/sources/ytdlp.js` to accept a mode parameter and pick the right cookie file: `cookies-social.txt` for social mode, `cookies-nsfw.txt` for nsfw mode
+- [x] Update `server/cookies.js` with per-domain → per-mode → legacy fallback chain (getCookieArgs resolves best cookie file automatically)
 - [ ] Update all callers that pass mode context (refillCategory, feed refill, search, metadata extraction) to forward mode to the adapter
-- [ ] Update `POST /api/cookies` endpoint to accept a `mode` param (social|nsfw) and write to the correct file
-- [ ] Update `GET /api/cookies/status` to return status for both files
-- [ ] Update Settings UI: two cookie import sections (Social cookies / NSFW cookies) with independent status indicators
-- [ ] Fallback: if mode-specific file missing, try `cookies.txt` (combined), then no cookies
+- [x] Update `POST /api/cookies` endpoint to accept a `mode` param (social|nsfw) and write to the correct file
+- [x] Update `GET /api/cookies/status` to return status for both files (social, nsfw, legacy)
+- [x] Update Settings UI: two cookie import sections (Social cookies / NSFW cookies) with independent status indicators
+- [x] Fallback: if mode-specific file missing, try `cookies.txt` (combined), then no cookies
 
 ### 3.5 Organization Features
 
@@ -706,15 +706,15 @@ _Claude Code adds tasks here as they come up during implementation. Move to the 
 - [x] Clean up 3 stale `vite.config.js.timestamp-*` files in project root
 - [x] **CRITICAL:** Fix missing `crypto` import in `server/index.js` — playlist creation crashed at runtime. Fixed: imported `randomBytes` from `crypto` (Cowork morning sprint 2026-03-22)
 - [x] Wire tag preferences into `refillCategory()` and `_refillFeedCacheImpl()` — both now query liked tags and append up to 2 random liked tags to search queries for personalized discovery. Discovered during personalization audit (morning sprint 2026-03-22)
-- [ ] Hover preview video element cleanup — found 54 `<video>` elements in DOM, likely from hover previews not being properly destroyed. Potential memory leak. Discovered during 5a.2 playback testing
+- [x] Hover preview video element cleanup — added useEffect cleanup on unmount in useHoverPreview hook to cancel active previews when components unmount
 - [x] (2026-03-26) TikTok GDPR import pipeline — `import-tiktok.js` parses exports, `server/scripts/process-tiktok-imports.js` enriches via yt-dlp, API routes added (`/api/tiktok/status`, `/api/tiktok/recent`, `/api/tiktok/failed`, `/api/tiktok/watch-history`). 56K+ imports seeded, processor running.
 - [x] **HIGH:** Add timeout to yt-dlp `streamSearch()` spawn — 60s kill timer prevents leaked processes (Cowork morning sprint 2026-03-22)
 - [x] **HIGH:** Cap feed buffer at 200 items with safe eviction in `feedStore.js` — prevents OOM on long sessions (Cowork morning sprint 2026-03-22)
-- [ ] **HIGH:** Close Puppeteer browser on scrape failure in `server/sources/scraper.js` (~line 195) — failed scrapes leave browser instances alive
+- [x] **HIGH:** Close Puppeteer browser on scrape failure in `server/sources/scraper.js` — reduced threshold from 5 to 3 consecutive failures, added logging
 - [ ] Add SIGTERM handler to clear background `setInterval` callbacks in `server/index.js` (~lines 1392, 1423, 1460) and close DB
-- [ ] Add per-chunk timeout to proxy-stream pipe in `server/index.js` (~line 240) — stalled upstream blocks response forever
+- [x] Add per-chunk timeout to proxy-stream pipe in `server/index.js` — 30s inactivity timeout aborts stalled streams
 - [ ] Add AbortController to `_warmStreamUrls()` in feedStore, abort on `resetFeed()` — fire-and-forget fetches update stale buffer
-- [ ] Log malformed JSON parse failures in `server/index.js` tag processing instead of silently skipping
+- [x] Log malformed JSON parse failures in `server/index.js` tag processing — popular-tags and feed filter now log warnings
 - [ ] Wire tag preferences into `refillCategory()` — currently uses hardcoded generic queries, ignoring liked/disliked tags entirely
 - [ ] Remaining 16 `react-hooks/exhaustive-deps` ESLint warnings — need per-hook manual review to avoid infinite loops
 - [x] Remove debug `console.log('Queue: advancing to')` from `VideoPlayer.jsx:136` and `useKeyboard.js:41` (Cowork morning sprint 2026-03-22)

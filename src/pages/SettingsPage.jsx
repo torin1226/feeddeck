@@ -146,11 +146,12 @@ export default function SettingsPage() {
     }
   }
 
-  const handleCookieUpload = async (e) => {
+  const handleCookieUpload = async (e, mode) => {
     const file = e.target.files?.[0]
     if (!file) return
     const text = await file.text()
-    const res = await fetch(`${API}/cookies`, {
+    const modeParam = mode ? `?mode=${mode}` : ''
+    const res = await fetch(`${API}/cookies${modeParam}`, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: text,
@@ -164,8 +165,9 @@ export default function SettingsPage() {
     e.target.value = '' // reset file input
   }
 
-  const handleCookieDelete = async () => {
-    await fetch(`${API}/cookies`, { method: 'DELETE' })
+  const handleCookieDelete = async (mode) => {
+    const modeParam = mode ? `?mode=${mode}` : ''
+    await fetch(`${API}/cookies${modeParam}`, { method: 'DELETE' })
     fetchSources()
   }
 
@@ -283,40 +285,41 @@ export default function SettingsPage() {
         {/* Cookie Auth */}
         <section>
           <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-3">Browser Cookies</h2>
-          <div className="bg-surface-raised rounded-xl border border-surface-border p-4">
-            <p className="text-text-muted text-sm mb-3">
-              Import browser cookies to access personalized feeds, subscriptions, and premium content via yt-dlp.
+          <div className="bg-surface-raised rounded-xl border border-surface-border p-4 space-y-4">
+            <p className="text-text-muted text-sm">
+              Import browser cookies per mode to access personalized feeds and premium content.
               Export cookies using a browser extension (e.g. "Get cookies.txt LOCALLY").
             </p>
-            {cookieStatus?.installed ? (
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-green-500" />
-                    <span className="text-text-primary text-sm font-medium">Cookies installed</span>
-                  </div>
-                  <div className="text-text-muted text-xs mt-1">
-                    {cookieStatus.cookies} cookies · Updated {new Date(cookieStatus.modified).toLocaleDateString()}
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <label className="px-3 py-1.5 rounded-lg text-xs border border-surface-border text-text-secondary hover:text-text-primary hover:border-text-muted transition-colors cursor-pointer">
-                    Re-import
-                    <input type="file" accept=".txt" className="hidden" onChange={handleCookieUpload} />
-                  </label>
-                  <button
-                    onClick={handleCookieDelete}
-                    className="px-3 py-1.5 rounded-lg text-xs border border-accent/30 text-accent hover:bg-accent/10 transition-colors cursor-pointer"
-                  >
-                    Remove
-                  </button>
-                </div>
+
+            {/* Social cookies */}
+            <CookieRow
+              label="Social"
+              hint="YouTube, TikTok, Instagram"
+              status={cookieStatus?.social}
+              onUpload={(e) => handleCookieUpload(e, 'social')}
+              onDelete={() => handleCookieDelete('social')}
+            />
+
+            {/* NSFW cookies */}
+            <CookieRow
+              label="NSFW"
+              hint="PornHub, RedGifs, etc."
+              status={cookieStatus?.nsfw}
+              onUpload={(e) => handleCookieUpload(e, 'nsfw')}
+              onDelete={() => handleCookieDelete('nsfw')}
+            />
+
+            {/* Legacy (backward compat) */}
+            {cookieStatus?.legacy?.installed && (
+              <div className="pt-2 border-t border-surface-border">
+                <CookieRow
+                  label="Legacy (combined)"
+                  hint="Used as fallback when mode-specific cookies are missing"
+                  status={cookieStatus.legacy}
+                  onUpload={(e) => handleCookieUpload(e)}
+                  onDelete={() => handleCookieDelete()}
+                />
               </div>
-            ) : (
-              <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm bg-accent/90 text-white hover:bg-accent transition-colors font-medium cursor-pointer">
-                Import cookies.txt
-                <input type="file" accept=".txt" className="hidden" onChange={handleCookieUpload} />
-              </label>
             )}
           </div>
         </section>
@@ -554,6 +557,39 @@ export default function SettingsPage() {
               ))}
             </div>
           </section>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Sub-component for per-mode cookie row
+function CookieRow({ label, hint, status, onUpload, onDelete }) {
+  return (
+    <div className="flex items-center justify-between">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${status?.installed ? 'bg-green-500' : 'bg-surface-border'}`} />
+          <span className="text-text-primary text-sm font-medium">{label}</span>
+        </div>
+        <div className="text-text-muted text-xs mt-0.5 ml-4">
+          {status?.installed
+            ? `${status.cookies} cookies · Updated ${new Date(status.modified).toLocaleDateString()}`
+            : hint}
+        </div>
+      </div>
+      <div className="flex gap-2 shrink-0">
+        <label className="px-3 py-1.5 rounded-lg text-xs border border-surface-border text-text-secondary hover:text-text-primary hover:border-text-muted transition-colors cursor-pointer">
+          {status?.installed ? 'Re-import' : 'Import'}
+          <input type="file" accept=".txt" className="hidden" onChange={onUpload} />
+        </label>
+        {status?.installed && (
+          <button
+            onClick={onDelete}
+            className="px-3 py-1.5 rounded-lg text-xs border border-accent/30 text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+          >
+            Remove
+          </button>
         )}
       </div>
     </div>

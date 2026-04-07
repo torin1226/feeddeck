@@ -13,7 +13,32 @@ import { logger } from './logger.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const COOKIES_DIR = join(__dirname, '..', 'cookies')
-const COOKIES_TMP = join(__dirname, '..', 'data', '.cookie-tmp')
+const DATA_DIR = join(__dirname, '..', 'data')
+const COOKIES_TMP = join(DATA_DIR, '.cookie-tmp')
+
+// Mode-based cookie files (fallback when per-domain file is missing)
+const MODE_COOKIE_FILES = {
+  social: join(DATA_DIR, 'cookies-social.txt'),
+  nsfw: join(DATA_DIR, 'cookies-nsfw.txt'),
+}
+// Legacy combined file (last-resort fallback)
+const LEGACY_COOKIE_FILE = join(DATA_DIR, 'cookies.txt')
+
+// Which mode each domain belongs to (for mode-based fallback)
+const DOMAIN_MODE = {
+  'youtube.com': 'social',
+  'youtu.be': 'social',
+  'tiktok.com': 'social',
+  'instagram.com': 'social',
+  'pornhub.com': 'nsfw',
+  'fikfap.com': 'nsfw',
+  'redgifs.com': 'nsfw',
+  'xvideos.com': 'nsfw',
+  'spankbang.com': 'nsfw',
+  'redtube.com': 'nsfw',
+  'xhamster.com': 'nsfw',
+  'youporn.com': 'nsfw',
+}
 
 // Ensure temp dir exists for cookie copies
 try { mkdirSync(COOKIES_TMP, { recursive: true }) } catch {}
@@ -80,40 +105,55 @@ export function getCookieArgs(url) {
     }
   }
 
-  if (!config) return []
+  // Resolve cookie file: per-domain → mode-based → legacy → none
+  const cookiePath = _resolveCookiePath(config, domain)
+  if (!cookiePath) return []
 
-  if (config.file) {
-    const fullPath = join(COOKIES_DIR, config.file)
-    if (existsSync(fullPath)) {
-      // Copy to temp file to avoid PermissionError when multiple yt-dlp
-      // processes try to write back to the same cookie file concurrently.
-      // Use unique random name per call; cleanup after 3 minutes (yt-dlp
-      // search can take up to 2min).
-      try {
-        const tmpName = `${randomBytes(4).toString('hex')}-${config.file}`
-        const tmpPath = join(COOKIES_TMP, tmpName)
-        copyFileSync(fullPath, tmpPath)
-        activeTempFiles.add(tmpPath)
-        setTimeout(() => {
-          activeTempFiles.delete(tmpPath)
-          try { unlinkSync(tmpPath) } catch {}
-        }, 180_000)
-        return ['--cookies', tmpPath]
-      } catch (err) {
-        logger.warn(`Cookie temp copy failed for ${config.file}: ${err.message}`)
-        // Fallback to original — may PermissionError on concurrent writes
-        return ['--cookies', fullPath]
-      }
-    }
-    logger.warn(`Cookie file missing: ${config.file} (expected at ${fullPath})`)
-    return []
-  }
-
-  if (config.browser) {
-    return ['--cookies-from-browser', config.browser]
-  }
-
-  return []
+  return _tempCopyArgs(cookiePath)
 }
 
-export { COOKIE_MAP }
+/**
+ * Resolve the best cookie file for a domain.
+ * Priority: per-domain file → mode-based file → legacy cookies.txt
+ */
+function _resolveCookiePath(config, domain) {
+  // 1. Per-domain cookie file (most specific)
+  if (config?.file) {
+    const fullPath = join(COOKIES_DIR, config.file)
+    if (existsSync(fullPath)) return fullPath
+  }
+
+  // 2. Mode-based cookie file
+  const mode = DOMAIN_MODE[domain]
+  if (mode && MODE_COOKIE_FILES[mode] && existsSync(MODE_COOKIE_FILES[mode])) {
+    return MODE_COOKIE_FILES[mode]
+  }
+
+  // 3. Legacy combined cookies.txt
+  if (existsSync(LEGACY_COOKIE_FILE)) return LEGACY_COOKIE_FILE
+
+  return null
+}
+
+/**
+ * Copy cookie file to a temp path and return yt-dlp args.
+ * Avoids PermissionError when multiple yt-dlp processes share the same file.
+ */
+function _tempCopyArgs(cookiePath) {
+  try {
+    const tmpName = `${randomBytes(4).toString('hex')}-cookies.txt`
+    const tmpPath = join(COOKIES_TMP, tmpName)
+    copyFileSync(cookiePath, tmpPath)
+    activeTempFiles.add(tmpPath)
+    setTimeout(() => {
+      activeTempFiles.delete(tmpPath)
+      try { unlinkSync(tmpPath) } catch {}
+    }, 180_000)
+    return ['--cookies', tmpPath]
+  } catch (err) {
+    logger.warn(`Cookie temp copy failed: ${err.message}`)
+    return ['--cookies', cookiePath]
+  }
+}
+
+export { COOKIE_MAP, MODE_COOKIE_FILES, LEGACY_COOKIE_FILE }

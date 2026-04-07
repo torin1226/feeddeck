@@ -5,7 +5,7 @@ import { existsSync, writeFileSync, unlinkSync, statSync, readFileSync } from 'f
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { randomBytes } from 'crypto'
-import { getCookieArgs } from './cookies.js'
+import { getCookieArgs, MODE_COOKIE_FILES, LEGACY_COOKIE_FILE } from './cookies.js'
 import { initDatabase, db } from './database.js'
 import { registry, ytdlp as ytdlpAdapter, scraper as scraperAdapter, closeAllSources } from './sources/index.js'
 import { logger } from './logger.js'
@@ -285,9 +285,24 @@ app.get('/api/proxy-stream', async (req, res) => {
     // Pipe the body using Node streams (more robust than manual reader pump)
     const { Readable } = await import('stream')
     const nodeStream = Readable.fromWeb(upstream.body)
+
+    // Per-chunk timeout: if no data arrives for 30s, abort the stalled stream
+    let chunkTimer = null
+    const resetChunkTimer = () => {
+      clearTimeout(chunkTimer)
+      chunkTimer = setTimeout(() => {
+        logger.warn('Proxy stream stalled (no data for 30s), aborting')
+        nodeStream.destroy()
+        if (!res.writableEnded) res.end()
+      }, 30_000)
+    }
+    resetChunkTimer()
+    nodeStream.on('data', resetChunkTimer)
+    nodeStream.on('end', () => clearTimeout(chunkTimer))
+
     nodeStream.pipe(res)
-    nodeStream.on('error', () => { if (!res.writableEnded) res.end() })
-    res.on('close', () => { nodeStream.destroy() })
+    nodeStream.on('error', () => { clearTimeout(chunkTimer); if (!res.writableEnded) res.end() })
+    res.on('close', () => { clearTimeout(chunkTimer); nodeStream.destroy() })
   } catch (err) {
     logger.error('Proxy stream error:', { error: err.message })
     if (!res.headersSent) res.status(500).send('Stream proxy failed')
@@ -457,10 +472,25 @@ app.get('/api/videos/watch-later', (req, res) => {
 // Cookie Auth (3.4) — import browser cookies for yt-dlp
 // -----------------------------------------------------------
 
-// Legacy cookie path kept for cookie management API endpoints
-const COOKIES_PATH = join(__dirname, '..', 'data', 'cookies.txt')
+// Helper: get cookie file path for a mode
+function _cookiePath(mode) {
+  if (mode === 'social' || mode === 'nsfw') return MODE_COOKIE_FILES[mode]
+  return LEGACY_COOKIE_FILE // legacy fallback
+}
+
+function _countCookies(content) {
+  return content.split('\n').filter(l => !l.startsWith('#') && l.trim() && l.split('\t').length >= 7).length
+}
+
+function _cookieFileStatus(filePath) {
+  if (!existsSync(filePath)) return null
+  const stat = statSync(filePath)
+  const content = readFileSync(filePath, 'utf8')
+  return { installed: true, cookies: _countCookies(content), size: stat.size, modified: stat.mtime.toISOString() }
+}
 
 // POST /api/cookies — upload cookies.txt content
+// Query param: ?mode=social|nsfw (defaults to legacy combined file)
 app.post('/api/cookies', express.text({ limit: '5mb' }), (req, res) => {
   const content = req.body
   if (!content || typeof content !== 'string') return res.status(400).json({ error: 'Cookie content required (text/plain)' })
@@ -474,11 +504,14 @@ app.post('/api/cookies', express.text({ limit: '5mb' }), (req, res) => {
     return res.status(400).json({ error: 'Invalid cookie format. Expected Netscape/Mozilla cookie.txt format.' })
   }
 
+  const mode = req.query.mode // social | nsfw | undefined (legacy)
+  const filePath = _cookiePath(mode)
+
   try {
-    writeFileSync(COOKIES_PATH, content, 'utf8')
-    const cookieCount = lines.filter(l => !l.startsWith('#') && l.trim() && l.split('\t').length >= 7).length
-    logger.info('Cookies imported', { cookies: cookieCount })
-    res.json({ ok: true, cookies: cookieCount })
+    writeFileSync(filePath, content, 'utf8')
+    const cookieCount = _countCookies(content)
+    logger.info('Cookies imported', { mode: mode || 'legacy', cookies: cookieCount })
+    res.json({ ok: true, mode: mode || 'legacy', cookies: cookieCount })
   } catch (err) {
     logger.error('Cookie import error', { error: err.message })
     res.status(500).json({ error: 'Failed to save cookies' })
@@ -486,22 +519,39 @@ app.post('/api/cookies', express.text({ limit: '5mb' }), (req, res) => {
 })
 
 // GET /api/cookies/status — check if cookies are installed
+// Returns status for all cookie files (social, nsfw, legacy)
 app.get('/api/cookies/status', (req, res) => {
   try {
-    if (!existsSync(COOKIES_PATH)) return res.json({ installed: false })
-    const stat = statSync(COOKIES_PATH)
-    const content = readFileSync(COOKIES_PATH, 'utf8')
-    const cookieCount = content.split('\n').filter(l => !l.startsWith('#') && l.trim() && l.split('\t').length >= 7).length
-    res.json({ installed: true, cookies: cookieCount, size: stat.size, modified: stat.mtime.toISOString() })
+    const social = _cookieFileStatus(MODE_COOKIE_FILES.social)
+    const nsfw = _cookieFileStatus(MODE_COOKIE_FILES.nsfw)
+    const legacy = _cookieFileStatus(LEGACY_COOKIE_FILE)
+
+    // Backward compat: top-level installed/cookies for clients that expect the old shape
+    const anyInstalled = !!(social || nsfw || legacy)
+    const totalCookies = (social?.cookies || 0) + (nsfw?.cookies || 0) + (legacy?.cookies || 0)
+
+    res.json({
+      installed: anyInstalled,
+      cookies: totalCookies,
+      modified: social?.modified || nsfw?.modified || legacy?.modified || null,
+      social: social || { installed: false },
+      nsfw: nsfw || { installed: false },
+      legacy: legacy || { installed: false },
+    })
   } catch (err) {
     res.json({ installed: false, error: err.message })
   }
 })
 
 // DELETE /api/cookies — remove cookies file
+// Query param: ?mode=social|nsfw (defaults to legacy)
 app.delete('/api/cookies', (req, res) => {
+  const mode = req.query.mode
+  const filePath = _cookiePath(mode)
+
   try {
-    if (existsSync(COOKIES_PATH)) unlinkSync(COOKIES_PATH)
+    if (existsSync(filePath)) unlinkSync(filePath)
+    logger.info('Cookies deleted', { mode: mode || 'legacy' })
     res.json({ ok: true })
   } catch (err) {
     logger.error('Cookie delete error', { error: err.message })
@@ -562,7 +612,9 @@ app.get('/api/tags/popular', (req, res) => {
           const t = tag.toLowerCase().trim()
           if (t) tagCounts[t] = (tagCounts[t] || 0) + 1
         }
-      } catch {}
+      } catch (e) {
+        logger.warn('Malformed tags JSON in popular-tags', { tags: row.tags?.slice(0, 100), error: e.message })
+      }
     }
     const popular = Object.entries(tagCounts)
       .sort((a, b) => b[1] - a[1])
@@ -1432,7 +1484,10 @@ app.get('/api/feed/next', (req, res) => {
             const videoTags = JSON.parse(v.tags || '[]').map(t => t.toLowerCase())
             const titleLower = (v.title || '').toLowerCase()
             return filterTags.some(ft => videoTags.includes(ft) || titleLower.includes(ft))
-          } catch { return false }
+          } catch (e) {
+            logger.warn('Malformed tags JSON in feed filter', { url: v.url, tags: v.tags?.slice(0, 100), error: e.message })
+            return false
+          }
         })
       }
     }

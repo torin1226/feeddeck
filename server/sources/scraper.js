@@ -307,7 +307,9 @@ export class ScraperAdapter extends SourceAdapter {
       }))
     } catch (err) {
       this._consecutiveFailures++
-      if (this._consecutiveFailures >= 5) {
+      // Close browser after 3 consecutive failures to prevent zombie processes
+      if (this._consecutiveFailures >= 3) {
+        logger.warn(`Scraper: ${this._consecutiveFailures} consecutive failures, closing browser`, { error: err.message })
         await this.browser?.close().catch(() => {})
         this.browser = null
         this._consecutiveFailures = 0
