@@ -22,7 +22,7 @@ export default function FeedToast({ message, onDone }) {
     <div
       role="status"
       aria-live="polite"
-      className="fixed top-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full
+      className="fixed top-6 left-1/2 -translate-x-1/2 z-toast px-4 py-2 rounded-full
         bg-white/15 backdrop-blur-lg border border-white/20 text-white text-sm font-medium
         transition-all duration-300"
       style={{

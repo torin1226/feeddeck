@@ -3,12 +3,16 @@
 // Shimmer placeholders for loading states. No spinners.
 // ============================================================
 
-const shimmer = 'animate-pulse bg-white/[0.06] rounded'
+// Directional shimmer: sweeps L→R like Netflix/HBO loading states.
+// Uses gradient animation instead of basic pulse for cinematic feel.
+const shimmer = 'animate-shimmer rounded'
+  + ' bg-[length:200%_100%]'
+  + ' bg-gradient-to-r from-white/[0.04] via-white/[0.10] to-white/[0.04]'
 
 export function SkeletonCard() {
   return (
-    <div className="flex-none w-[200px]">
-      <div className={`${shimmer} w-full h-[113px] rounded-[10px] mb-2`} />
+    <div className="flex-none w-card">
+      <div className={`${shimmer} w-full h-card-thumb rounded-card mb-2`} />
       <div className={`${shimmer} h-3 w-3/4 mb-1.5`} />
       <div className={`${shimmer} h-2.5 w-1/2`} />
     </div>
@@ -35,7 +39,7 @@ export function SkeletonHero() {
   return (
     <div className="relative h-screen min-h-[540px] bg-surface">
       <div className={`absolute inset-0 ${shimmer} rounded-none`} />
-      <div className="absolute left-10 bottom-[230px] max-w-[520px] z-10">
+      <div className="absolute left-10 bottom-[230px] max-w-[520px] z-content">
         <div className="flex gap-1.5 mb-3">
           <div className={`${shimmer} h-5 w-10`} />
           <div className={`${shimmer} h-5 w-20`} />

@@ -4,30 +4,43 @@ import useQueueStore from '../stores/queueStore'
 // ============================================================
 // useQueueSync
 // Polling hook that keeps the queue in sync with the server.
-// Fetches every 3s, pauses when tab is hidden, fetches
-// immediately on visibility change (tab refocus).
+// Exponential backoff on failure: 3s → 6s → 12s → 30s → 60s cap.
+// Resets to 3s on success. Pauses when tab is hidden.
 // ============================================================
 
-const POLL_INTERVAL = 3000
+const BASE_INTERVAL = 3000
+const MAX_INTERVAL = 60000
+const BACKOFF_FACTOR = 2
 
 export default function useQueueSync() {
   const fetchQueue = useQueueStore(s => s.fetchQueue)
-  const intervalRef = useRef(null)
+  const timeoutRef = useRef(null)
+  const intervalRef = useRef(BASE_INTERVAL)
 
   useEffect(() => {
-    // Initial fetch
-    fetchQueue()
-
-    // Start polling
-    function startPolling() {
-      stopPolling()
-      intervalRef.current = setInterval(fetchQueue, POLL_INTERVAL)
+    function stopPolling() {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
     }
 
-    function stopPolling() {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
+    function scheduleNext() {
+      stopPolling()
+      timeoutRef.current = setTimeout(poll, intervalRef.current)
+    }
+
+    async function poll() {
+      const ok = await fetchQueue()
+      if (ok !== false) {
+        // Success: reset to base interval
+        intervalRef.current = BASE_INTERVAL
+      } else {
+        // Failure: exponential backoff
+        intervalRef.current = Math.min(intervalRef.current * BACKOFF_FACTOR, MAX_INTERVAL)
+      }
+      if (!document.hidden) {
+        scheduleNext()
       }
     }
 
@@ -35,13 +48,14 @@ export default function useQueueSync() {
       if (document.hidden) {
         stopPolling()
       } else {
-        // Fetch immediately on tab refocus, then resume polling
-        fetchQueue()
-        startPolling()
+        // Reset backoff on tab refocus, fetch immediately
+        intervalRef.current = BASE_INTERVAL
+        poll()
       }
     }
 
-    startPolling()
+    // Initial fetch
+    poll()
     document.addEventListener('visibilitychange', handleVisibility)
 
     return () => {

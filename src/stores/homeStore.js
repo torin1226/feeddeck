@@ -34,6 +34,7 @@ const fmtDur = (s) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '
 const fmtViews = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'K' : String(n))
 
 let idCounter = 100
+let _fetchVersion = 0 // Guards against nuclearFlush/resetHome racing with fetchHomepage
 
 function makeItem() {
   const seed = idCounter++
@@ -62,6 +63,9 @@ const useHomeStore = create((set, get) => ({
   heroItem: null,
   carouselItems: [],
   theatreMode: false,
+  inlinePlay: false, // true = video playing in hero area, categories still visible
+  // Error from last failed homepage fetch (null = no error)
+  fetchError: null,
 
   // Featured carousel
   featuredItems: [],
@@ -72,8 +76,10 @@ const useHomeStore = create((set, get) => ({
 
   // Actions
   setHeroItem: (item) => set({ heroItem: item }),
-  setTheatreMode: (on) => set({ theatreMode: on }),
-  toggleTheatre: () => set((s) => ({ theatreMode: !s.theatreMode })),
+  setTheatreMode: (on) => set({ theatreMode: on, inlinePlay: false }),
+  toggleTheatre: () => set((s) => ({ theatreMode: !s.theatreMode, inlinePlay: false })),
+  startInlinePlay: () => set({ inlinePlay: true, theatreMode: false }),
+  stopInlinePlay: () => set({ inlinePlay: false }),
 
   setFeaturedIndex: (idx) => {
     const { featuredItems } = get()
@@ -118,21 +124,29 @@ const useHomeStore = create((set, get) => ({
   },
 
   // Nuclear reset: clear all content (used on mode switch)
-  resetHome: () => set({
-    heroItem: null,
-    carouselItems: [],
-    theatreMode: false,
-    featuredItems: [],
-    featuredIndex: 0,
-    categories: [],
-  }),
+  resetHome: () => {
+    _fetchVersion++ // Invalidate any in-flight fetchHomepage
+    set({
+      heroItem: null,
+      carouselItems: [],
+      theatreMode: false,
+      featuredItems: [],
+      featuredIndex: 0,
+      categories: [],
+    })
+  },
 
   // Fetch real data from backend. Falls back to placeholders if empty.
   fetchHomepage: async (mode = 'social') => {
+    const version = ++_fetchVersion
+    // Clear stale content immediately so UI shows loading state
+    set({ heroItem: null, carouselItems: [], categories: [], featuredItems: [], fetchError: null })
     try {
       const res = await fetch(`/api/homepage?mode=${mode}`)
+      if (version !== _fetchVersion) return // Stale fetch (mode changed or resetHome called)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
+      if (version !== _fetchVersion) return // Stale fetch
 
       // Map API videos to the shape components expect
       const mapVideo = (v, _i) => ({
@@ -147,7 +161,7 @@ const useHomeStore = create((set, get) => ({
         daysAgo: Math.max(1, Math.floor((Date.now() - new Date(v.fetched_at || Date.now()).getTime()) / 86400000)),
         desc: v.title || '',
         genre: v.source || 'Video',
-        rating: (7 + Math.random() * 2.5).toFixed(1),
+        rating: v.rating != null ? Number(v.rating).toFixed(1) : null,
         url: v.url,
         tags: v.tags || [],
       })
@@ -174,13 +188,38 @@ const useHomeStore = create((set, get) => ({
           featuredTagline: featuredTaglines[i % featuredTaglines.length],
         }))
 
-      // Category rows from API groupings
-      const categories = data.categories
+      // Category rows from API groupings, sorted by tag preferences
+      let categories = data.categories
         .filter(cat => cat.videos.length > 0)
         .map(cat => ({
           label: cat.label,
           items: cat.videos.map(mapVideo),
         }))
+
+      // Client-side recommendation scoring: boost categories with liked tags
+      try {
+        const tagRes = await fetch('/api/tags/preferences')
+        if (version !== _fetchVersion) return
+        if (tagRes.ok) {
+          const prefs = await tagRes.json()
+          const liked = new Set((prefs.liked || []).map(t => t.toLowerCase()))
+          const disliked = new Set((prefs.disliked || []).map(t => t.toLowerCase()))
+
+          if (liked.size > 0 || disliked.size > 0) {
+            categories = categories.map(cat => {
+              let score = 0
+              for (const item of cat.items) {
+                for (const tag of (item.tags || [])) {
+                  const t = tag.toLowerCase()
+                  if (liked.has(t)) score += 2
+                  if (disliked.has(t)) score -= 5
+                }
+              }
+              return { ...cat, _score: score }
+            }).sort((a, b) => b._score - a._score)
+          }
+        }
+      } catch { /* non-fatal — categories render in API order */ }
 
       set({
         carouselItems,
@@ -191,6 +230,7 @@ const useHomeStore = create((set, get) => ({
       })
     } catch (err) {
       console.warn('Homepage fetch failed, using placeholders:', err.message)
+      set({ fetchError: 'Server unreachable — showing sample content' })
       get().generateData()
     }
   },

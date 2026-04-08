@@ -13,6 +13,10 @@
     <script>
       // Prevent flash: apply saved theme before React loads
       try{var t=JSON.parse(localStorage.getItem('fd-theme'));if(t&&t.state&&t.state.theme==='light')document.documentElement.classList.add('light')}catch(e){}
+      // Prevent NSFW flash: force SFW mode in localStorage before React/Zustand hydrate.
+      // Zustand persist reads this value synchronously — if it finds isSFW:false, NSFW
+      // content could render before onRehydrateStorage callback forces SFW.
+      try{var m=JSON.parse(localStorage.getItem('fd-mode'));if(m&&m.state&&!m.state.isSFW){m.state.isSFW=true;localStorage.setItem('fd-mode',JSON.stringify(m))}}catch(e){}
     </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>

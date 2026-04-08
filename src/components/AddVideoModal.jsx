@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import useLibraryStore from '../stores/libraryStore'
+import useFocusTrap from '../hooks/useFocusTrap'
 
 // ============================================================
 // AddVideoModal
@@ -12,6 +13,7 @@ export default function AddVideoModal({ onClose }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const { addVideo } = useLibraryStore()
+  const trapRef = useFocusTrap()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -64,9 +66,9 @@ export default function AddVideoModal({ onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+    <div className="fixed inset-0 z-toast flex items-center justify-center bg-black/60 backdrop-blur-sm"
          onClick={onClose}>
-      <div className="bg-surface-raised border border-surface-border rounded-xl p-6 w-full max-w-md mx-4"
+      <div ref={trapRef} className="bg-surface-raised border border-surface-border rounded-xl p-6 w-full max-w-md mx-4"
            onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-semibold text-text-primary mb-4">Add Video</h2>
 

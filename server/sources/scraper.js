@@ -155,6 +155,13 @@ export class ScraperAdapter extends SourceAdapter {
   async _getBrowser() {
     if (this.browser?.connected) return this.browser
 
+    // Close any existing disconnected browser to prevent leaked processes
+    if (this.browser) {
+      logger.info('Closing disconnected Puppeteer browser before launching new one')
+      await this.browser.close().catch(() => {})
+      this.browser = null
+    }
+
     const pptr = await getPuppeteer()
     this.browser = await pptr.launch({
       headless: 'new',
@@ -203,9 +210,9 @@ export class ScraperAdapter extends SourceAdapter {
     const config = SITE_CONFIGS[siteKey]
     if (!config) throw new Error(`No scraper config for ${siteKey}`)
 
-    const page = await this._newPage()
-
+    let page
     try {
+      page = await this._newPage()
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 })
 
       // Wait for video cards to appear
@@ -307,16 +314,16 @@ export class ScraperAdapter extends SourceAdapter {
       }))
     } catch (err) {
       this._consecutiveFailures++
-      // Close browser after 3 consecutive failures to prevent zombie processes
-      if (this._consecutiveFailures >= 3) {
-        logger.warn(`Scraper: ${this._consecutiveFailures} consecutive failures, closing browser`, { error: err.message })
+      logger.warn(`Scraper failure #${this._consecutiveFailures} for ${siteKey}: ${err.message}`)
+      if (this._consecutiveFailures >= 5 || !this.browser?.connected) {
+        logger.info('Closing Puppeteer browser after repeated failures or disconnected state')
         await this.browser?.close().catch(() => {})
         this.browser = null
         this._consecutiveFailures = 0
       }
       throw err
     } finally {
-      await page.close().catch(() => {})
+      if (page) await page.close().catch(() => {})
     }
   }
 

@@ -18,13 +18,19 @@ import { SkeletonHero, SkeletonFeatured, SkeletonCategoryRow } from '../componen
 // ============================================================
 
 export default function HomePage() {
-  const { fetchHomepage, heroItem, theatreMode } = useHomeStore()
+  const { fetchHomepage, heroItem, theatreMode, fetchError } = useHomeStore()
   const isSFW = useModeStore((s) => s.isSFW)
 
-  // Fetch homepage data on mount and when mode changes
+  // Fetch homepage data on mount and when mode changes.
+  // Small delay ensures nuclearFlush (async) completes before re-fetching,
+  // preventing a race where flush clears data after fetch succeeds.
   useEffect(() => {
-    fetchHomepage(isSFW ? 'social' : 'nsfw')
-  }, [isSFW, fetchHomepage])
+    const timer = setTimeout(() => {
+      fetchHomepage(isSFW ? 'social' : 'nsfw')
+    }, 50)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSFW])
 
   // Pre-warm feed buffer so /feed loads instantly when navigated to
   useEffect(() => {
@@ -38,6 +44,20 @@ export default function HomePage() {
     <div className="min-h-screen bg-surface text-text-primary font-sans">
       <HomeHeader />
 
+      {/* Server-unreachable banner */}
+      {fetchError && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-modal px-4 py-2 rounded-full bg-amber-900/80 backdrop-blur text-amber-200 text-xs font-medium flex items-center gap-2">
+          <span>⚠</span>
+          <span>{fetchError}</span>
+          <button
+            onClick={() => fetchHomepage(isSFW ? 'social' : 'nsfw')}
+            className="ml-1 underline hover:no-underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <>
           <SkeletonHero />
@@ -49,7 +69,7 @@ export default function HomePage() {
         <>
           <HeroSection />
           {!theatreMode && (
-            <div className="relative z-10">
+            <div className="relative z-content">
               <FeaturedSection />
               <CategoryRows />
             </div>

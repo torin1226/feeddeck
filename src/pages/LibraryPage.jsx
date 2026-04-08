@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import useViewTransitionNavigate from '../hooks/useViewTransitionNavigate'
+import { useNavigate } from 'react-router-dom'
 import useModeStore from '../stores/modeStore'
 import useLibraryStore from '../stores/libraryStore'
 import HomeHeader from '../components/home/HomeHeader'
@@ -23,7 +23,7 @@ const TABS = [
 ]
 
 export default function LibraryPage() {
-  const navigate = useViewTransitionNavigate()
+  const navigate = useNavigate()
   const isSFW = useModeStore((s) => s.isSFW)
   const { videos, loadFromServer, seedDemoData } = useLibraryStore()
   const [activeTab, setActiveTab] = useState('all')
@@ -50,7 +50,8 @@ export default function LibraryPage() {
         seedDemoData()
       }
     })
-  }, [loadFromServer, seedDemoData])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Continue Watching — videos with progress between 5% and 95%
   const continueWatching = useMemo(() => {
@@ -106,7 +107,7 @@ export default function LibraryPage() {
       <div className="pt-14">
         {/* Page title area */}
         <div className="px-10 pt-8 pb-2">
-          <h1 className="font-display text-[28px] font-bold tracking-[-0.5px] mb-1">
+          <h1 className="font-display text-headline font-bold tracking-[-0.5px] mb-1">
             Your Library
           </h1>
           <p className="text-sm text-text-muted">
@@ -129,7 +130,7 @@ export default function LibraryPage() {
               >
                 {tab.label}
                 {counts[tab.key] > 0 && (
-                  <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                  <span className={`text-micro font-medium px-1.5 py-0.5 rounded-full ${
                     activeTab === tab.key
                       ? 'bg-accent/20 text-accent'
                       : 'bg-surface-overlay text-text-muted'
@@ -155,10 +156,10 @@ export default function LibraryPage() {
             <>
               {/* Section header */}
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-[14px] font-semibold tracking-wider uppercase text-text-secondary">
+                <h2 className="text-subhead font-semibold tracking-wider uppercase text-text-secondary">
                   {TABS.find((t) => t.key === activeTab)?.label}
                 </h2>
-                <span className="text-[11px] text-text-muted">
+                <span className="text-caption text-text-muted">
                   {filtered.length} {filtered.length === 1 ? 'video' : 'videos'}
                 </span>
               </div>
@@ -195,10 +196,10 @@ function ContinueWatchingRow({ items, onPlay }) {
     <div className="px-10 pt-6 pb-2">
       {/* Header */}
       <div className="flex items-center justify-between mb-3.5">
-        <h3 className="font-display text-[18px] font-bold tracking-[-0.3px]">
+        <h3 className="font-display text-title font-bold tracking-[-0.3px]">
           Continue Watching
         </h3>
-        <span className="text-[11px] font-semibold text-accent opacity-75 cursor-pointer uppercase tracking-wider hover:opacity-100 transition-opacity">
+        <span className="text-caption font-semibold text-accent opacity-75 cursor-pointer uppercase tracking-wider hover:opacity-100 transition-opacity">
           See all &rarr;
         </span>
       </div>
@@ -232,9 +233,9 @@ function ContinueWatchingCard({ item, onClick }) {
   return (
     <div
       onClick={onClick}
-      className="flex-none w-[220px] rounded-[10px] overflow-hidden bg-raised
+      className="flex-none w-card rounded-[10px] overflow-hidden bg-raised
         cursor-pointer relative transition-all duration-[220ms] ease-out
-        hover:scale-[1.03] hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgba(0,0,0,0.4)]"
+        hover:scale-[1.03] hover:-translate-y-0.5 hover:shadow-card-hover"
     >
       {/* Thumbnail */}
       <div className="relative">
@@ -246,12 +247,12 @@ function ContinueWatchingCard({ item, onClick }) {
         />
         {/* Resume overlay */}
         <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-          <div className="w-11 h-11 rounded-full bg-white/90 flex items-center justify-center text-black text-lg shadow-lg">
+          <div className="w-11 h-11 rounded-full bg-white/90 flex items-center justify-center text-black text-lg shadow-float">
             ▶
           </div>
         </div>
         {/* Duration badge */}
-        <span className="absolute top-[100px] right-[7px] bg-black/80 text-[10px] font-semibold px-1.5 py-0.5 rounded z-[3]">
+        <span className="absolute top-[100px] right-[7px] bg-black/80 text-micro font-semibold px-1.5 py-0.5 rounded z-content">
           {item.durationFormatted || '0:00'}
         </span>
         {/* Progress bar */}
@@ -265,10 +266,10 @@ function ContinueWatchingCard({ item, onClick }) {
 
       {/* Info */}
       <div className="p-2.5 pt-2">
-        <div className="text-[13px] font-semibold leading-tight line-clamp-2 mb-0.5">
+        <div className="text-body-sm font-semibold leading-tight line-clamp-2 mb-0.5">
           {item.title}
         </div>
-        <div className="text-[11px] text-text-muted">
+        <div className="text-caption text-text-muted">
           {progress}% watched
         </div>
       </div>

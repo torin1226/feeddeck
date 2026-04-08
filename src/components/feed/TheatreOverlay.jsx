@@ -29,7 +29,7 @@ export default function TheatreOverlay({ videoRef }) {
 
   return (
     <div
-      className={`absolute inset-0 z-30 transition-opacity duration-300 ${
+      className={`absolute inset-0 z-header transition-opacity duration-300 ${
         controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}
       style={{ cursor: controlsVisible ? 'default' : 'none' }}

@@ -17,6 +17,8 @@ const useFeedStore = create((set, get) => ({
   currentIndex: 0,
   // Loading state
   loading: false,
+  // Error message from last failed fetch (null = no error)
+  error: null,
   // Whether the feed has been initialized
   initialized: false,
   // Set of watched video IDs this session (prevent repeats)
@@ -55,20 +57,31 @@ const useFeedStore = create((set, get) => ({
 
   // Initialize the feed — fetch first batch (or use prefetched buffer)
   initFeed: async () => {
-    const { initialized, loading, buffer } = get()
+    const { initialized, loading } = get()
     if (initialized || loading) return
+    // Load server-side watched IDs to deduplicate across sessions
+    try {
+      const watchRes = await fetch('/api/feed/watched-ids')
+      if (watchRes.ok) {
+        const { ids } = await watchRes.json()
+        if (ids?.length > 0) {
+          const { watchedIds } = get()
+          for (const id of ids) watchedIds.add(id)
+        }
+      }
+    } catch { /* non-fatal — proceed with local watchedIds only */ }
     // If prefetch already loaded videos, just mark as initialized
-    if (buffer.length > 0) {
+    if (get().buffer.length > 0) {
       set({ initialized: true })
       return
     }
-    set({ loading: true })
+    set({ loading: true, error: null })
     try {
       const videos = await fetchFeedBatch(get)
-      set({ buffer: videos, initialized: true, loading: false })
+      set({ buffer: videos, initialized: true, loading: false, error: null })
       _warmStreamUrls(videos)
     } catch {
-      set({ loading: false })
+      set({ loading: false, initialized: true, error: 'Server unreachable — check that the backend is running' })
     }
   },
 
@@ -81,8 +94,14 @@ const useFeedStore = create((set, get) => ({
       // Fire-and-forget: mark as watched on backend
       fetch(`/api/feed/watched?id=${encodeURIComponent(video.id)}`, { method: 'POST' }).catch(() => {})
     }
-    // Evict watchedIds to prevent unbounded growth
-    if (watchedIds.size > 1000) watchedIds.clear()
+    // Evict oldest watchedIds to prevent unbounded memory growth
+    // (server-side is the persistent source of truth)
+    if (watchedIds.size > 5000) {
+      const arr = [...watchedIds]
+      const keep = arr.slice(arr.length - 2000)
+      watchedIds.clear()
+      for (const id of keep) watchedIds.add(id)
+    }
     set({ currentIndex: idx })
 
     // Check if we need to fetch more
@@ -114,16 +133,17 @@ const useFeedStore = create((set, get) => ({
                 buffer: newBuf,
                 currentIndex: Math.max(0, s.currentIndex - trimCount),
                 loading: false,
+                error: null,
               }
             }
           }
-          return { buffer: newBuffer, loading: false }
+          return { buffer: newBuffer, loading: false, error: null }
         })
         // Eagerly warm stream URLs for newly fetched videos
         _warmStreamUrls(videos)
       }
     } catch {
-      set({ loading: false })
+      set({ loading: false, error: 'Failed to load more videos' })
     }
   },
 

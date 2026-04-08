@@ -281,11 +281,12 @@ export function initDatabase() {
   try {
     const insertSrc = db.prepare('INSERT OR IGNORE INTO sources (domain, mode, label, query, weight) VALUES (?, ?, ?, ?, ?)')
     const newSources = [
-      ['reddit.com',    'social', 'Reddit',    'reddit videos best of',  0.7],
-      ['xvideos.com',   'nsfw',   'XVideos',   'https://www.xvideos.com/best',         0.8],
-      ['spankbang.com', 'nsfw',   'SpankBang', 'https://spankbang.com/trending',       0.7],
-      ['redgifs.com',   'nsfw',   'RedGifs',   'https://www.redgifs.com/trending',     0.9],
-      ['fikfap.com',    'nsfw',   'FikFap',    'https://fikfap.com/trending',          0.7],
+      ['reddit.com',     'social', 'Reddit',            'reddit videos best of',                0.7],
+      ['subscriptions',  'social', 'Your Subscriptions', 'https://www.youtube.com/feed/subscriptions', 2.0],
+      ['xvideos.com',    'nsfw',   'XVideos',           'https://www.xvideos.com/best',         0.8],
+      ['spankbang.com',  'nsfw',   'SpankBang',         'https://spankbang.com/trending',       0.7],
+      ['redgifs.com',    'nsfw',   'RedGifs',           'https://www.redgifs.com/trending',     0.9],
+      ['fikfap.com',     'nsfw',   'FikFap',            'https://fikfap.com/trending',          0.7],
     ]
     for (const row of newSources) {
       insertSrc.run(...row)

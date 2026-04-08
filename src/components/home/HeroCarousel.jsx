@@ -32,16 +32,19 @@ export default function HeroCarousel() {
         doSearch(value.trim())
       }, 380)
     },
-    [clearSearch, doSearch]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [carouselItems]
   )
 
   const [searching, setSearching] = useState(false)
+  const [searchEmpty, setSearchEmpty] = useState(false)
 
   // Real search via multi-site API
   const doSearch = useCallback(
     async (q) => {
       if (!savedItems) setSavedItems([...carouselItems])
       setSearching(true)
+      setSearchEmpty(false)
       try {
         const mode = useModeStore.getState().isSFW ? 'social' : 'nsfw'
         const res = await fetch(`/api/search/multi?q=${encodeURIComponent(q)}&limit=20&mode=${mode}`)
@@ -57,9 +60,16 @@ export default function HeroCarousel() {
           uploader: v.uploader || v.source || '',
           source: v.source || '',
         }))
-        setSearchResults(results.length > 0 ? results : null)
+        if (results.length > 0) {
+          setSearchResults(results)
+          setSearchEmpty(false)
+        } else {
+          setSearchResults(null)
+          setSearchEmpty(true)
+        }
       } catch {
         setSearchResults(null)
+        setSearchEmpty(true)
       } finally {
         setSearching(false)
       }
@@ -71,6 +81,7 @@ export default function HeroCarousel() {
     setQuery('')
     setSearchResults(null)
     setSavedItems(null)
+    setSearchEmpty(false)
   }, [])
 
   // Scroll active card into view
@@ -83,8 +94,8 @@ export default function HeroCarousel() {
   return (
     <div>
       {/* Search row */}
-      <div className="px-10 mb-3.5">
-        <div className="relative max-w-[280px]">
+      <div className="px-10 mb-1">
+        <div className="relative max-w-[520px]">
           <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted text-sm pointer-events-none">
             &#8981;
           </span>
@@ -102,7 +113,7 @@ export default function HeroCarousel() {
             placeholder="Search videos..."
             autoComplete="off"
             className="w-full h-[34px] bg-white/[0.07] border border-white/10 rounded-full
-              text-text-primary text-[12px] pl-[34px] pr-9 outline-none
+              text-text-primary text-label pl-[34px] pr-9 outline-none
               focus:bg-white/[0.11] focus:border-white/[0.22] transition-all
               placeholder:text-text-muted backdrop-blur-lg font-sans"
           />
@@ -115,15 +126,25 @@ export default function HeroCarousel() {
             </button>
           )}
         </div>
-        <div className="text-[11px] font-semibold text-text-muted uppercase tracking-wider flex items-center gap-2 mt-2">
+      </div>
+      <div className="px-10 mb-2.5">
+        <div className="text-caption font-semibold text-text-muted uppercase tracking-wider flex items-center gap-2">
           <span>{searching ? 'Searching...' : searchResults ? `Results for \u201C${query}\u201D` : 'Up Next'}</span>
           {searchResults && (
-            <span className="bg-accent/20 text-accent rounded px-1.5 py-0.5 text-[10px] tracking-wide">
+            <span className="bg-accent/20 text-accent rounded px-1.5 py-0.5 text-micro tracking-wide">
               {searchResults.length} found
             </span>
           )}
         </div>
       </div>
+
+      {/* No results message */}
+      {searchEmpty && !searching && query && (
+        <div className="px-10 py-6 text-center">
+          <div className="text-text-muted text-sm">No results found for &ldquo;{query}&rdquo;</div>
+          <div className="text-text-muted/60 text-xs mt-1">Try a different search term</div>
+        </div>
+      )}
 
       {/* Scrollable card strip */}
       <div
@@ -143,12 +164,15 @@ export default function HeroCarousel() {
         {/* Load more ghost card */}
         {!searchResults && (
           <div
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); } }}
             onClick={() => {
               // In real app, this would load more. For now, noop.
             }}
-            className="flex-none w-[230px] h-[130px] rounded-lg flex items-center justify-center
+            className="flex-none w-card-lg h-card-thumb-lg rounded-lg flex items-center justify-center
               flex-col gap-1.5 bg-raised border border-dashed border-surface-border
-              text-text-muted text-[11px] font-medium cursor-pointer
+              text-text-muted text-caption font-medium cursor-pointer
               hover:bg-overlay hover:text-text-secondary transition-all"
           >
             <span className="text-xl">+</span>
@@ -165,10 +189,10 @@ function CarouselCard({ item, isActive, onClick }) {
     <div
       data-card-id={item.id}
       onClick={onClick}
-      className={`flex-none w-[230px] h-[130px] rounded-lg overflow-hidden cursor-pointer
+      className={`flex-none w-card-lg h-card-thumb-lg rounded-lg overflow-hidden cursor-pointer
         relative transition-all duration-250 ease-out border-2 bg-overlay
-        ${isActive ? 'border-accent shadow-[0_0_0_1px_#f43f5e,0_8px_32px_rgba(244,63,94,0.25)]' : 'border-transparent'}
-        hover:scale-[1.03] hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgba(0,0,0,0.4)]`}
+        ${isActive ? 'border-accent shadow-glow-accent' : 'border-transparent'}
+        hover:scale-[1.03] hover:-translate-y-0.5 hover:shadow-card-hover`}
     >
       <img
         src={item.thumbnailSm || item.thumbnail}
@@ -178,10 +202,10 @@ function CarouselCard({ item, isActive, onClick }) {
       />
       {/* Overlay with title */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/[0.75] via-transparent to-transparent flex flex-col justify-end p-2">
-        <div className="text-[11px] font-semibold text-white truncate leading-tight">
+        <div className="text-caption font-semibold text-white truncate leading-tight">
           {item.title}
         </div>
-        <div className="text-[10px] font-medium text-white/50 mt-0.5">{item.duration}</div>
+        <div className="text-micro font-medium text-white/50 mt-0.5">{item.duration}</div>
       </div>
       {/* Play indicator on active card */}
       {isActive && (

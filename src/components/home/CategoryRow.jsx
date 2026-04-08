@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import useHomeStore from '../../stores/homeStore'
 import useHoverPreview from '../../hooks/useHoverPreview'
 
@@ -9,9 +9,11 @@ import useHoverPreview from '../../hooks/useHoverPreview'
 // ============================================================
 
 export default function CategoryRow({ category }) {
-  const { setHeroItem } = useHomeStore()
+  const { setHeroItem, setTheatreMode } = useHomeStore()
   const { startPreview, cancelPreview } = useHoverPreview()
   const rowRef = useRef(null)
+  const previewVideoRef = useRef(null)
+  const [expanded, setExpanded] = useState(false)
 
   // Staggered fade-up animation on scroll into view
   useEffect(() => {
@@ -44,23 +46,30 @@ export default function CategoryRow({ category }) {
   const handleCardClick = (item) => {
     setHeroItem(item)
     window.scrollTo({ top: 0, behavior: 'smooth' })
+    // Enter theatre mode so the clicked video actually plays
+    setTheatreMode(true)
   }
 
   return (
     <div className="mb-9">
       {/* Header */}
       <div className="flex items-center justify-between mb-3.5">
-        <h3 className="font-display text-[18px] font-bold tracking-[-0.3px]">{category.label}</h3>
-        <span className="text-[11px] font-semibold text-accent opacity-75 cursor-pointer uppercase tracking-wider hover:opacity-100 transition-opacity">
-          See all &rarr;
-        </span>
+        <h3 className="font-display text-title font-bold tracking-[-0.3px]">{category.label}</h3>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="text-caption font-semibold text-accent opacity-75 cursor-pointer uppercase tracking-wider hover:opacity-100 transition-opacity bg-transparent border-none"
+        >
+          {expanded ? 'Collapse \u2191' : 'See all \u2192'}
+        </button>
       </div>
 
-      {/* Scrollable row */}
+      {/* Scrollable row / expanded grid */}
       <div
         ref={rowRef}
-        className="flex gap-3 overflow-x-auto pb-1.5 scrollbar-none"
-        style={{
+        className={expanded
+          ? 'flex flex-wrap gap-3 pb-1.5 relative'
+          : 'flex gap-3 overflow-x-auto pb-1.5 scrollbar-none relative'}
+        style={expanded ? {} : {
           scrollbarWidth: 'none',
           msOverflowStyle: 'none',
           WebkitMaskImage: 'linear-gradient(to right, black 88%, transparent 100%)',
@@ -70,15 +79,31 @@ export default function CategoryRow({ category }) {
         {category.items.map((item) => (
           <div
             key={item.id}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleCardClick(item) } }}
             onClick={() => handleCardClick(item)}
             onMouseEnter={(e) => {
-              const vid = e.currentTarget.querySelector('video')
-              if (item.url && vid) startPreview(item.url, vid)
+              const vid = previewVideoRef.current
+              if (item.url && vid) {
+                // Position the shared preview video over this card's thumbnail
+                const card = e.currentTarget
+                vid.style.position = 'absolute'
+                vid.style.top = `${card.offsetTop}px`
+                vid.style.left = `${card.offsetLeft}px`
+                vid.style.width = `${card.offsetWidth}px`
+                vid.style.height = '113px'
+                startPreview(item.url, vid)
+              }
             }}
-            onMouseLeave={cancelPreview}
-            className="cat-card flex-none w-[200px] rounded-[10px] overflow-hidden bg-raised
+            onMouseLeave={() => {
+              cancelPreview()
+              const vid = previewVideoRef.current
+              if (vid) vid.style.opacity = '0'
+            }}
+            className="cat-card flex-none w-card rounded-[10px] overflow-hidden bg-raised
               cursor-pointer relative transition-all duration-[220ms] ease-out
-              hover:scale-[1.03] hover:-translate-y-0.5 hover:shadow-[0_12px_32px_rgba(0,0,0,0.4)]"
+              hover:scale-[1.03] hover:-translate-y-0.5 hover:shadow-card-hover"
           >
             <img
               src={item.thumbnailSm || item.thumbnail}
@@ -86,33 +111,34 @@ export default function CategoryRow({ category }) {
               loading="lazy"
               className="w-full h-[113px] object-cover block bg-overlay"
             />
-            {/* Hover preview video */}
-            <video
-              className="absolute top-0 left-0 w-full h-[113px] object-cover z-[1] pointer-events-none transition-opacity duration-300"
-              style={{ opacity: 0 }}
-              muted
-              playsInline
-              loop
-            />
             {/* Hover play overlay */}
-            <div className="absolute top-0 left-0 right-0 h-[113px] bg-black/45 flex items-center justify-center text-[28px] text-white opacity-0 hover:opacity-100 transition-opacity z-[2]">
+            <div className="absolute top-0 left-0 right-0 h-[113px] bg-black/45 flex items-center justify-center text-headline text-white opacity-0 hover:opacity-100 transition-opacity z-content">
               &#9654;
             </div>
             {/* Duration badge */}
-            <span className="absolute top-[90px] right-[7px] bg-black/80 text-[10px] font-semibold px-1.5 py-0.5 rounded z-[3]">
+            <span className="absolute top-[90px] right-[7px] bg-black/80 text-micro font-semibold px-1.5 py-0.5 rounded z-content">
               {item.duration}
             </span>
             {/* Info */}
             <div className="p-2.5 pt-2">
-              <div className="text-[13px] font-semibold leading-tight line-clamp-2 mb-0.5">
+              <div className="text-body-sm font-semibold leading-tight line-clamp-2 mb-0.5">
                 {item.title}
               </div>
-              <div className="text-[11px] text-text-muted">
+              <div className="text-caption text-text-muted">
                 {item.uploader} &middot; {item.views} views &middot; {item.daysAgo}d ago
               </div>
             </div>
           </div>
         ))}
+        {/* Single shared preview video element per row (instead of one per card) */}
+        <video
+          ref={previewVideoRef}
+          className="object-cover z-content pointer-events-none transition-opacity duration-300 rounded-t-[10px]"
+          style={{ opacity: 0, position: 'absolute', top: 0, left: 0 }}
+          muted
+          playsInline
+          loop
+        />
       </div>
     </div>
   )
