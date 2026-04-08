@@ -17,7 +17,7 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
   const { isSFW } = useModeStore()
   const { advance, queue } = useQueueStore()
   const { markWatched } = useLibraryStore()
-  const [_isPlaying, setIsPlaying] = useState(false)
+  const [, setIsPlaying] = useState(false)
   const [streamUrl, setStreamUrl] = useState(null)
   const [streamLoading, setStreamLoading] = useState(false)
   const [formats, setFormats] = useState([])

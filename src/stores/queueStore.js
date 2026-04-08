@@ -196,7 +196,7 @@ const useQueueStore = create(persist((set, get) => ({
 
     // Serialize reorder requests to prevent race conditions
     if (_reorderInFlight) {
-      _pendingReorder = { order: next.map(item => item.id), prevQueue, prevIndex }
+      _pendingReorder = { order: next.map(item => item.id), prevQueue: [...prevQueue], prevIndex }
       return
     }
 

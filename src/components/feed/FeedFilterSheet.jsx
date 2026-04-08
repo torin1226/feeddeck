@@ -24,24 +24,26 @@ export default function FeedFilterSheet({ onClose }) {
   const [loadingTags, setLoadingTags] = useState(true)
   const searchTimer = useRef(null)
 
-  // Fetch available sources
+  // Fetch available sources and popular tags in parallel
   useEffect(() => {
     const mode = isSFW ? 'social' : 'nsfw'
-    fetch(`/api/sources/list?mode=${mode}`)
-      .then(r => r.json())
-      .then(data => setSources(data.sources || data || []))
-      .catch(() => {})
-      .finally(() => setLoadingSources(false))
-  }, [isSFW])
+    const controller = new AbortController()
+    const { signal } = controller
 
-  // Fetch popular tags (filtered by mode)
-  useEffect(() => {
-    const mode = isSFW ? 'social' : 'nsfw'
-    fetch(`/api/tags/popular?mode=${mode}`)
-      .then(r => r.json())
-      .then(data => setTags((data.tags || []).slice(0, 20)))
-      .catch(() => {})
-      .finally(() => setLoadingTags(false))
+    Promise.all([
+      fetch(`/api/sources/list?mode=${mode}`, { signal })
+        .then(r => r.json())
+        .then(data => setSources(data.sources || data || []))
+        .catch(() => {})
+        .finally(() => setLoadingSources(false)),
+      fetch(`/api/tags/popular?mode=${mode}`, { signal })
+        .then(r => r.json())
+        .then(data => setTags((data.tags || []).slice(0, 20)))
+        .catch(() => {})
+        .finally(() => setLoadingTags(false)),
+    ])
+
+    return () => controller.abort()
   }, [isSFW])
 
   // Clear search results on mode change

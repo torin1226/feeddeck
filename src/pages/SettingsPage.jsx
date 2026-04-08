@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import useThemeStore from '../stores/themeStore'
 import useModeStore from '../stores/modeStore'
 import useViewTransitionNavigate from '../hooks/useViewTransitionNavigate'
@@ -33,6 +33,17 @@ export default function SettingsPage() {
   const [seedLog, setSeedLog] = useState([])
   const [seedRunning, setSeedRunning] = useState(false)
   const [seedResult, setSeedResult] = useState(null)
+  const esRef = useRef(null)
+
+  // Cleanup EventSource on unmount
+  useEffect(() => {
+    return () => {
+      if (esRef.current) {
+        esRef.current.close()
+        esRef.current = null
+      }
+    }
+  }, [])
 
   const fetchSources = useCallback(async () => {
     try {
@@ -59,11 +70,16 @@ export default function SettingsPage() {
 
   useEffect(() => { fetchSources() }, [fetchSources])
 
-  // Load saved usernames on mount
+  // Load saved usernames on mount / platform change
   useEffect(() => {
-    fetch(`${API}/recommendations/username`).then(r => r.json()).then(d => {
-      if (d.usernames?.[seedPlatform]) setSeedUsername(d.usernames[seedPlatform])
-    }).catch(() => {})
+    const controller = new AbortController()
+    fetch(`${API}/recommendations/username`, { signal: controller.signal })
+      .then(r => r.json())
+      .then(d => {
+        if (d.usernames?.[seedPlatform]) setSeedUsername(d.usernames[seedPlatform])
+      })
+      .catch(() => {})
+    return () => controller.abort()
   }, [seedPlatform])
 
   const saveUsername = async () => {
@@ -76,23 +92,31 @@ export default function SettingsPage() {
   }
 
   const runSeed = async () => {
+    // Close any previous EventSource connection
+    if (esRef.current) {
+      esRef.current.close()
+      esRef.current = null
+    }
     await saveUsername()
     setSeedRunning(true)
     setSeedLog([])
     setSeedResult(null)
     try {
       const es = new EventSource(`${API}/recommendations/seed?platform=${seedPlatform}&force=1`)
+      esRef.current = es
       es.onmessage = (e) => {
         const data = JSON.parse(e.data)
         if (data.type === 'complete') {
           setSeedResult(data)
           setSeedRunning(false)
           es.close()
+          esRef.current = null
           fetchSources() // refresh tag prefs
         } else if (data.type === 'error') {
           setSeedLog(prev => [...prev, data.message])
           setSeedRunning(false)
           es.close()
+          esRef.current = null
         } else {
           const msg = data.message || `${data.phase}: ${data.current}/${data.total}`
           setSeedLog(prev => [...prev.slice(-20), msg])
@@ -101,6 +125,7 @@ export default function SettingsPage() {
       es.onerror = () => {
         setSeedRunning(false)
         es.close()
+        esRef.current = null
       }
     } catch {
       setSeedRunning(false)

@@ -59,11 +59,11 @@ export default function useFeaturedScroll({
   const phase2Timer = useRef(null)
   const prevInPhase2 = useRef(false)
 
-  activeIdxRef.current = activeIndex
-  totalCardsRef.current = totalCards
   useEffect(() => {
+    activeIdxRef.current = activeIndex
+    totalCardsRef.current = totalCards
     callbacksRef.current = { onPhase4Enter, onPhase4Leave, advanceFeatured, setFeaturedIndex }
-  }, [onPhase4Enter, onPhase4Leave, advanceFeatured, setFeaturedIndex])
+  }, [activeIndex, totalCards, onPhase4Enter, onPhase4Leave, advanceFeatured, setFeaturedIndex])
 
   // ── Helpers ──
 
@@ -269,6 +269,7 @@ export default function useFeaturedScroll({
         prevInPhase2.current = true
         clearTimeout(phase2Timer.current)
         phase2Timer.current = setTimeout(() => {
+          if (!prevInPhase2.current) return // Abort if scrolled out before timer fired
           const video = videoRef.current
           if (video && video.readyState >= 2) {
             video.muted = true

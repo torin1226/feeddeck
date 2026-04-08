@@ -1429,7 +1429,11 @@ async function refillCategory(categoryKey) {
       try {
         insert.run(v.id, categoryKey, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, JSON.stringify(v.tags || []))
         added++
-      } catch { /* skip duplicates */ }
+      } catch (err) {
+        if (!err.message?.includes('UNIQUE constraint')) {
+          logger.warn(`Unexpected insert error for ${categoryKey}:`, { error: err.message })
+        }
+      }
     }
 
     logger.info(`  ✅ Added ${added} videos to ${categoryKey}`)
@@ -1713,7 +1717,11 @@ async function _refillFeedCacheImpl(mode) {
           if (result.changes > 0 && v.url) {
             newVideoUrls.push(v.url)
           }
-        } catch { /* skip duplicates */ }
+        } catch (err) {
+          if (!err.message?.includes('UNIQUE constraint') && !err.message?.includes('IGNORE')) {
+            logger.warn(`Unexpected feed insert error for ${src.domain}:`, { error: err.message })
+          }
+        }
       }
       // Update last_fetched timestamp
       db.prepare('UPDATE sources SET last_fetched = datetime(\'now\') WHERE domain = ?').run(src.domain)
@@ -1827,7 +1835,11 @@ function startScheduledTrendingRefresh() {
         try {
           insert.run(v.id, 'nsfw-trending', v.url, v.title, v.thumbnail, v.duration, v.source || site, v.uploader, v.view_count, JSON.stringify(v.tags || []))
           added++
-        } catch { /* skip duplicates */ }
+        } catch (err) {
+          if (!err.message?.includes('UNIQUE constraint')) {
+            logger.warn(`Unexpected trending insert error for ${site}:`, { error: err.message })
+          }
+        }
       }
 
       logger.info(`  ✅ Trending refresh: added ${added} videos from ${site}`)
