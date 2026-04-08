@@ -146,12 +146,13 @@ export default function SettingsPage() {
     }
   }
 
+  const cookieUrl = (mode) => mode ? `${API}/cookies?mode=${mode}` : `${API}/cookies`
+
   const handleCookieUpload = async (e, mode) => {
     const file = e.target.files?.[0]
     if (!file) return
     const text = await file.text()
-    const modeParam = mode ? `?mode=${mode}` : ''
-    const res = await fetch(`${API}/cookies${modeParam}`, {
+    const res = await fetch(cookieUrl(mode), {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: text,
@@ -166,8 +167,7 @@ export default function SettingsPage() {
   }
 
   const handleCookieDelete = async (mode) => {
-    const modeParam = mode ? `?mode=${mode}` : ''
-    await fetch(`${API}/cookies${modeParam}`, { method: 'DELETE' })
+    await fetch(cookieUrl(mode), { method: 'DELETE' })
     fetchSources()
   }
 

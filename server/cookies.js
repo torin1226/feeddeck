@@ -5,7 +5,7 @@
 // cookie source to prevent cross-contamination between modes.
 // ============================================================
 
-import { existsSync, copyFileSync, mkdirSync, unlinkSync } from 'fs'
+import { existsSync, copyFileSync, mkdirSync, unlinkSync, readdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { randomBytes } from 'crypto'
@@ -15,6 +15,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const COOKIES_DIR = join(__dirname, '..', 'cookies')
 const DATA_DIR = join(__dirname, '..', 'data')
 const COOKIES_TMP = join(DATA_DIR, '.cookie-tmp')
+const TEMP_COOKIE_TTL_MS = 180_000 // 3 min — yt-dlp search can take up to 2min
 
 // Mode-based cookie files (fallback when per-domain file is missing)
 const MODE_COOKIE_FILES = {
@@ -24,52 +25,34 @@ const MODE_COOKIE_FILES = {
 // Legacy combined file (last-resort fallback)
 const LEGACY_COOKIE_FILE = join(DATA_DIR, 'cookies.txt')
 
-// Which mode each domain belongs to (for mode-based fallback)
-const DOMAIN_MODE = {
-  'youtube.com': 'social',
-  'youtu.be': 'social',
-  'tiktok.com': 'social',
-  'instagram.com': 'social',
-  'pornhub.com': 'nsfw',
-  'fikfap.com': 'nsfw',
-  'redgifs.com': 'nsfw',
-  'xvideos.com': 'nsfw',
-  'spankbang.com': 'nsfw',
-  'redtube.com': 'nsfw',
-  'xhamster.com': 'nsfw',
-  'youporn.com': 'nsfw',
-}
-
 // Ensure temp dir exists for cookie copies
 try { mkdirSync(COOKIES_TMP, { recursive: true }) } catch {}
 
 // Clean up stale temp cookie files on startup
 try {
-  const { readdirSync } = await import('fs')
   for (const f of readdirSync(COOKIES_TMP)) {
     try { unlinkSync(join(COOKIES_TMP, f)) } catch {}
   }
 } catch {}
 
-// Active temp files: track so we don't delete while in use
-const activeTempFiles = new Set()
-
 const COOKIE_MAP = {
   // Social — explicit cookie files
-  'youtube.com':    { file: 'youtube.txt' },
-  'youtu.be':       { file: 'youtube.txt' },
-  'tiktok.com':     { file: 'tiktok.txt' },
+  'youtube.com':    { file: 'youtube.txt', mode: 'social' },
+  'youtu.be':       { file: 'youtube.txt', mode: 'social' },
+  'tiktok.com':     { file: 'tiktok.txt', mode: 'social' },
+  'instagram.com':  { mode: 'social' },
 
   // NSFW — explicit cookie files
-  'pornhub.com':    { file: 'pornhub.txt' },
-  'fikfap.com':     { file: 'fikfap.txt' },
-  'redgifs.com':    { file: 'redgifs.txt' },
+  'pornhub.com':    { file: 'pornhub.txt', mode: 'nsfw' },
+  'fikfap.com':     { file: 'fikfap.txt', mode: 'nsfw' },
+  'redgifs.com':    { file: 'redgifs.txt', mode: 'nsfw' },
 
-  // NSFW — no cookies needed for public content
-  // 'xvideos.com':  { browser: 'chrome' },
-  // 'spankbang.com': { browser: 'chrome' },
-  // 'redtube.com':  { browser: 'chrome' },
-  // 'xnxx.com':     { browser: 'chrome' },
+  // NSFW — no per-domain cookies, fall back to mode file
+  'xvideos.com':    { mode: 'nsfw' },
+  'spankbang.com':  { mode: 'nsfw' },
+  'redtube.com':    { mode: 'nsfw' },
+  'xhamster.com':   { mode: 'nsfw' },
+  'youporn.com':    { mode: 'nsfw' },
 }
 
 /**
@@ -106,17 +89,17 @@ export function getCookieArgs(url) {
   }
 
   // Resolve cookie file: per-domain → mode-based → legacy → none
-  const cookiePath = _resolveCookiePath(config, domain)
+  const cookiePath = _resolveCookiePath(config)
   if (!cookiePath) return []
 
   return _tempCopyArgs(cookiePath)
 }
 
 /**
- * Resolve the best cookie file for a domain.
+ * Resolve the best cookie file for a domain config.
  * Priority: per-domain file → mode-based file → legacy cookies.txt
  */
-function _resolveCookiePath(config, domain) {
+function _resolveCookiePath(config) {
   // 1. Per-domain cookie file (most specific)
   if (config?.file) {
     const fullPath = join(COOKIES_DIR, config.file)
@@ -124,9 +107,8 @@ function _resolveCookiePath(config, domain) {
   }
 
   // 2. Mode-based cookie file
-  const mode = DOMAIN_MODE[domain]
-  if (mode && MODE_COOKIE_FILES[mode] && existsSync(MODE_COOKIE_FILES[mode])) {
-    return MODE_COOKIE_FILES[mode]
+  if (config?.mode && MODE_COOKIE_FILES[config.mode] && existsSync(MODE_COOKIE_FILES[config.mode])) {
+    return MODE_COOKIE_FILES[config.mode]
   }
 
   // 3. Legacy combined cookies.txt
@@ -144,11 +126,9 @@ function _tempCopyArgs(cookiePath) {
     const tmpName = `${randomBytes(4).toString('hex')}-cookies.txt`
     const tmpPath = join(COOKIES_TMP, tmpName)
     copyFileSync(cookiePath, tmpPath)
-    activeTempFiles.add(tmpPath)
     setTimeout(() => {
-      activeTempFiles.delete(tmpPath)
       try { unlinkSync(tmpPath) } catch {}
-    }, 180_000)
+    }, TEMP_COOKIE_TTL_MS)
     return ['--cookies', tmpPath]
   } catch (err) {
     logger.warn(`Cookie temp copy failed: ${err.message}`)

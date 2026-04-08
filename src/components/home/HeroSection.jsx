@@ -51,7 +51,8 @@ export default function HeroSection() {
     } else if (!theatreMode) {
       setPlaying(false)
     }
-  }, [theatreMode, heroItem, resolveStream, setActiveVideo, setPlaying])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- heroItem?.id avoids re-runs when object ref changes; store fns are stable
+  }, [theatreMode, heroItem?.id, resolveStream, setActiveVideo, setPlaying])
 
   // Sync video element with playerStore state
   useEffect(() => {

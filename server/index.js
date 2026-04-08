@@ -472,10 +472,13 @@ app.get('/api/videos/watch-later', (req, res) => {
 // Cookie Auth (3.4) — import browser cookies for yt-dlp
 // -----------------------------------------------------------
 
-// Helper: get cookie file path for a mode
+const VALID_COOKIE_MODES = new Set(['social', 'nsfw'])
+
+// Helper: get cookie file path for a mode. Returns null for invalid modes.
 function _cookiePath(mode) {
-  if (mode === 'social' || mode === 'nsfw') return MODE_COOKIE_FILES[mode]
-  return LEGACY_COOKIE_FILE // legacy fallback
+  if (!mode) return LEGACY_COOKIE_FILE
+  if (VALID_COOKIE_MODES.has(mode)) return MODE_COOKIE_FILES[mode]
+  return null // invalid mode
 }
 
 function _countCookies(content) {
@@ -506,6 +509,7 @@ app.post('/api/cookies', express.text({ limit: '5mb' }), (req, res) => {
 
   const mode = req.query.mode // social | nsfw | undefined (legacy)
   const filePath = _cookiePath(mode)
+  if (!filePath) return res.status(400).json({ error: `Invalid mode: ${mode}. Use "social" or "nsfw".` })
 
   try {
     writeFileSync(filePath, content, 'utf8')
@@ -548,6 +552,7 @@ app.get('/api/cookies/status', (req, res) => {
 app.delete('/api/cookies', (req, res) => {
   const mode = req.query.mode
   const filePath = _cookiePath(mode)
+  if (!filePath) return res.status(400).json({ error: `Invalid mode: ${mode}. Use "social" or "nsfw".` })
 
   try {
     if (existsSync(filePath)) unlinkSync(filePath)
