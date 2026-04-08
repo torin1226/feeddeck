@@ -39,13 +39,20 @@ COPY public/ ./public/
 COPY --from=build /app/dist ./dist
 
 # Data and cookie-tmp directories with write permissions
-RUN mkdir -p /app/data /app/data/.cookie-tmp && chmod -R 777 /app/data
+# node user (uid 1000) needs write access to data dir
+RUN mkdir -p /app/data /app/data/.cookie-tmp && chown -R node:node /app/data
 
 # Use /tmp for cookie temp files (avoids volume permission issues)
 ENV COOKIE_TMP_DIR=/tmp/cookie-tmp
 
+# Run as non-root user for security
+USER node
+
 # Single port serves both API and frontend
 ENV PORT=3001
 EXPOSE 3001
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:3001/api/health || exit 1
 
 CMD ["node", "server/index.js"]
