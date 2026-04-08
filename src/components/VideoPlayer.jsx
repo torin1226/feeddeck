@@ -43,13 +43,14 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
       .then(r => r.json())
       .then(data => { if (data.formats) setFormats(data.formats) })
       .catch(() => {})
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedQuality changes handled by handleQualityChange
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [video.url, isSFW])
 
   // Mark video as watched on mount
   useEffect(() => {
     markWatched(video.id)
-  }, [video.id, markWatched])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [video.id])
 
   // Player-specific keyboard shortcuts
   useEffect(() => {
@@ -100,7 +101,7 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- handleNext is unstable, captured via closure
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [video])
 
   const handleQualityChange = (quality) => {
@@ -176,12 +177,13 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
     <div className="bg-surface border-b border-surface-border">
       <div className="relative max-w-5xl mx-auto">
         {/* Top controls */}
-        <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+        <div className="absolute top-3 right-3 z-content flex items-center gap-2">
           {document.pictureInPictureEnabled && (
             <button
               onClick={togglePiP}
               title="Picture-in-Picture (P)"
-              className="w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors cursor-pointer"
+              aria-label="Picture-in-Picture"
+              className="w-11 h-11 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors cursor-pointer"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="2" y="3" width="20" height="14" rx="2" />
@@ -192,7 +194,7 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
           <button
             onClick={onClose}
             aria-label="Close player"
-            className="w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors text-sm cursor-pointer"
+            className="w-11 h-11 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors text-sm cursor-pointer"
           >
             ✕
           </button>
@@ -218,7 +220,7 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
               {video.thumbnail && (
                 <img
                   src={video.thumbnail}
-                  alt=""
+                  alt={video.title}
                   className="absolute inset-0 w-full h-full object-contain opacity-40"
                 />
               )}
@@ -264,7 +266,7 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
                   {selectedQuality === 'auto' ? 'Auto' : selectedQuality}
                 </button>
                 {showQuality && (
-                  <div className="absolute right-0 top-full mt-1 bg-surface-raised border border-surface-border rounded-lg shadow-xl z-20 py-1 min-w-[100px]">
+                  <div className="absolute right-0 top-full mt-1 bg-surface-raised border border-surface-border rounded-lg shadow-xl z-overlay py-1 min-w-[100px]">
                     <button
                       onClick={() => { handleQualityChange('auto'); setShowQuality(false) }}
                       className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${selectedQuality === 'auto' ? 'text-accent' : 'text-text-secondary hover:text-text-primary hover:bg-surface-overlay'}`}

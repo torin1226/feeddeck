@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import useModeStore from '../stores/modeStore'
-import clsx from 'clsx'
 
 // ============================================================
 // ModeToggle
-// Visual Social/NSFW toggle button with screen reader announcement.
+// iOS-style switch for Social/NSFW mode with screen reader
+// announcement. Minimal, subtle design. Escape key panic
+// behavior is handled by modeStore.
 // ============================================================
 
 export default function ModeToggle() {
@@ -13,7 +14,6 @@ export default function ModeToggle() {
 
   const handleToggle = () => {
     toggleMode()
-    // Announce mode change to screen readers
     const newMode = isSFW ? 'Full library' : 'Social'
     setAnnouncement(`Switched to ${newMode} mode`)
     setTimeout(() => setAnnouncement(''), 1000)
@@ -25,18 +25,22 @@ export default function ModeToggle() {
       <div aria-live="assertive" className="sr-only">{announcement}</div>
       <button
         onClick={handleToggle}
-        title={isSFW ? 'Switch to full library' : 'Switch to Social mode'}
+        role="switch"
+        aria-checked={!isSFW}
         aria-label={isSFW ? 'Switch to full library mode' : 'Switch to Social mode'}
-        className={clsx(
-        'flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-150',
-        isSFW
-          ? 'bg-sfw/20 text-sfw border border-sfw/30 hover:bg-sfw/30'
-          : 'bg-surface-overlay text-text-secondary border border-surface-border hover:text-text-primary hover:border-text-muted'
-      )}
-    >
-      <span className="text-base">{isSFW ? '📡' : '▶'}</span>
-      <span>{isSFW ? 'Social' : 'FD'}</span>
-    </button>
+        className="relative w-11 h-6 rounded-full transition-colors duration-200 cursor-pointer flex-shrink-0"
+        style={{
+          backgroundColor: isSFW ? 'rgba(120, 120, 128, 0.32)' : 'var(--color-accent)',
+        }}
+      >
+        {/* Track knob */}
+        <span
+          className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200"
+          style={{
+            transform: isSFW ? 'translateX(0)' : 'translateX(20px)',
+          }}
+        />
+      </button>
     </>
   )
 }

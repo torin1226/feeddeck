@@ -25,13 +25,13 @@ export default function SourceControlSheet({ video, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={() => onClose()}>
+    <div className="fixed inset-0 z-toast flex items-end justify-center" onClick={() => onClose()}>
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/60" />
 
       {/* Sheet */}
       <div
-        className="relative w-full max-w-md bg-surface-raised/90 backdrop-blur-2xl rounded-t-2xl p-5 pb-8 animate-fade-slide-in shadow-[0_-4px_24px_rgba(0,0,0,0.3)]"
+        className="relative w-full max-w-md bg-surface-raised/90 backdrop-blur-2xl rounded-t-2xl p-5 pb-8 animate-fade-slide-in shadow-float"
         onClick={e => e.stopPropagation()}
       >
         <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-4" />

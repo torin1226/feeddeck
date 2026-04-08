@@ -17,7 +17,7 @@ export default function QueueSwipeAnimation({ onDone }) {
   }, [onDone])
 
   return (
-    <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
+    <div className="fixed inset-0 z-toast pointer-events-none flex items-center justify-center">
       {/* Sliding card overlay */}
       <div
         className="absolute inset-0 bg-gradient-to-l from-transparent via-transparent to-accent/20
@@ -37,7 +37,7 @@ export default function QueueSwipeAnimation({ onDone }) {
           transform: phase === 'hold' ? 'scale(1) translateX(-40px)' : 'scale(0.5) translateX(0)',
         }}
       >
-        <div className="w-16 h-16 rounded-full bg-accent/90 flex items-center justify-center shadow-lg shadow-accent/30">
+        <div className="w-16 h-16 rounded-full bg-accent/90 flex items-center justify-center shadow-float shadow-accent/30">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#000"
             strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="5" x2="12" y2="19" />

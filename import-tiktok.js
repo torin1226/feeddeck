@@ -85,9 +85,14 @@ function parseExportFile(filePath) {
     const dateMatch = block.match(/Date:\s*(.+)/)
     const linkMatch = block.match(/Link:\s*(.+)/)
     if (linkMatch) {
+      const url = linkMatch[1].trim()
+      if (!/^https:\/\/(www\.)?tiktok\.com\/@[^/]+\/video\/\d+/.test(url)) {
+        console.log(`  Skipping malformed URL: ${url}`)
+        continue
+      }
       entries.push({
         date: dateMatch ? dateMatch[1].trim() : null,
-        url: linkMatch[1].trim()
+        url
       })
     }
   }

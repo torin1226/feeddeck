@@ -9,6 +9,7 @@ import { execFile, execFileSync, spawn } from 'child_process'
 import { promisify } from 'util'
 import { SourceAdapter } from './base.js'
 import { getCookieArgs } from '../cookies.js'
+import { logger } from '../logger.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -20,15 +21,24 @@ const MAX_BUFFER = 50 * 1024 * 1024
 
 // Safe yt-dlp execution — uses execFile (no shell) to prevent command injection
 // Routes cookies per-domain based on the URL being fetched
+// Accepts optional mode ('social'|'nsfw') for mode-specific cookie file fallback
 async function ytdlp(args, url, options = {}) {
-  const finalArgs = [...getCookieArgs(url), ...args]
-  const { stdout } = await execFileAsync('yt-dlp', finalArgs, {
-    encoding: 'utf8',
-    timeout: options.timeout || YTDLP_TIMEOUT,
-    maxBuffer: options.maxBuffer || MAX_BUFFER,
-    windowsHide: true,
-  })
-  return stdout
+  const finalArgs = ['--js-runtimes', 'node', ...getCookieArgs(url, options.mode), ...args]
+  try {
+    const { stdout } = await execFileAsync('yt-dlp', finalArgs, {
+      encoding: 'utf8',
+      timeout: options.timeout || YTDLP_TIMEOUT,
+      maxBuffer: options.maxBuffer || MAX_BUFFER,
+      windowsHide: true,
+    })
+    return stdout
+  } catch (err) {
+    // With --ignore-errors, yt-dlp may exit non-zero but still produce valid output
+    if (args.includes('--ignore-errors') && err.stdout?.trim()) {
+      return err.stdout
+    }
+    throw err
+  }
 }
 
 export class YtDlpAdapter extends SourceAdapter {
@@ -51,7 +61,7 @@ export class YtDlpAdapter extends SourceAdapter {
   isAvailable() {
     if (this.available !== null) return this.available
     try {
-      this.version = execFileSync('yt-dlp', ['--version'], { encoding: 'utf8', windowsHide: true }).trim()
+      this.version = execFileSync('yt-dlp', ['--js-runtimes', 'node', '--version'], { encoding: 'utf8', windowsHide: true }).trim()
       this.available = true
     } catch {
       this.available = false
@@ -108,9 +118,13 @@ export class YtDlpAdapter extends SourceAdapter {
       // URL-based query: check if it's a social feed URL that needs auth
       // Social feed URLs (youtube.com/feed/*, tiktok.com/foryou, reddit.com/r/*/hot)
       // don't work without cookies — convert to search queries instead
-      const isSocialFeedUrl = /youtube\.com\/feed\//i.test(query) ||
+      // Subscription feed URLs have cookies and should be passed directly to yt-dlp
+      const isSubscriptionFeed = /youtube\.com\/feed\/subscriptions/i.test(query)
+      const isSocialFeedUrl = !isSubscriptionFeed && (
+        /youtube\.com\/feed\//i.test(query) ||
         /tiktok\.com\/(foryou|discover)/i.test(query) ||
         /reddit\.com\/r\/\w+\/(hot|top|new)/i.test(query)
+      )
 
       if (isSocialFeedUrl) {
         // Extract a useful search term from the URL
@@ -184,7 +198,7 @@ export class YtDlpAdapter extends SourceAdapter {
     if (!this.isAvailable()) throw new Error('yt-dlp not installed')
 
     const stdout = await ytdlp(
-      ['--dump-json', '--playlist-end', String(limit), '--no-download', url],
+      ['--dump-json', '--playlist-end', String(limit), '--no-download', '--ignore-errors', url],
       url,
       { timeout: YTDLP_SEARCH_TIMEOUT }
     )
@@ -197,7 +211,9 @@ export class YtDlpAdapter extends SourceAdapter {
       try {
         const data = JSON.parse(line)
         videos.push(this.normalizeVideo(data))
-      } catch { /* skip malformed */ }
+      } catch (err) {
+        logger.warn(`yt-dlp search: malformed JSON line (${line.slice(0, 80)}...): ${err.message}`)
+      }
     }
 
     return videos
@@ -216,7 +232,7 @@ export class YtDlpAdapter extends SourceAdapter {
       searchUrl = `ytsearch${limit}:${query}`
     }
 
-    const child = spawn('yt-dlp', [...getCookieArgs(searchUrl), '--dump-json', '--playlist-end', String(limit), searchUrl])
+    const child = spawn('yt-dlp', ['--js-runtimes', 'node', ...getCookieArgs(searchUrl, options.mode), '--dump-json', '--playlist-end', String(limit), searchUrl])
 
     // Kill subprocess after 60s to prevent resource leaks
     const timeout = setTimeout(() => { try { child.kill('SIGTERM') } catch {} }, 60000)
@@ -235,7 +251,9 @@ export class YtDlpAdapter extends SourceAdapter {
             try {
               const data = JSON.parse(line)
               callback(this.normalizeVideo(data))
-            } catch { /* skip */ }
+            } catch (err) {
+              logger.warn(`yt-dlp streamSearch: malformed JSON line (${line.slice(0, 80)}...): ${err.message}`)
+            }
           }
         })
       },

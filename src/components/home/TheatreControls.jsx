@@ -36,15 +36,15 @@ export default function TheatreControls() {
 
   return (
     <div
-      className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[300]
+      className="fixed bottom-8 left-1/2 -translate-x-1/2 z-system
         bg-[rgba(14,14,16,0.9)] backdrop-blur-[20px] border border-surface-border
         rounded-full px-5 py-2.5 flex items-center gap-4 whitespace-nowrap
-        shadow-[0_8px_40px_rgba(0,0,0,0.6)]"
+        shadow-float"
     >
       <span className="text-xs text-text-secondary font-medium">
         {isPlaying ? '\u25B6 Playing' : '\u23F8 Paused'}
       </span>
-      <span className="text-[13px] font-semibold max-w-[200px] truncate">
+      <span className="text-body-sm font-semibold max-w-[200px] truncate">
         {heroItem.title}
       </span>
 
@@ -70,7 +70,7 @@ export default function TheatreControls() {
 
       {/* Progress bar */}
       <div className="flex items-center gap-2">
-        <span className="text-[11px] text-text-muted tabular-nums">{fmtTime(currentTime)}</span>
+        <span className="text-caption text-text-muted tabular-nums">{fmtTime(currentTime)}</span>
         <div
           ref={progressRef}
           onClick={handleProgressClick}
@@ -81,7 +81,7 @@ export default function TheatreControls() {
             style={{ width: `${progress}%` }}
           />
         </div>
-        <span className="text-[11px] text-text-muted tabular-nums">{fmtTime(duration)}</span>
+        <span className="text-caption text-text-muted tabular-nums">{fmtTime(duration)}</span>
       </div>
 
       <SpeedSelector />
@@ -90,7 +90,7 @@ export default function TheatreControls() {
         onClick={toggleTheatre}
         title="Exit theatre"
         aria-label="Exit theatre mode"
-        className="w-7 h-7 rounded-full bg-white/[0.08] text-text-secondary text-[13px]
+        className="w-7 h-7 rounded-full bg-white/[0.08] text-text-secondary text-body-sm
           flex items-center justify-center hover:bg-white/[0.16] hover:text-text-primary
           transition-all ml-1"
       >
@@ -117,7 +117,7 @@ function SpeedSelector() {
     <button
       onClick={cycle}
       title={`Speed: ${speed}x`}
-      className="text-[11px] font-semibold text-text-secondary hover:text-text-primary
+      className="text-caption font-semibold text-text-secondary hover:text-text-primary
         hover:bg-white/10 rounded-md px-1.5 py-1 transition-colors tabular-nums"
     >
       {speed === 1 ? '1x' : `${speed}x`}

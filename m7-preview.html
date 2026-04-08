@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FeedDeck M7 Design Preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body { background: #111113; color: #e5e5e5; font-family: 'Inter', system-ui, sans-serif; overflow-x: hidden; }
+  ::-webkit-scrollbar { height: 4px; width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #2a2a2e; border-radius: 2px; }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+  .scrollbar-none { scrollbar-width: none; }
+
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(200%); } }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes springIn { from { opacity: 0; transform: translateY(20px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes noiseShift { 0% { transform: translate(0, 0); } 100% { transform: translate(-10px, -10px); } }
+
+  .noise-overlay {
+    position: fixed; inset: 0; pointer-events: none; z-index: 1; opacity: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    background-repeat: repeat; background-size: 256px;
+    transition: opacity 600ms;
+  }
+  .m7 .noise-overlay { opacity: 0.6; }
+
+  /* Mode toggle */
+  .mode-toggle {
+    position: fixed; top: 20px; right: 20px; z-index: 100;
+    display: flex; gap: 4px; padding: 4px; border-radius: 999px;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1);
+  }
+  .mode-btn {
+    padding: 8px 20px; border-radius: 999px; border: none; cursor: pointer;
+    font-size: 13px; font-weight: 600; font-family: 'Inter', system-ui, sans-serif;
+    transition: all 250ms; color: rgba(255,255,255,0.5); background: transparent;
+  }
+  .mode-btn.active-current { background: rgba(244,63,94,0.9); color: #fff; }
+  .mode-btn.active-m7 { background: rgba(124,58,237,0.9); color: #fff; }
+
+  /* Header */
+  header {
+    position: sticky; top: 0; z-index: 50; height: 56px;
+    display: flex; align-items: center; justify-content: space-between; padding: 0 40px;
+    transition: all 600ms;
+  }
+  .current header { background: linear-gradient(180deg, #111113 0%, transparent 100%); }
+  .m7 header { backdrop-filter: blur(20px) saturate(1.2); }
+  .logo { font-size: 18px; font-weight: 700; letter-spacing: -0.5px; font-family: 'Space Grotesk', system-ui, sans-serif; }
+  .current .logo-accent { color: #f43f5e; }
+  .m7 .logo-accent { color: #7C3AED; }
+  nav { display: flex; gap: 28px; }
+  nav span { font-size: 14px; font-weight: 500; color: #a1a1a6; cursor: pointer; position: relative; padding-bottom: 4px; }
+  nav span.active { color: #e5e5e5; }
+  .nav-indicator { position: absolute; bottom: 0; left: 0; right: 0; height: 2px; border-radius: 1px; transition: background 400ms; }
+  .current .nav-indicator { background: #f43f5e; }
+  .m7 .nav-indicator { background: #7C3AED; }
+
+  /* Hero */
+  .hero { position: relative; height: 85vh; min-height: 500px; overflow: hidden; }
+  .hero-bg-blur {
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+    filter: blur(40px) brightness(0.4); transform: scale(1.2);
+  }
+  .hero-bg-main {
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+    transition: opacity 800ms ease-out;
+  }
+  .hero-vignette { position: absolute; inset: 0; transition: background 800ms; }
+  .hero-gradient { position: absolute; inset: 0; transition: background 800ms; }
+  .hero-content {
+    position: absolute; left: 40px; bottom: 100px; max-width: 520px; z-index: 10;
+    transition: all 600ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .hero-tags { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tag { padding: 3px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; background: rgba(255,255,255,0.1); color: #a1a1a6; }
+  .m7 .tag-match {
+    font-weight: 700; border: 1px solid; transition: all 400ms;
+  }
+  .hero-title {
+    font-family: 'Space Grotesk', system-ui, sans-serif; font-size: clamp(28px, 4vw, 48px);
+    font-weight: 700; letter-spacing: -0.03em; line-height: 1.05; margin-bottom: 12px;
+    text-shadow: 0 2px 20px rgba(0,0,0,0.5);
+  }
+  .hero-meta { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #a1a1a6; margin-bottom: 20px; flex-wrap: wrap; }
+  .rating-pill {
+    display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px;
+    border-radius: 999px; font-weight: 600; font-size: 12px;
+    background: rgba(250,204,21,0.12); border: 1px solid rgba(250,204,21,0.2); color: #facc15;
+  }
+  .hero-actions { display: flex; gap: 10px; }
+  .btn-play {
+    display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px;
+    border: none; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
+    font-family: 'Inter', system-ui, sans-serif; transition: all 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .btn-play:hover { transform: scale(1.04) translateY(-1px); }
+  .current .btn-play { background: #f43f5e; border-radius: 8px; }
+  .m7 .btn-play { background: #7C3AED; border-radius: 12px; }
+  .btn-theatre {
+    display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px;
+    color: #e5e5e5; font-size: 14px; font-weight: 600; cursor: pointer;
+    font-family: 'Inter', system-ui, sans-serif; transition: all 200ms;
+  }
+  .current .btn-theatre { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; }
+  .m7 .btn-theatre { background: rgba(255,255,255,0.08); border-radius: 12px; backdrop-filter: blur(12px); }
+  .btn-circle {
+    width: 42px; height: 42px; border-radius: 50%; background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12); color: #e5e5e5; font-size: 16px;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+
+  /* Section */
+  .section { padding: 0 40px; margin-bottom: 36px; }
+  .section-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+  .section-title { font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+  .section-link { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; opacity: 0.75; }
+  .current .section-link { color: #f43f5e; }
+  .m7 .section-link { color: #7C3AED; }
+  .card-row { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; scrollbar-width: none; }
+  .m7 .card-row { gap: 14px; }
+
+  /* Current Card */
+  .card-current {
+    flex-shrink: 0; width: 200px; border-radius: 10px; overflow: hidden; cursor: pointer;
+    background: #141416; transition: all 220ms ease-out;
+  }
+  .card-current:hover { transform: scale(1.03) translateY(-2px); box-shadow: 0 12px 32px rgba(0,0,0,0.4); }
+  .card-current img { width: 100%; height: 113px; object-fit: cover; display: block; background: #1c1c1f; }
+  .card-current .card-thumb { position: relative; }
+  .card-current .card-dur {
+    position: absolute; bottom: 6px; right: 7px; background: rgba(0,0,0,0.8);
+    font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px;
+  }
+  .card-current .card-info { padding: 8px 10px; }
+  .card-current .card-title { font-size: 13px; font-weight: 600; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-current .card-meta { font-size: 11px; color: #a1a1a6; margin-top: 2px; }
+
+  /* M7 Card */
+  .card-m7 {
+    flex-shrink: 0; width: 220px; border-radius: 14px; overflow: hidden; cursor: pointer;
+    background: #141416; transition: all 350ms cubic-bezier(0.25, 1, 0.5, 1);
+    border: 1px solid rgba(255,255,255,0.04); position: relative;
+  }
+  .card-m7::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; z-index: 5;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+  }
+  .card-m7:hover { transform: scale(1.04) translateY(-4px); }
+  .card-m7 .card-thumb { position: relative; overflow: hidden; }
+  .card-m7 .card-thumb img {
+    width: 100%; height: 124px; object-fit: cover; display: block; background: #1c1c1f;
+    transition: transform 400ms cubic-bezier(0.25, 1, 0.5, 1);
+  }
+  .card-m7:hover .card-thumb img { transform: scale(1.06); }
+  .card-m7 .source-badge {
+    position: absolute; top: 8px; left: 8px; font-size: 9px; font-weight: 800;
+    padding: 3px 7px; border-radius: 6px; letter-spacing: 0.04em; z-index: 3;
+    backdrop-filter: blur(8px);
+  }
+  .card-m7 .card-dur {
+    position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(4px); font-size: 10px; font-weight: 600; padding: 3px 7px;
+    border-radius: 6px; z-index: 3;
+  }
+  .card-m7 .progress-bar {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 3px;
+    background: rgba(255,255,255,0.1); z-index: 4;
+  }
+  .card-m7 .progress-fill { height: 100%; background: #7C3AED; border-radius: 0 2px 2px 0; }
+  .card-m7 .card-info { padding: 10px 12px 12px; }
+  .card-m7 .card-title { font-size: 13px; font-weight: 600; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 4px; }
+  .card-m7 .card-meta { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #8a8a90; }
+
+  /* Continue Watching */
+  .cw-card {
+    flex-shrink: 0; width: 280px; border-radius: 14px; overflow: hidden; cursor: pointer;
+    background: #141416; transition: all 350ms cubic-bezier(0.25, 1, 0.5, 1);
+    border: 1px solid rgba(255,255,255,0.04); position: relative;
+  }
+  .cw-card:hover { transform: scale(1.03) translateY(-3px); }
+  .cw-card img { width: 100%; height: 100px; object-fit: cover; display: block; }
+  .cw-card .resume-badge {
+    position: absolute; top: 8px; left: 8px; background: rgba(124,58,237,0.85);
+    backdrop-filter: blur(8px); color: #fff; font-size: 10px; font-weight: 700;
+    padding: 3px 8px; border-radius: 6px;
+  }
+  .cw-card .time-left {
+    position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.75);
+    backdrop-filter: blur(4px); font-size: 10px; font-weight: 600; padding: 3px 7px; border-radius: 6px;
+  }
+
+  /* Skeleton - Current */
+  .skel-current { flex-shrink: 0; width: 200px; }
+  .skel-current .skel-thumb { width: 100%; height: 113px; border-radius: 10px; background: rgba(255,255,255,0.06); margin-bottom: 8px; animation: pulse 1.5s ease-in-out infinite; }
+  .skel-current .skel-line1 { height: 12px; width: 75%; border-radius: 6px; background: rgba(255,255,255,0.06); margin-bottom: 6px; animation: pulse 1.5s ease-in-out infinite; }
+  .skel-current .skel-line2 { height: 10px; width: 50%; border-radius: 6px; background: rgba(255,255,255,0.06); animation: pulse 1.5s ease-in-out infinite; }
+
+  /* Skeleton - M7 */
+  .skel-m7 { flex-shrink: 0; width: 220px; }
+  .skel-m7 .skel-thumb {
+    width: 100%; height: 124px; border-radius: 14px; background: rgba(255,255,255,0.04);
+    margin-bottom: 10px; overflow: hidden; position: relative; border: 1px solid rgba(255,255,255,0.04);
+  }
+  .skel-m7 .skel-thumb::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent 0%, rgba(124,58,237,0.06) 40%, rgba(124,58,237,0.1) 50%, rgba(124,58,237,0.06) 60%, transparent 100%);
+    animation: shimmer 2s ease-in-out infinite;
+  }
+  .skel-m7 .skel-line {
+    border-radius: 8px; background: rgba(255,255,255,0.04); overflow: hidden; position: relative;
+  }
+  .skel-m7 .skel-line::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent 0%, rgba(124,58,237,0.08) 50%, transparent 100%);
+    animation: shimmer 2s ease-in-out infinite;
+  }
+  .skel-m7 .skel-line1 { height: 12px; width: 80%; margin-bottom: 6px; }
+  .skel-m7 .skel-line2 { height: 10px; width: 55%; }
+
+  /* Empty State - Current */
+  .empty-current { display: flex; flex-direction: column; align-items: center; padding: 48px 0; text-align: center; }
+  .empty-current .emoji { font-size: 36px; margin-bottom: 12px; opacity: 0.4; }
+  .empty-current p { font-size: 14px; color: #8a8a90; }
+
+  /* Empty State - M7 */
+  .empty-m7 { display: flex; flex-direction: column; align-items: center; padding: 48px 0; text-align: center; position: relative; }
+  .empty-m7 .glow {
+    position: absolute; width: 200px; height: 200px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(124,58,237,0.12) 0%, transparent 70%);
+    filter: blur(40px); top: 50%; left: 50%; transform: translate(-50%, -50%);
+  }
+  .empty-m7 .icon-box {
+    width: 64px; height: 64px; border-radius: 16px; background: rgba(124,58,237,0.1);
+    border: 1px solid rgba(124,58,237,0.2); display: flex; align-items: center;
+    justify-content: center; margin-bottom: 16px; position: relative;
+  }
+  .empty-m7 h4 { font-size: 15px; font-weight: 600; color: #e5e5e5; margin-bottom: 6px; position: relative; }
+  .empty-m7 p { font-size: 13px; color: #6b6b70; margin-bottom: 20px; max-width: 280px; position: relative; }
+  .empty-m7 .cta {
+    padding: 10px 24px; border-radius: 10px; background: rgba(124,58,237,0.15);
+    border: 1px solid rgba(124,58,237,0.3); color: #a78bfa; font-size: 13px;
+    font-weight: 600; cursor: pointer; font-family: 'Inter', system-ui, sans-serif;
+    position: relative; transition: all 200ms;
+  }
+  .empty-m7 .cta:hover { background: rgba(124,58,237,0.25); transform: translateY(-1px); }
+
+  /* Stagger animations */
+  .stagger-1 { animation-delay: 0ms; }
+  .stagger-2 { animation-delay: 80ms; }
+  .stagger-3 { animation-delay: 160ms; }
+  .stagger-4 { animation-delay: 240ms; }
+  .stagger-5 { animation-delay: 320ms; }
+  .stagger-6 { animation-delay: 400ms; }
+  .stagger-7 { animation-delay: 480ms; }
+  .stagger-8 { animation-delay: 560ms; }
+</style>
+</head>
+<body>
+<div id="app" class="m7">
+  <div class="noise-overlay"></div>
+
+  <!-- Mode Toggle -->
+  <div class="mode-toggle">
+    <button class="mode-btn" onclick="setMode('current')" id="btn-current">Current</button>
+    <button class="mode-btn active-m7" onclick="setMode('m7')" id="btn-m7">M7 Vision</button>
+  </div>
+
+  <!-- Header -->
+  <header>
+    <div class="logo"><span class="logo-accent">Feed</span>Deck</div>
+    <nav>
+      <span class="active">Home<span class="nav-indicator"></span></span>
+      <span>Feed</span>
+      <span>Library</span>
+    </nav>
+    <div style="width:120px"></div>
+  </header>
+
+  <!-- Hero -->
+  <div class="hero" id="hero">
+    <img class="hero-bg-blur" id="hero-blur" src="https://picsum.photos/seed/tokyo/640/360" alt="" />
+    <img class="hero-bg-main" id="hero-main" src="https://picsum.photos/seed/tokyo/1280/720" alt="" />
+    <div class="hero-vignette" id="hero-vignette"></div>
+    <div class="hero-gradient" id="hero-gradient"></div>
+
+    <div class="hero-content">
+      <div class="hero-tags" id="hero-tags">
+        <span class="tag tag-match" id="tag-match" style="display:inline-block">98% Match</span>
+        <span class="tag">YouTube</span>
+        <span class="tag">12:34</span>
+      </div>
+      <h1 class="hero-title" id="hero-title">Late Night Drive Through Tokyo</h1>
+      <div class="hero-meta" id="hero-meta">
+        <span class="rating-pill" id="rating-pill">&#9733; 9.2</span>
+        <span id="rating-plain" style="display:none;color:#facc15;font-weight:600">&#9733; 9.2/10</span>
+        <span>2.1M views</span>
+        <span style="color:#6b6b70">&middot;</span>
+        <span>CityWalks</span>
+        <span id="days-ago" style="display:none"><span style="color:#6b6b70">&middot;</span> 3d ago</span>
+      </div>
+      <div class="hero-actions">
+        <button class="btn-play">&#9654; Play</button>
+        <button class="btn-theatre" id="btn-theatre">&#9782; Theatre</button>
+        <button class="btn-circle">+</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Continue Watching (M7 only) -->
+  <div class="section" id="continue-watching">
+    <div class="section-header">
+      <h3 class="section-title">Continue Watching</h3>
+      <span class="section-link">See all &rarr;</span>
+    </div>
+    <div class="card-row scrollbar-none" id="cw-row"></div>
+  </div>
+
+  <!-- Trending Now -->
+  <div class="section">
+    <div class="section-header">
+      <h3 class="section-title">Trending Now</h3>
+      <span class="section-link">See all &rarr;</span>
+    </div>
+    <div class="card-row scrollbar-none" id="trending-row"></div>
+  </div>
+
+  <!-- New Arrivals -->
+  <div class="section">
+    <div class="section-header">
+      <h3 class="section-title">New Arrivals</h3>
+      <span class="section-link">See all &rarr;</span>
+    </div>
+    <div class="card-row scrollbar-none" id="arrivals-row"></div>
+  </div>
+
+  <!-- Loading Skeleton Row -->
+  <div class="section">
+    <div class="section-header">
+      <h3 class="section-title" id="skel-title">Recommended (loading...)</h3>
+      <span class="section-link">See all &rarr;</span>
+    </div>
+    <div class="card-row scrollbar-none" id="skeleton-row"></div>
+  </div>
+
+  <!-- Empty State -->
+  <div class="section">
+    <div class="section-header">
+      <h3 class="section-title">Your Playlists</h3>
+      <span class="section-link">See all &rarr;</span>
+    </div>
+    <div id="empty-state"></div>
+  </div>
+
+  <div style="height:80px"></div>
+</div>
+
+<script>
+const VIDEOS = [
+  { id:1, title:"Late Night Drive Through Tokyo", source:"YouTube", duration:"12:34", progress:0.65, views:"2.1M", uploader:"CityWalks", daysAgo:3, rating:9.2, thumb:"tokyo", dc:[88,28,135] },
+  { id:2, title:"Abstract Fluid Art Compilation", source:"TikTok", duration:"3:21", progress:0, views:"890K", uploader:"ArtVibes", daysAgo:1, rating:8.7, thumb:"fluid", dc:[30,64,175] },
+  { id:3, title:"Mountain Sunrise Timelapse 4K", source:"YouTube", duration:"8:45", progress:0.3, views:"4.5M", uploader:"NatureFilm", daysAgo:7, rating:9.5, thumb:"mountain", dc:[180,83,9] },
+  { id:4, title:"Neon City Cyberpunk Ambience", source:"YouTube", duration:"45:00", progress:0.82, views:"1.2M", uploader:"SynthScapes", daysAgo:2, rating:8.9, thumb:"neon", dc:[147,51,234] },
+  { id:5, title:"Ocean Waves at Golden Hour", source:"TikTok", duration:"2:15", progress:0, views:"3.3M", uploader:"CoastalVibes", daysAgo:5, rating:9.1, thumb:"ocean", dc:[14,116,144] },
+  { id:6, title:"Rainy Window Lo-Fi Session", source:"YouTube", duration:"1:02:30", progress:0.15, views:"780K", uploader:"ChillBeats", daysAgo:4, rating:8.4, thumb:"rain", dc:[55,65,81] },
+  { id:7, title:"Street Food Night Market Bangkok", source:"YouTube", duration:"18:22", progress:0, views:"5.6M", uploader:"FoodTravel", daysAgo:6, rating:9.3, thumb:"bangkok", dc:[194,65,12] },
+  { id:8, title:"Aurora Borealis Iceland 8K", source:"YouTube", duration:"22:10", progress:0.45, views:"8.9M", uploader:"NorthLights", daysAgo:10, rating:9.8, thumb:"aurora", dc:[6,95,70] },
+];
+
+const SRC_COLORS = {
+  YouTube: { bg:"rgba(255,0,0,0.15)", text:"#ff4444", icon:"YT", border:"rgba(255,68,68,0.13)" },
+  TikTok: { bg:"rgba(0,242,234,0.12)", text:"#00f2ea", icon:"TT", border:"rgba(0,242,234,0.13)" },
+};
+
+let currentMode = 'm7';
+let heroVideo = VIDEOS[0];
+
+function img(seed, w, h) { return `https://picsum.photos/seed/${seed}/${w}/${h}`; }
+
+function setMode(mode) {
+  currentMode = mode;
+  const app = document.getElementById('app');
+  app.className = mode;
+  document.getElementById('btn-current').className = mode === 'current' ? 'mode-btn active-current' : 'mode-btn';
+  document.getElementById('btn-m7').className = mode === 'm7' ? 'mode-btn active-m7' : 'mode-btn';
+  updateHero();
+  renderCards();
+}
+
+function switchHero(video) {
+  heroVideo = video;
+  updateHero();
+}
+
+function updateHero() {
+  const v = heroVideo;
+  const [r,g,b] = v.dc;
+  const isM7 = currentMode === 'm7';
+
+  document.getElementById('hero-blur').src = img(v.thumb, 640, 360);
+  document.getElementById('hero-main').src = img(v.thumb, 1280, 720);
+  document.getElementById('hero-title').textContent = v.title;
+
+  // Vignette
+  document.getElementById('hero-vignette').style.background = isM7
+    ? `radial-gradient(ellipse at center, transparent 30%, rgba(${r*0.08},${g*0.08},${b*0.08},0.8) 100%)`
+    : 'radial-gradient(ellipse at center, transparent 50%, #111113 100%)';
+
+  // Bottom gradient
+  document.getElementById('hero-gradient').style.background = isM7
+    ? `linear-gradient(to top, rgb(${r*0.1},${g*0.1},${b*0.1}) 0%, rgba(17,17,19,0.4) 40%, transparent 70%)`
+    : 'linear-gradient(to top, #111113 0%, rgba(17,17,19,0.55) 30%, transparent 65%)';
+
+  // Ambient background
+  if (isM7) {
+    document.getElementById('app').style.background = `linear-gradient(180deg, rgb(${r*0.15},${g*0.15},${b*0.15}) 0%, #111113 35%, #111113 100%)`;
+    document.querySelector('header').style.background = `linear-gradient(180deg, rgba(${r*0.12},${g*0.12},${b*0.12},0.95) 0%, transparent 100%)`;
+  } else {
+    document.getElementById('app').style.background = '#111113';
+    document.querySelector('header').style.background = 'linear-gradient(180deg, #111113 0%, transparent 100%)';
+  }
+
+  // Match tag
+  const tagMatch = document.getElementById('tag-match');
+  tagMatch.style.display = isM7 ? 'inline-block' : 'none';
+  if (isM7) {
+    tagMatch.style.background = `rgba(${r},${g},${b},0.25)`;
+    tagMatch.style.color = `rgb(${Math.min(255,r+80)},${Math.min(255,g+80)},${Math.min(255,b+80)})`;
+    tagMatch.style.borderColor = `rgba(${r},${g},${b},0.3)`;
+  }
+
+  // Rating
+  document.getElementById('rating-pill').style.display = isM7 ? 'inline-flex' : 'none';
+  document.getElementById('rating-plain').style.display = isM7 ? 'none' : 'inline';
+  document.getElementById('days-ago').style.display = isM7 ? 'none' : 'inline';
+
+  // Theatre button border (M7 ambient)
+  if (isM7) {
+    document.getElementById('btn-theatre').style.border = `1px solid rgba(${r},${g},${b},0.3)`;
+  } else {
+    document.getElementById('btn-theatre').style.border = '1px solid rgba(255,255,255,0.15)';
+  }
+
+  // Continue watching visibility
+  document.getElementById('continue-watching').style.display = isM7 ? 'block' : 'none';
+}
+
+function renderCards() {
+  const isM7 = currentMode === 'm7';
+
+  // Continue Watching
+  const cwRow = document.getElementById('cw-row');
+  cwRow.innerHTML = '';
+  VIDEOS.filter(v => v.progress > 0).forEach((v, i) => {
+    const [dr,dg,db] = v.dc;
+    const pct = Math.round(v.progress * 100);
+    const mins = Math.round((1 - v.progress) * 12);
+    cwRow.innerHTML += `
+      <div class="cw-card" onclick="switchHero(VIDEOS[${VIDEOS.indexOf(v)}])" style="animation: springIn 500ms cubic-bezier(0.34,1.56,0.64,1) ${i*80}ms both; border-color: rgba(255,255,255,0.04);"
+        onmouseenter="this.style.boxShadow='0 16px 36px rgba(${dr*0.3},${dg*0.3},${db*0.3},0.35)'; this.style.borderColor='rgba(${dr},${dg},${db},0.25)'"
+        onmouseleave="this.style.boxShadow='none'; this.style.borderColor='rgba(255,255,255,0.04)'">
+        <div style="position:relative">
+          <img src="${img(v.thumb,560,200)}" alt="${v.title}" />
+          <span class="resume-badge">Resume</span>
+          <span class="time-left">${mins}m left</span>
+          <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+        </div>
+        <div style="padding:8px 12px 10px">
+          <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${v.title}</div>
+          <div style="font-size:11px;color:#8a8a90;margin-top:2px">${v.uploader}</div>
+        </div>
+      </div>`;
+  });
+
+  // Trending + Arrivals
+  renderRow('trending-row', VIDEOS, isM7);
+  renderRow('arrivals-row', [...VIDEOS].reverse(), isM7);
+
+  // Skeletons
+  const skelRow = document.getElementById('skeleton-row');
+  skelRow.innerHTML = '';
+  for (let i = 0; i < 6; i++) {
+    if (isM7) {
+      skelRow.innerHTML += `
+        <div class="skel-m7">
+          <div class="skel-thumb" style="animation-delay:${i*100}ms"></div>
+          <div class="skel-line skel-line1" style="animation-delay:${i*100+100}ms"></div>
+          <div class="skel-line skel-line2" style="animation-delay:${i*100+200}ms"></div>
+        </div>`;
+    } else {
+      skelRow.innerHTML += `
+        <div class="skel-current">
+          <div class="skel-thumb"></div>
+          <div class="skel-line1"></div>
+          <div class="skel-line2"></div>
+        </div>`;
+    }
+  }
+
+  // Empty state
+  const empty = document.getElementById('empty-state');
+  if (isM7) {
+    empty.innerHTML = `
+      <div class="empty-m7">
+        <div class="glow"></div>
+        <div class="icon-box">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="6" width="20" height="12" rx="2"/><path d="M12 12h.01"/><path d="M17 12h.01"/><path d="M7 12h.01"/>
+          </svg>
+        </div>
+        <h4>No playlists yet</h4>
+        <p>Curate your own collections to keep your favorites organized</p>
+        <button class="cta">+ Create Playlist</button>
+      </div>`;
+  } else {
+    empty.innerHTML = `
+      <div class="empty-current">
+        <span class="emoji">&#128250;</span>
+        <p>No playlists yet. Create one to organize your videos.</p>
+      </div>`;
+  }
+}
+
+function renderRow(rowId, videos, isM7) {
+  const row = document.getElementById(rowId);
+  row.innerHTML = '';
+  videos.forEach((v, i) => {
+    const src = SRC_COLORS[v.source] || SRC_COLORS.YouTube;
+    const [dr,dg,db] = v.dc;
+
+    if (isM7) {
+      const pct = Math.round(v.progress * 100);
+      row.innerHTML += `
+        <div class="card-m7" onclick="switchHero(VIDEOS[${VIDEOS.indexOf(v)}])"
+          style="animation: springIn 500ms cubic-bezier(0.34,1.56,0.64,1) ${i*80}ms both"
+          onmouseenter="this.style.boxShadow='0 20px 40px rgba(${dr*0.3},${dg*0.3},${db*0.3},0.4), 0 0 0 1px rgba(255,255,255,0.08)'; this.style.borderColor='rgba(${dr},${dg},${db},0.3)'"
+          onmouseleave="this.style.boxShadow='0 0 0 1px rgba(255,255,255,0.04)'; this.style.borderColor='rgba(255,255,255,0.04)'">
+          <div class="card-thumb">
+            <img src="${img(v.thumb,440,248)}" alt="${v.title}" />
+            <div style="position:absolute;bottom:0;left:0;right:0;height:50px;background:linear-gradient(to top, rgba(${dr*0.15},${dg*0.15},${db*0.15},0.9), transparent)"></div>
+            <span class="source-badge" style="background:${src.bg};color:${src.text};border:1px solid ${src.border}">${src.icon}</span>
+            <span class="card-dur">${v.duration}</span>
+            ${v.progress > 0 ? `<div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>` : ''}
+          </div>
+          <div class="card-info">
+            <div class="card-title">${v.title}</div>
+            <div class="card-meta"><span>${v.uploader}</span><span style="opacity:0.4">&middot;</span><span>${v.views}</span></div>
+          </div>
+        </div>`;
+    } else {
+      row.innerHTML += `
+        <div class="card-current" onclick="switchHero(VIDEOS[${VIDEOS.indexOf(v)}])"
+          style="animation: fadeUp 400ms ease-out ${i*55}ms both">
+          <div class="card-thumb">
+            <img src="${img(v.thumb,400,226)}" alt="${v.title}" />
+            <span class="card-dur">${v.duration}</span>
+          </div>
+          <div class="card-info">
+            <div class="card-title">${v.title}</div>
+            <div class="card-meta">${v.uploader} &middot; ${v.views}</div>
+          </div>
+        </div>`;
+    }
+  });
+}
+
+// Init
+updateHero();
+renderCards();
+</script>
+</body>
+</html>

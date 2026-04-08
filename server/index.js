@@ -49,10 +49,16 @@ function isAllowedCdnUrl(url) {
 // ============================================================
 
 const app = express()
-const PORT = 3001
+const PORT = process.env.PORT || 3001
 
 app.use(cors())
 app.use(express.json())
+
+// In production, serve the built Vite frontend
+const distPath = join(__dirname, '..', 'dist')
+if (existsSync(distPath)) {
+  app.use(express.static(distPath))
+}
 
 // -----------------------------------------------------------
 // Mode inference: determine if a URL/source is NSFW or social
@@ -1856,7 +1862,18 @@ function startStreamUrlTTLMonitor() {
 
   return setInterval(async () => {
     try {
-      // Find URLs expiring in the next 15 minutes that still have a stream_url
+      // First pass: clear already-expired URLs (they'll be resolved on demand)
+      const cleared = db.prepare(`
+        UPDATE feed_cache SET stream_url = NULL, expires_at = NULL
+        WHERE stream_url IS NOT NULL
+          AND expires_at IS NOT NULL
+          AND expires_at < datetime('now')
+      `).run()
+      if (cleared.changes > 0) {
+        logger.info(`  🧹 TTL monitor: cleared ${cleared.changes} expired stream URLs`)
+      }
+
+      // Second pass: pre-resolve URLs expiring in the next 15 minutes
       const expiring = db.prepare(`
         SELECT url FROM feed_cache
         WHERE stream_url IS NOT NULL
@@ -1988,6 +2005,15 @@ app.get('/api/tiktok/watch-history', (req, res) => {
   }
 })
 
+// SPA catch-all: serve index.html for non-API routes (client-side routing)
+if (existsSync(distPath)) {
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api')) {
+      res.sendFile(join(distPath, 'index.html'))
+    }
+  })
+}
+
 // -----------------------------------------------------------
 // Start server
 // -----------------------------------------------------------
@@ -2009,6 +2035,17 @@ app.listen(PORT, '0.0.0.0', () => {
   } catch {}
 
   logger.info(`     Health check: http://localhost:${PORT}/api/health\n`)
+
+  // Flush stale stream URLs from previous session — metadata stays intact
+  try {
+    const flushedFeed = db.prepare("UPDATE feed_cache SET stream_url = NULL, expires_at = NULL WHERE stream_url IS NOT NULL").run()
+    if (flushedFeed.changes) {
+      logger.info(`  🧹 Flushed ${flushedFeed.changes} stale stream URLs from feed_cache`)
+    }
+  } catch (err) {
+    logger.warn('Stream URL flush failed:', { error: err.message })
+  }
+
   _intervalIds.push(startScheduledFeedRefill())
   _intervalIds.push(startScheduledTrendingRefresh())
   _intervalIds.push(startStreamUrlTTLMonitor())

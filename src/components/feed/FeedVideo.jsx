@@ -106,6 +106,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
   const containerEl = useRef(null)
   const [streamUrl, setStreamUrl] = useState(video.streamUrl || null)
   const [streamLoading, setStreamLoading] = useState(false)
+  const streamRetries = useRef(0)
   const muted = useFeedStore(s => s.muted)
   const setMuted = useFeedStore(s => s.setMuted)
   const [paused, setPaused] = useState(false)
@@ -176,6 +177,13 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
     const onError = () => {
       const err = vid.error
       setDebugMsg('VIDEO ERROR: code=' + err?.code + ' ' + (err?.message || ''))
+      // Retry once with a fresh stream URL (catches expired CDN URLs)
+      if (streamUrl && streamRetries.current < 1) {
+        streamRetries.current++
+        setStreamUrl(null)
+        setStreamLoading(false)
+        setDebugMsg('retrying stream URL...')
+      }
     }
     const onLoadedMetadata = () => {
       if (vid.videoWidth && vid.videoHeight) {

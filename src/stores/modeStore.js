@@ -59,6 +59,7 @@ const useModeStore = create(
     (set) => ({
       // State
       isSFW: true,  // Always default to SFW
+      _hydrated: false, // True once zustand persist has finished hydrating
 
       // Actions
       activateSFW: () => {
@@ -84,13 +85,15 @@ const useModeStore = create(
     }),
     {
       name: 'fd-mode',
-      // On hydration, always force SFW first, then restore after delay
+      partialize: (state) => ({ isSFW: state.isSFW }), // Don't persist _hydrated
+      // On hydration, always force SFW — no NSFW content before user explicitly toggles
       onRehydrateStorage: () => {
-        // Set SFW immediately on page load
         setDocumentMeta(true)
         return () => {
-          // After hydration, state has the persisted value
-          // but we already set SFW visually — App.jsx handles the restore
+          // Force SFW regardless of persisted value, then mark hydrated.
+          // This prevents any NSFW content from flashing on page load.
+          useModeStore.setState({ isSFW: true, _hydrated: true })
+          setDocumentMeta(true)
         }
       },
     }

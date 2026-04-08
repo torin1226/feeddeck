@@ -118,8 +118,8 @@ export default function FloatingQueue() {
     return (
       <button
         onClick={() => setExpanded(true)}
-        className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-2.5
-          bg-gray-900/90 backdrop-blur-sm rounded-full shadow-lg
+        className={`fixed bottom-6 right-6 z-toast flex items-center gap-2 px-4 py-2.5
+          bg-gray-900/90 backdrop-blur-sm rounded-full shadow-float
           border border-white/10 hover:border-white/20
           transition-all duration-200 cursor-pointer
           ${pulsing ? 'animate-queue-pulse' : ''}`}
@@ -156,8 +156,8 @@ export default function FloatingQueue() {
   return (
     <div
       ref={panelRef}
-      className="fixed bottom-6 right-6 z-50 w-80 max-h-[60vh] flex flex-col
-        bg-gray-900/95 backdrop-blur-md rounded-xl border border-white/10 shadow-2xl
+      className="fixed bottom-6 right-6 z-toast w-80 max-h-[60vh] flex flex-col
+        bg-gray-900/95 backdrop-blur-md rounded-xl border border-white/10 shadow-modal
         animate-fade-slide-in"
     >
       {/* Header */}
@@ -234,7 +234,7 @@ function QueueRow({
   item,
   _index,
   isCurrent,
-  isSFW,
+  _isSFW,
   showDropIndicator,
   onRemove,
   onDragStart,
@@ -265,7 +265,7 @@ function QueueRow({
         {thumb ? (
           <img
             src={thumb}
-            alt=""
+            alt={title}
             className="w-full h-full object-cover"
             loading="lazy"
             draggable="false"

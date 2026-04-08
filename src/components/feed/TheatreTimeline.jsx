@@ -56,7 +56,7 @@ export default function TheatreTimeline({ videoRef, nextUpVisible }) {
 
   return (
     <div
-      className="absolute bottom-0 left-0 z-40 flex items-end gap-3 px-4 pb-4"
+      className="absolute bottom-0 left-0 z-modal flex items-end gap-3 px-4 pb-4"
       style={{ right: nextUpVisible ? '296px' : '0', transition: 'right 0.3s ease' }}
     >
       {/* Current time */}

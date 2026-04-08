@@ -51,7 +51,7 @@ export default function VideoCard({ video, onClick }) {
         {display.thumbnail ? (
           <img
             src={display.thumbnail}
-            alt=""
+            alt={video.title}
             loading="lazy"
             className="w-full h-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.03]"
           />
@@ -63,7 +63,7 @@ export default function VideoCard({ video, onClick }) {
 
         {/* Hover preview video */}
         <video
-          className="absolute inset-0 w-full h-full object-cover z-[1] pointer-events-none transition-opacity duration-300"
+          className="absolute inset-0 w-full h-full object-cover z-content pointer-events-none transition-opacity duration-300"
           style={{ opacity: 0 }}
           muted
           playsInline
@@ -71,12 +71,12 @@ export default function VideoCard({ video, onClick }) {
         />
 
         {/* Duration badge */}
-        <div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-1.5 py-0.5 rounded font-medium z-[3]">
+        <div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-1.5 py-0.5 rounded font-medium z-content">
           {display.duration}
         </div>
 
         {/* Hover overlay with actions */}
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100 z-[2]">
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100 z-content">
           <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
             {/* Add to queue */}
             <button
@@ -94,7 +94,7 @@ export default function VideoCard({ video, onClick }) {
               title="Play"
               aria-label="Play video"
               className="w-12 h-12 rounded-full bg-white/90 text-black flex items-center justify-center
-                hover:bg-white transition-colors text-lg shadow-lg"
+                hover:bg-white transition-colors text-lg shadow-float"
             >
               ▶
             </button>

@@ -76,7 +76,7 @@ function QueueItem({ item, index, onRemove }) {
       {/* Thumbnail */}
       <div className="w-16 aspect-video rounded overflow-hidden bg-surface-overlay shrink-0">
         {thumb ? (
-          <img src={thumb} alt="" className="w-full h-full object-cover" loading="lazy" />
+          <img src={thumb} alt={item.title || 'Queued video'} className="w-full h-full object-cover" loading="lazy" />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-text-muted text-xs">
             ▶

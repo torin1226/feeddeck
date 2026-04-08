@@ -33,7 +33,7 @@ export default function Header({ onSearch, onSearchSubmit }) {
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-surface/90 backdrop-blur-md border-b border-surface-border">
+      <header className="sticky top-0 z-modal bg-surface/90 backdrop-blur-md border-b border-surface-border">
         <div className="flex items-center gap-4 px-4 md:px-6 h-14">
 
           {/* Logo / Brand */}
@@ -107,7 +107,7 @@ export default function Header({ onSearch, onSearchSubmit }) {
 
             <button
               onClick={toggleTheme}
-              className="p-2 rounded-lg text-text-secondary hover:text-text-primary
+              className="w-11 h-11 flex items-center justify-center rounded-lg text-text-secondary hover:text-text-primary
                 hover:bg-surface-overlay transition-colors"
               title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
