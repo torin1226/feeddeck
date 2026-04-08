@@ -26,12 +26,17 @@ const MODE_COOKIE_FILES = {
 const LEGACY_COOKIE_FILE = join(DATA_DIR, 'cookies.txt')
 
 // Ensure temp dir exists for cookie copies
-try { mkdirSync(COOKIES_TMP, { recursive: true }) } catch {}
+try { mkdirSync(COOKIES_TMP, { recursive: true }) } catch (err) {
+  if (err.code !== 'EEXIST') logger.warn('Failed to create temp cookie dir', { error: err.message })
+}
 
 // Clean up stale temp cookie files on startup
 try {
   for (const f of readdirSync(COOKIES_TMP)) {
-    try { unlinkSync(join(COOKIES_TMP, f)) } catch {}
+    if (!f.endsWith('-cookies.txt')) continue // Only delete expected temp files
+    try { unlinkSync(join(COOKIES_TMP, f)) } catch (err) {
+      logger.warn(`Failed to clean temp cookie: ${f}`, { error: err.message })
+    }
   }
 } catch {}
 

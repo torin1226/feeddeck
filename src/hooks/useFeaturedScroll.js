@@ -35,7 +35,6 @@ function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
 
 export default function useFeaturedScroll({
   zoneRef,
-  _stickyRef,
   cardsRef,
   chromeRef,
   overlayRef,
@@ -47,7 +46,8 @@ export default function useFeaturedScroll({
   setFeaturedIndex,
 }) {
   const rafPending = useRef(false)
-  const prevPhase4 = useRef(false)
+  const rafId = useRef(null)
+  const prevPhase3 = useRef(false)
   const fullbleedScale = useRef(1)
   const activeIdxRef = useRef(activeIndex)
   const totalCardsRef = useRef(totalCards)
@@ -258,7 +258,7 @@ export default function useFeaturedScroll({
     if (rafPending.current) return
     rafPending.current = true
 
-    requestAnimationFrame(() => {
+    rafId.current = requestAnimationFrame(() => {
       rafPending.current = false
       const p = getProgress()
       applyProgress(p)
@@ -284,11 +284,11 @@ export default function useFeaturedScroll({
 
       // Phase 3 enter/leave detection (carousel hold) + scroll-driven cycling
       const inPhase3 = p >= P2_END && p <= P3_END
-      if (inPhase3 && !prevPhase4.current) {
-        prevPhase4.current = true
+      if (inPhase3 && !prevPhase3.current) {
+        prevPhase3.current = true
         callbacksRef.current.onPhase4Enter?.()
-      } else if (!inPhase3 && prevPhase4.current) {
-        prevPhase4.current = false
+      } else if (!inPhase3 && prevPhase3.current) {
+        prevPhase3.current = false
         callbacksRef.current.onPhase4Leave?.()
       }
 
@@ -327,6 +327,7 @@ export default function useFeaturedScroll({
       window.removeEventListener('resize', onResize)
       stopAutoAdvance()
       clearTimeout(phase2Timer.current)
+      if (rafId.current) cancelAnimationFrame(rafId.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -343,7 +344,7 @@ export default function useFeaturedScroll({
 
   // activeIndex watcher: update carousel if in Phase 4
   useEffect(() => {
-    if (prevPhase4.current) {
+    if (prevPhase3.current) {
       applyCarousel()
       resetProgressBar()
     }
@@ -351,9 +352,9 @@ export default function useFeaturedScroll({
   }, [activeIndex])
 
   return {
-    isInteractive: () => prevPhase4.current,
+    isInteractive: () => prevPhase3.current,
     navigateTo: (idx) => {
-      if (prevPhase4.current) {
+      if (prevPhase3.current) {
         activeIdxRef.current = idx
         applyCarousel()
       }

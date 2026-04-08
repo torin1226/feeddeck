@@ -259,16 +259,16 @@ export class ScraperAdapter extends SourceAdapter {
           const durMatch = durText.match(/(\d+):(\d+)(?::(\d+))?/)
           if (durMatch) {
             if (durMatch[3]) {
-              duration = parseInt(durMatch[1]) * 3600 + parseInt(durMatch[2]) * 60 + parseInt(durMatch[3])
+              duration = parseInt(durMatch[1], 10) * 3600 + parseInt(durMatch[2], 10) * 60 + parseInt(durMatch[3], 10)
             } else {
-              duration = parseInt(durMatch[1]) * 60 + parseInt(durMatch[2])
+              duration = parseInt(durMatch[1], 10) * 60 + parseInt(durMatch[2], 10)
             }
           } else {
             // Handle "10m", "1h 5m", "1h" formats
             const hMatch = durText.match(/(\d+)\s*h/)
             const mMatch = durText.match(/(\d+)\s*m/)
-            if (hMatch) duration += parseInt(hMatch[1]) * 3600
-            if (mMatch) duration += parseInt(mMatch[1]) * 60
+            if (hMatch) duration += parseInt(hMatch[1], 10) * 3600
+            if (mMatch) duration += parseInt(mMatch[1], 10) * 60
           }
 
           // Views

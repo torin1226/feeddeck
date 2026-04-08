@@ -49,7 +49,7 @@ export default function LibraryPage() {
       if (current.length === 0) {
         seedDemoData()
       }
-    })
+    }).catch(() => {})
   }, [loadFromServer, seedDemoData])
 
   // Continue Watching — videos with progress between 5% and 95%

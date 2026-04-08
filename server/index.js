@@ -1652,11 +1652,12 @@ app.delete('/api/queue', (req, res) => {
 // -----------------------------------------------------------
 // Async refill: fetch new videos for the feed cache
 // -----------------------------------------------------------
-const feedRefillInFlight = new Set()
+const feedRefillInFlight = new Map()
 async function refillFeedCache(mode) {
-  if (feedRefillInFlight.has(mode)) return
-  feedRefillInFlight.add(mode)
-  try { await _refillFeedCacheImpl(mode) } finally { feedRefillInFlight.delete(mode) }
+  if (feedRefillInFlight.has(mode)) return feedRefillInFlight.get(mode)
+  const promise = _refillFeedCacheImpl(mode).finally(() => feedRefillInFlight.delete(mode))
+  feedRefillInFlight.set(mode, promise)
+  return promise
 }
 async function _refillFeedCacheImpl(mode) {
   const sources = db.prepare(
@@ -1680,7 +1681,7 @@ async function _refillFeedCacheImpl(mode) {
       // Personalize query by mixing in random liked tags
       let query = src.query
       if (likedTags.length > 0) {
-        const picked = likedTags.sort(() => Math.random() - 0.5).slice(0, 2)
+        const picked = [...likedTags].sort(() => Math.random() - 0.5).slice(0, 2)
         query = `${src.query} ${picked.join(' ')}`
         logger.info(`  🎯 Personalized feed query: "${query}"`)
       }

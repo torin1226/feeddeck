@@ -28,8 +28,14 @@ export default function HomePage() {
 
   // Pre-warm feed buffer so /feed loads instantly when navigated to
   useEffect(() => {
-    const idle = window.requestIdleCallback || ((cb) => setTimeout(cb, 200))
-    idle(() => useFeedStore.getState().prefetch())
+    const hasIdleCallback = typeof window.requestIdleCallback === 'function'
+    const id = hasIdleCallback
+      ? window.requestIdleCallback(() => useFeedStore.getState().prefetch())
+      : setTimeout(() => useFeedStore.getState().prefetch(), 200)
+    return () => {
+      if (hasIdleCallback) window.cancelIdleCallback(id)
+      else clearTimeout(id)
+    }
   }, [])
 
   const loading = !heroItem

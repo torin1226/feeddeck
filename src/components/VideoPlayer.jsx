@@ -17,7 +17,7 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
   const { isSFW } = useModeStore()
   const { advance, queue } = useQueueStore()
   const { markWatched } = useLibraryStore()
-  const [_isPlaying, setIsPlaying] = useState(false)
+  const isPlayingRef = useRef(false)
   const [streamUrl, setStreamUrl] = useState(null)
   const [streamLoading, setStreamLoading] = useState(false)
   const [formats, setFormats] = useState([])
@@ -139,7 +139,7 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
   }
 
   const handleEnded = () => {
-    setIsPlaying(false)
+    isPlayingRef.current = false
     // Mark as fully watched
     useLibraryStore.getState().setWatchProgress(video.id, 1)
     handleNext()
@@ -209,8 +209,8 @@ export default function VideoPlayer({ video, onClose, onPlayVideo }) {
               autoPlay={!isSFW}
               muted={isSFW}
               loop={isSFW}
-              onPlay={() => setIsPlaying(true)}
-              onPause={() => setIsPlaying(false)}
+              onPlay={() => { isPlayingRef.current = true }}
+              onPause={() => { isPlayingRef.current = false }}
               onEnded={handleEnded}
             />
           ) : (

@@ -22,6 +22,7 @@ export default function useFeedGestures({
   const touchStart = useRef(null)
   const lastTapTime = useRef(0)
   const longPressTimer = useRef(null)
+  const tapTimer = useRef(null)
   const gestureConsumed = useRef(false)
 
   const callbacksRef = useRef({ onSwipeLeft, onSwipeRight, onDoubleTap, onTap, onLongPress })
@@ -91,11 +92,13 @@ export default function useFeedGestures({
       const now = Date.now()
       if (now - lastTapTime.current < DOUBLE_TAP_MS) {
         lastTapTime.current = 0
+        clearTimeout(tapTimer.current)
         callbacksRef.current.onDoubleTap?.(e)
       } else {
         lastTapTime.current = now
         // Delay single tap to distinguish from double-tap
-        setTimeout(() => {
+        clearTimeout(tapTimer.current)
+        tapTimer.current = setTimeout(() => {
           if (Date.now() - lastTapTime.current >= DOUBLE_TAP_MS - 10) {
             callbacksRef.current.onTap?.(e)
           }
@@ -113,13 +116,13 @@ export default function useFeedGestures({
     el.addEventListener('touchend', handleTouchEnd, { passive: true })
     el.addEventListener('touchcancel', handleTouchCancel, { passive: true })
 
-    const timer = longPressTimer.current
     return () => {
       el.removeEventListener('touchstart', handleTouchStart)
       el.removeEventListener('touchmove', handleTouchMove)
       el.removeEventListener('touchend', handleTouchEnd)
       el.removeEventListener('touchcancel', handleTouchCancel)
-      clearTimeout(timer)
+      clearTimeout(longPressTimer.current)
+      clearTimeout(tapTimer.current)
     }
   }, [containerRef])
 }

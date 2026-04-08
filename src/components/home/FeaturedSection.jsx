@@ -34,13 +34,12 @@ export default function FeaturedSection() {
       progress: progressRef.current,
       progressBar: progressBarRef.current,
     }
-  })
+  }) // intentionally runs every render to capture latest refs
 
   const videoElRef = useRef(null)
 
   const { isInteractive, setVideoRef } = useFeaturedScroll({
     zoneRef,
-    stickyRef,
     cardsRef,
     chromeRef,
     overlayRef,

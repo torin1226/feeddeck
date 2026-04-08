@@ -209,7 +209,8 @@ const useQueueStore = create(persist((set, get) => ({
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
-      set({ queue: normalizeQueue(data.queue) || next, online: true, lastSynced: Date.now() })
+      const serverQueue = normalizeQueue(data.queue)
+      set({ queue: serverQueue.length > 0 ? serverQueue : next, online: true, lastSynced: Date.now() })
     } catch {
       set({ queue: prevQueue, currentIndex: prevIndex, online: false })
     } finally {
