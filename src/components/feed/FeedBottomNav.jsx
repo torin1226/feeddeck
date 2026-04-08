@@ -11,9 +11,9 @@ import useFeedStore from '../../stores/feedStore'
 // ============================================================
 
 const tabs = [
+  { label: 'Home', path: '/', icon: TabIconHome },
   { label: 'Feed', path: '/feed', icon: TabIconFeed },
   { label: 'Filter', path: null, action: 'filter', icon: TabIconFilter },
-  { label: 'Queue', path: '/', icon: TabIconQueue },
   { label: 'Settings', path: '/settings', icon: TabIconSettings },
 ]
 
@@ -25,14 +25,14 @@ export default function FeedBottomNav({ hidden = false, onFilterOpen }) {
   const hasActiveFilters = (filters.sources?.length > 0) || (filters.tags?.length > 0)
 
   return (
-    <nav className={`fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around
+    <nav className={`fixed bottom-0 left-0 right-0 z-modal flex items-center justify-around
       bg-black/80 backdrop-blur-lg border-t border-white/10 pb-safe
       transition-transform duration-200 ${hidden ? 'translate-y-full' : 'translate-y-0'}`}
       style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 8px)' }}
     >
       {tabs.map(tab => {
         const isActive = tab.path
-          ? (tab.path === '/feed' ? location.pathname === '/feed' : location.pathname.startsWith(tab.path))
+          ? location.pathname === tab.path
           : false
         const isFilterActive = tab.action === 'filter' && hasActiveFilters
         const Icon = tab.icon
@@ -57,7 +57,7 @@ export default function FeedBottomNav({ hidden = false, onFilterOpen }) {
                   aria-live="polite"
                   aria-label={`${queueCount} items in queue`}
                   className="absolute -top-1 -right-2 min-w-[16px] h-4 px-1
-                  rounded-full bg-accent text-[10px] font-bold text-black
+                  rounded-full bg-accent text-micro font-bold text-black
                   flex items-center justify-center">
                   {queueCount > 99 ? '99+' : queueCount}
                 </span>
@@ -66,7 +66,7 @@ export default function FeedBottomNav({ hidden = false, onFilterOpen }) {
                 <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-accent" />
               )}
             </div>
-            <span className="text-[10px] font-medium">{tab.label}</span>
+            <span className="text-micro font-medium">{tab.label}</span>
           </button>
         )
       })}
@@ -75,6 +75,16 @@ export default function FeedBottomNav({ hidden = false, onFilterOpen }) {
 }
 
 // --- Tab Icons (inline SVGs, 24x24) ---
+
+function TabIconHome({ active }) {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+      <polyline points="9 22 9 12 15 12 15 22" />
+    </svg>
+  )
+}
 
 function TabIconFeed({ active }) {
   return (
@@ -95,16 +105,6 @@ function TabIconFilter({ active }) {
   )
 }
 
-function TabIconQueue({ active }) {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="5" width="18" height="4" rx="1" />
-      <rect x="3" y="11" width="14" height="4" rx="1" />
-      <rect x="3" y="17" width="10" height="4" rx="1" />
-    </svg>
-  )
-}
 
 function TabIconSettings({ active }) {
   return (

@@ -1,8 +1,9 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import useKeyboard from '../hooks/useKeyboard'
 import useQueueSync from '../hooks/useQueueSync'
 import useDeviceStore from '../stores/deviceStore'
+import useModeStore from '../stores/modeStore'
 import ErrorBoundary from './ErrorBoundary'
 import FloatingQueue from './FloatingQueue'
 import OfflineBanner from './OfflineBanner'
@@ -27,6 +28,24 @@ export default function AppShell() {
   const isFeed = location.pathname === '/feed'
   const mobilePreview = useDeviceStore(s => s.mobilePreview)
   const toggleMobilePreview = useDeviceStore(s => s.toggleMobilePreview)
+  const modeHydrated = useModeStore(s => s._hydrated)
+
+  // Trigger View Transitions API crossfade on route changes
+  const prevPath = useRef(location.pathname)
+  useEffect(() => {
+    if (prevPath.current !== location.pathname && document.startViewTransition) {
+      document.startViewTransition()
+    }
+    prevPath.current = location.pathname
+  }, [location.pathname])
+
+  // Block ALL rendering until mode store has hydrated.
+  // This prevents NSFW content from flashing on SFW first load.
+  if (!modeHydrated) {
+    return (
+      <div className="h-screen w-full bg-surface" />
+    )
+  }
 
   const content = (
     <>
@@ -59,10 +78,10 @@ export default function AppShell() {
       {mobilePreview ? (
         <div className="h-screen w-screen bg-[#111] flex items-center justify-center">
           {/* Phone frame */}
-          <div className="relative rounded-[2.5rem] border-[4px] border-[#333] shadow-2xl shadow-black/60 overflow-hidden"
+          <div className="relative rounded-[2.5rem] border-[4px] border-[#333] shadow-modal shadow-black/60 overflow-hidden"
             style={{ width: 390, height: 844 }}>
             {/* Notch */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[120px] h-[28px] bg-black rounded-b-2xl z-[9999]" />
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[120px] h-[28px] bg-black rounded-b-2xl z-system" />
             {/* App content — mobile-frame class overrides h-dvh to use frame height */}
             <div className="mobile-frame w-full h-full overflow-hidden" style={{ position: 'relative' }}>
               {content}
@@ -82,8 +101,8 @@ export default function AppShell() {
         onClick={toggleMobilePreview}
         title="Toggle mobile preview (Ctrl+M)"
         aria-label="Toggle mobile preview"
-        className={`fixed z-[9999] bottom-4 right-4 w-10 h-10 rounded-full flex items-center justify-center
-          cursor-pointer transition-all shadow-lg
+        className={`fixed z-system bottom-4 right-4 w-10 h-10 rounded-full flex items-center justify-center
+          cursor-pointer transition-all shadow-float
           ${mobilePreview
             ? 'bg-accent text-black hover:bg-accent/80'
             : 'bg-surface-overlay border border-surface-border text-text-secondary hover:text-text-primary hover:border-text-muted'

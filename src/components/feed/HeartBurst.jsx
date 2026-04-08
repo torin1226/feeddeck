@@ -24,7 +24,7 @@ export default function HeartBurst({ x, y, onDone }) {
 
   return (
     <div
-      className="fixed z-50 pointer-events-none"
+      className="fixed z-toast pointer-events-none"
       style={{ left: x, top: y, transform: 'translate(-50%, -50%)' }}
     >
       {/* Center heart */}

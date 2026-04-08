@@ -25,7 +25,7 @@ export default function HomeHeader() {
 
   return (
     <header
-      className="fixed top-0 left-0 right-0 z-[200] h-14 flex items-center justify-between px-10"
+      className="fixed top-0 left-0 right-0 z-system h-14 flex items-center justify-between px-10"
       style={{
         background: `linear-gradient(to bottom, var(--color-surface) 0%, transparent 100%)`,
       }}

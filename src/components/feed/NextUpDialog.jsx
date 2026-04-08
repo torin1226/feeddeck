@@ -37,7 +37,7 @@ export default function NextUpDialog({ videoRef, nextVideo, onAdvance }) {
     }
 
     const onEnded = () => {
-      if (!dismissed) onAdvance()
+      if (!dismissed) onAdvance?.()
     }
 
     video.addEventListener('timeupdate', onTime)
@@ -52,7 +52,7 @@ export default function NextUpDialog({ videoRef, nextVideo, onAdvance }) {
   if (visible && !nextVideo) {
     return (
       <div
-        className="absolute bottom-20 right-4 z-50 w-[280px] rounded-xl bg-black/60 backdrop-blur-xl border border-white/10 shadow-2xl p-4 text-center"
+        className="absolute bottom-20 right-4 z-toast w-[280px] rounded-xl bg-black/60 backdrop-blur-xl border border-white/10 shadow-modal p-4 text-center"
         style={{ animation: 'foryou-slideInRight 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' }}
       >
         <div className="text-2xl mb-2">✓</div>
@@ -72,7 +72,7 @@ export default function NextUpDialog({ videoRef, nextVideo, onAdvance }) {
 
   return (
     <div
-      className="absolute bottom-20 right-4 z-50 w-[280px] rounded-xl bg-black/60 backdrop-blur-xl border border-white/10 shadow-2xl overflow-hidden cursor-pointer hover:border-white/20 transition-colors"
+      className="absolute bottom-20 right-4 z-toast w-[280px] rounded-xl bg-black/60 backdrop-blur-xl border border-white/10 shadow-modal overflow-hidden cursor-pointer hover:border-white/20 transition-colors"
       style={{ animation: 'foryou-slideInRight 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' }}
       onClick={onAdvance}
     >

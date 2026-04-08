@@ -51,7 +51,8 @@ export default function MobileSwipeView() {
     if (current && !current.isDemo) {
       markWatched(current.id)
     }
-  }, [current, markWatched])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.id])
 
   const goNext = () => index < displayVideos.length - 1 && setIndex(i => i + 1)
   const goPrev = () => index > 0 && setIndex(i => i - 1)
@@ -82,7 +83,7 @@ export default function MobileSwipeView() {
       {display?.thumbnail ? (
         <img
           src={display.thumbnail}
-          alt=""
+          alt={current.title}
           className="absolute inset-0 w-full h-full object-cover"
           draggable={false}
         />
@@ -169,7 +170,7 @@ function ActionButton({ icon, label, active, onClick }) {
       )}
     >
       <span className="text-2xl leading-none">{icon}</span>
-      <span className="text-[10px]">{label}</span>
+      <span className="text-micro">{label}</span>
     </button>
   )
 }

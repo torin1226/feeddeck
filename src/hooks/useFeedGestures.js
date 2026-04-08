@@ -2,19 +2,27 @@ import { useRef, useEffect } from 'react'
 
 // ============================================================
 // useFeedGestures
-// Touch + mouse gesture detection for the swipe feed.
-// Detects: horizontal swipes (left/right), double-tap, long-press.
-// Vertical swipes are handled natively by CSS scroll-snap.
+// Unified gesture hook for ALL feed tabs (ForYou, Remix, mobile).
+//
+// Gesture map (2026-03-27):
+//   Swipe right → next video
+//   Swipe left  → previous video
+//   Swipe up    → open source URL
+//   Double-tap  → heart/like
+//   Tap         → play/pause
+//   Long-press  → source control sheet
 // ============================================================
 
-const SWIPE_THRESHOLD = 50     // px minimum for horizontal swipe
-const SWIPE_ANGLE_MAX = 30     // degrees — must be clearly horizontal
+const SWIPE_THRESHOLD = 50     // px minimum for swipe
+const SWIPE_ANGLE_MAX = 35     // degrees — must be clearly horizontal/vertical
 const DOUBLE_TAP_MS = 300      // max time between taps
+const LONG_PRESS_MS = 800      // long-press threshold (high to avoid conflict with scrolling)
 
 export default function useFeedGestures({
   containerRef,
   onSwipeLeft,
   onSwipeRight,
+  onSwipeUp,
   onDoubleTap,
   onTap,
   onLongPress,
@@ -24,10 +32,10 @@ export default function useFeedGestures({
   const longPressTimer = useRef(null)
   const gestureConsumed = useRef(false)
 
-  const callbacksRef = useRef({ onSwipeLeft, onSwipeRight, onDoubleTap, onTap, onLongPress })
+  const callbacksRef = useRef({ onSwipeLeft, onSwipeRight, onSwipeUp, onDoubleTap, onTap, onLongPress })
   useEffect(() => {
-    callbacksRef.current = { onSwipeLeft, onSwipeRight, onDoubleTap, onTap, onLongPress }
-  }, [onSwipeLeft, onSwipeRight, onDoubleTap, onTap, onLongPress])
+    callbacksRef.current = { onSwipeLeft, onSwipeRight, onSwipeUp, onDoubleTap, onTap, onLongPress }
+  }, [onSwipeLeft, onSwipeRight, onSwipeUp, onDoubleTap, onTap, onLongPress])
 
   useEffect(() => {
     const el = containerRef.current
@@ -38,11 +46,11 @@ export default function useFeedGestures({
       touchStart.current = { x: touch.clientX, y: touch.clientY, time: Date.now() }
       gestureConsumed.current = false
 
-      // Long-press disabled for now (was interfering with playback)
-      // longPressTimer.current = setTimeout(() => {
-      //   gestureConsumed.current = true
-      //   callbacksRef.current.onLongPress?.(e)
-      // }, LONG_PRESS_MS)
+      // Long-press detection
+      longPressTimer.current = setTimeout(() => {
+        gestureConsumed.current = true
+        callbacksRef.current.onLongPress?.(e)
+      }, LONG_PRESS_MS)
     }
 
     function handleTouchMove(e) {
@@ -67,23 +75,34 @@ export default function useFeedGestures({
       const touch = e.changedTouches[0]
       const dx = touch.clientX - touchStart.current.x
       const dy = touch.clientY - touchStart.current.y
+      const absDx = Math.abs(dx)
+      const absDy = Math.abs(dy)
       const dist = Math.sqrt(dx * dx + dy * dy)
-      const angle = Math.abs(Math.atan2(dy, dx) * 180 / Math.PI)
 
       touchStart.current = null
 
-      // Check for horizontal swipe
       if (dist >= SWIPE_THRESHOLD) {
-        const isHorizontal = angle < SWIPE_ANGLE_MAX || angle > (180 - SWIPE_ANGLE_MAX)
-        if (isHorizontal) {
-          if (dx < 0) {
-            callbacksRef.current.onSwipeLeft?.(e)
-          } else {
-            callbacksRef.current.onSwipeRight?.(e)
+        // Determine if horizontal or vertical swipe
+        if (absDx > absDy) {
+          // Horizontal — check angle is clearly horizontal
+          const angle = Math.abs(Math.atan2(dy, dx) * 180 / Math.PI)
+          if (angle < SWIPE_ANGLE_MAX || angle > (180 - SWIPE_ANGLE_MAX)) {
+            if (dx < 0) {
+              callbacksRef.current.onSwipeLeft?.(e) // previous video
+            } else {
+              callbacksRef.current.onSwipeRight?.(e) // next video
+            }
+            return
           }
+        } else {
+          // Vertical — check it's a clear upward swipe
+          if (dy < -SWIPE_THRESHOLD) {
+            callbacksRef.current.onSwipeUp?.(e) // open source URL
+            return
+          }
+          // Downward swipe — let scroll-snap handle it
           return
         }
-        // Vertical swipe — let scroll-snap handle it
         return
       }
 

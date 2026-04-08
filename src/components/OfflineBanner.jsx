@@ -12,7 +12,7 @@ export default function OfflineBanner() {
   if (online) return null
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-[300] flex items-center justify-center py-1.5 bg-amber-600/90 text-white text-xs font-medium backdrop-blur-sm">
+    <div className="fixed top-0 left-0 right-0 z-system flex items-center justify-center py-1.5 bg-amber-600/90 text-white text-xs font-medium backdrop-blur-sm">
       Server unreachable — queue changes won't sync
     </div>
   )

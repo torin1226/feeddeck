@@ -38,6 +38,7 @@ export default function useKeyboard() {
           if (vid) break // Let VideoPlayer handle it
           e.preventDefault()
           useQueueStore.getState().advance()
+          // next video loaded via queue store
           break
         }
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import useFeedStore from '../../stores/feedStore'
 import useModeStore from '../../stores/modeStore'
+import useFocusTrap from '../../hooks/useFocusTrap'
 
 // ============================================================
 // FeedFilterSheet
@@ -11,6 +12,7 @@ import useModeStore from '../../stores/modeStore'
 export default function FeedFilterSheet({ onClose }) {
   const { filters, setFilters, resetFeed } = useFeedStore()
   const isSFW = useModeStore(s => s.isSFW)
+  const trapRef = useFocusTrap()
 
   // Local state mirrors store filters for editing before apply
   const [sources, setSources] = useState([])
@@ -91,7 +93,8 @@ export default function FeedFilterSheet({ onClose }) {
         setSearching(false)
       }
     }, 400)
-  }, [isSFW])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Apply filters and close
   const applyFilters = useCallback(() => {
@@ -140,12 +143,13 @@ export default function FeedFilterSheet({ onClose }) {
   const hasActiveFilters = selectedSources.size > 0 || selectedTags.size > 0
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={() => onClose()}>
+    <div className="fixed inset-0 z-toast flex items-end justify-center" onClick={() => onClose()}>
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/60" />
 
       {/* Sheet */}
       <div
+        ref={trapRef}
         className="relative w-full max-w-lg bg-[#1a1a1e] rounded-t-2xl overflow-hidden animate-fade-slide-in"
         style={{ maxHeight: '85dvh' }}
         onClick={e => e.stopPropagation()}
@@ -180,7 +184,7 @@ export default function FeedFilterSheet({ onClose }) {
 
           {/* Search section */}
           <section className="mb-5">
-            <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider mb-2 block">
+            <label className="text-caption font-semibold text-white/40 uppercase tracking-wider mb-2 block">
               Search Across Sources
             </label>
             <div className="relative">
@@ -231,11 +235,11 @@ export default function FeedFilterSheet({ onClose }) {
                       hover:bg-white/[0.1] transition-colors text-left"
                   >
                     {v.thumbnail && (
-                      <img src={v.thumbnail} alt="" className="w-16 h-10 rounded object-cover flex-none" />
+                      <img src={v.thumbnail} alt={v.title} className="w-16 h-10 rounded object-cover flex-none" />
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="text-xs text-white truncate">{v.title}</div>
-                      <div className="text-[10px] text-white/40">{v.source || v.uploader}</div>
+                      <div className="text-micro text-white/40">{v.source || v.uploader}</div>
                     </div>
                   </button>
                 ))}
@@ -248,7 +252,7 @@ export default function FeedFilterSheet({ onClose }) {
 
           {/* Source filter section */}
           <section className="mb-5">
-            <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider mb-2 block">
+            <label className="text-caption font-semibold text-white/40 uppercase tracking-wider mb-2 block">
               Sources
               {selectedSources.size > 0 && (
                 <span className="ml-2 text-accent normal-case">{selectedSources.size} selected</span>
@@ -268,7 +272,7 @@ export default function FeedFilterSheet({ onClose }) {
                     <button
                       key={domain}
                       onClick={() => toggleSource(domain)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border
+                      className={`px-3 min-h-[44px] rounded-full text-xs font-medium transition-all border
                         ${active
                           ? 'bg-accent/20 border-accent/40 text-accent'
                           : 'bg-white/[0.06] border-white/10 text-white/60 hover:text-white/80 hover:bg-white/[0.1]'
@@ -284,7 +288,7 @@ export default function FeedFilterSheet({ onClose }) {
 
           {/* Tag filter section */}
           <section className="mb-3">
-            <label className="text-[11px] font-semibold text-white/40 uppercase tracking-wider mb-2 block">
+            <label className="text-caption font-semibold text-white/40 uppercase tracking-wider mb-2 block">
               Tags
               {selectedTags.size > 0 && (
                 <span className="ml-2 text-accent normal-case">{selectedTags.size} selected</span>
@@ -303,7 +307,7 @@ export default function FeedFilterSheet({ onClose }) {
                     <button
                       key={tagName}
                       onClick={() => toggleTag(tagName)}
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all border
+                      className={`px-2.5 py-1 rounded-full text-caption font-medium transition-all border
                         ${active
                           ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
                           : 'bg-white/[0.05] border-white/[0.08] text-white/50 hover:text-white/70 hover:bg-white/[0.08]'

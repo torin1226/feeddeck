@@ -76,7 +76,7 @@ const ForYouSlot = memo(function ForYouSlot({ video, index, isActive, onVideoRef
 
     play()
     return () => { cancelled = true }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- muted/URL changes shouldn't restart playback
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, video.id])
 
   // Sync mute state
@@ -121,7 +121,7 @@ const ForYouSlot = memo(function ForYouSlot({ video, index, isActive, onVideoRef
         <>
           {/* Bottom gradient + metadata */}
           <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black/80 via-black/30 to-transparent pointer-events-none" />
-          <div className="absolute bottom-8 left-8 z-10 max-w-md">
+          <div className="absolute bottom-8 left-8 z-content max-w-md">
             <p className="text-white/50 text-xs uppercase tracking-widest mb-1 font-medium">{video.source}</p>
             <h2 className="text-white text-2xl font-bold leading-tight">{video.title}</h2>
             {video.creator && <p className="text-white/60 text-sm mt-1">{video.creator}</p>}
@@ -130,18 +130,30 @@ const ForYouSlot = memo(function ForYouSlot({ video, index, isActive, onVideoRef
           {/* Theatre button — top right */}
           <button
             onClick={() => useFeedStore.getState().setTheatreMode(true)}
-            className="absolute top-8 right-8 z-10 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-lg text-white/70 text-sm font-medium border border-white/10 hover:bg-black/60 hover:text-white transition-colors"
+            className="absolute top-8 right-8 z-content px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-lg text-white/70 text-sm font-medium border border-white/10 hover:bg-black/60 hover:text-white transition-colors"
             aria-label="Enter theatre mode"
           >
             ⛶ Theatre
           </button>
 
-          {/* Thin progress bar at bottom */}
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10 z-10">
-            <div
-              className="h-full bg-white/40 transition-[width] duration-300"
-              style={{ width: `${progress * 100}%` }}
-            />
+          {/* Progress bar at bottom — expanded click target */}
+          <div
+            className="absolute bottom-0 left-0 right-0 z-content group cursor-pointer"
+            style={{ padding: '8px 0 0 0' }}
+            onClick={(e) => {
+              const vid = videoRef.current
+              if (!vid || !vid.duration) return
+              const rect = e.currentTarget.getBoundingClientRect()
+              const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+              vid.currentTime = pct * vid.duration
+            }}
+          >
+            <div className="h-1 group-hover:h-2 bg-white/10 transition-all duration-150">
+              <div
+                className="h-full bg-white/40 group-hover:bg-white/60 transition-all duration-300"
+                style={{ width: `${progress * 100}%` }}
+              />
+            </div>
           </div>
         </>
       )}

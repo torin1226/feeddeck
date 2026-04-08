@@ -5,15 +5,15 @@ import useDesktopBreakpoint from '../hooks/useDesktopBreakpoint'
 const ForYouFeed = lazy(() => import('../components/feed/ForYouFeed'))
 const RemixFeed = lazy(() => import('../components/feed/RemixFeed'))
 import useModeStore from '../stores/modeStore'
-import useQueueStore from '../stores/queueStore'
 import useFeedGestures from '../hooks/useFeedGestures'
 import FeedVideo from '../components/feed/FeedVideo'
 import FeedToast from '../components/feed/FeedToast'
 import HeartBurst from '../components/feed/HeartBurst'
 import SourceControlSheet from '../components/feed/SourceControlSheet'
+import { useNavigate } from 'react-router-dom'
 import FeedBottomNav from '../components/feed/FeedBottomNav'
 import FeedFilterSheet from '../components/feed/FeedFilterSheet'
-import QueueSwipeAnimation from '../components/feed/QueueSwipeAnimation'
+// QueueSwipeAnimation removed — swipe-to-queue gesture replaced by explicit button
 
 // ============================================================
 // FeedPage
@@ -22,11 +22,10 @@ import QueueSwipeAnimation from '../components/feed/QueueSwipeAnimation'
 // ============================================================
 
 export default function FeedPage() {
-  const { buffer, currentIndex, loading, initialized, exhausted, initFeed, setCurrentIndex, resetFeed } = useFeedStore()
+  const { buffer, currentIndex, loading, initialized, exhausted, error: feedError, initFeed, setCurrentIndex, resetFeed } = useFeedStore()
   const immersive = useFeedStore(s => s.immersive)
   const overlayVisible = useFeedStore(s => s.overlayVisible)
   const { isSFW } = useModeStore()
-  const { addToQueue } = useQueueStore()
   const containerRef = useRef(null)
   const prevMode = useRef(isSFW)
 
@@ -34,8 +33,9 @@ export default function FeedPage() {
   const [toast, setToast] = useState(null)
   const [hearts, setHearts] = useState([])
   const [sourceSheet, setSourceSheet] = useState(null)
-  const [showSwipeAnim, setShowSwipeAnim] = useState(false)
 
+
+  const navigate = useNavigate()
   const isDesktop = useDesktopBreakpoint()
   const feedView = useFeedStore(s => s.feedView)
   const setFeedView = useFeedStore(s => s.setFeedView)
@@ -96,16 +96,22 @@ export default function FeedPage() {
     return () => observerRef.current?.disconnect()
   }, [buffer.length, setCurrentIndex])
 
-  // Gesture callbacks
+  // Gesture callbacks — unified gesture map (2026-03-27):
+  // Swipe left = previous, swipe right = next, swipe up = open source
   const handleSwipeLeft = useCallback(() => {
-    const video = buffer[currentIndex]
-    if (!video) return
-    addToQueue(video)
-    setShowSwipeAnim(true)
-    setToast({ id: Date.now(), message: '+ Added to queue' })
-  }, [buffer, currentIndex, addToQueue])
+    // Previous video
+    const prev = Math.max(currentIndex - 1, 0)
+    videoRefs.current[prev]?.scrollIntoView({ behavior: 'smooth' })
+  }, [currentIndex])
 
   const handleSwipeRight = useCallback(() => {
+    // Next video
+    const next = Math.min(currentIndex + 1, buffer.length - 1)
+    videoRefs.current[next]?.scrollIntoView({ behavior: 'smooth' })
+  }, [currentIndex, buffer.length])
+
+  const handleSwipeUp = useCallback(() => {
+    // Open source URL in new tab
     const video = buffer[currentIndex]
     if (video?.url) window.open(video.url, '_blank')
   }, [buffer, currentIndex])
@@ -131,11 +137,12 @@ export default function FeedPage() {
     if (video) setSourceSheet(video)
   }, [buffer, currentIndex])
 
-  // Wire gesture hook
+  // Wire gesture hook — unified gesture map
   useFeedGestures({
     containerRef,
-    onSwipeLeft: handleSwipeLeft,
-    onSwipeRight: handleSwipeRight,
+    onSwipeLeft: handleSwipeLeft,   // previous video
+    onSwipeRight: handleSwipeRight, // next video
+    onSwipeUp: handleSwipeUp,       // open source URL
     onDoubleTap: handleDoubleTap,
     onTap: handleTap,
     onLongPress: handleLongPress,
@@ -223,7 +230,7 @@ export default function FeedPage() {
     const prev = theatreDoubleTapRef.current
     if (now - prev.lastTap < 300) {
       // Double tap detected
-      // Access shared video via custom event dispatch
+      // Access shared video via module-level reference through a custom event
       const seekEvent = new CustomEvent('feed:seek', {
         detail: { delta: touch.clientX < window.innerWidth / 2 ? -10 : 10 }
       })
@@ -238,20 +245,19 @@ export default function FeedPage() {
   // Keyboard navigation (up/down + left/right for desktop)
   useEffect(() => {
     const handleKey = (e) => {
-      if (e.key === 'ArrowDown' || e.key === 'j') {
+      if (e.key === 'ArrowDown' || e.key === 'j' || e.key === 'ArrowRight') {
         e.preventDefault()
+        // Next video
         const next = Math.min(currentIndex + 1, buffer.length - 1)
         videoRefs.current[next]?.scrollIntoView({ behavior: 'smooth' })
-      } else if (e.key === 'ArrowUp' || e.key === 'k') {
+      } else if (e.key === 'ArrowUp' || e.key === 'k' || e.key === 'ArrowLeft') {
         e.preventDefault()
+        // Previous video
         const prev = Math.max(currentIndex - 1, 0)
         videoRefs.current[prev]?.scrollIntoView({ behavior: 'smooth' })
-      } else if (e.key === 'ArrowLeft') {
-        e.preventDefault()
-        handleSwipeLeft()
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault()
-        handleSwipeRight()
+      } else if (e.key === 'o' || e.key === 'O') {
+        // Open source URL (replaces old arrow key mapping)
+        handleSwipeUp()
       } else if (e.key === 'l' || e.key === 'L') {
         // Desktop double-tap equivalent: like
         handleDoubleTap({ changedTouches: [{ clientX: window.innerWidth / 2, clientY: window.innerHeight / 2 }] })
@@ -260,7 +266,7 @@ export default function FeedPage() {
 
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [currentIndex, buffer.length, handleSwipeLeft, handleSwipeRight, handleDoubleTap])
+  }, [currentIndex, buffer.length, handleSwipeUp, handleDoubleTap])
 
   // Immersive mode: auto-hide overlay after 3s
   useEffect(() => {
@@ -288,9 +294,24 @@ export default function FeedPage() {
   if (isDesktop) {
     return (
       <div className="h-dvh w-full bg-black relative">
+        {/* Back button — top left, only visible when not in theatre mode */}
+        {!theatreMode && (
+          <button
+            onClick={() => navigate('/')}
+            className="fixed top-4 left-4 z-toast w-10 h-10 rounded-full bg-black/40 backdrop-blur-lg border border-white/10 flex items-center justify-center text-white/70 hover:text-white hover:bg-black/60 transition-all"
+            aria-label="Back to home"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+          </button>
+        )}
+
         {/* Tab bar — top center, only visible when not in theatre mode */}
         {!theatreMode && (
-          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex gap-1 p-1 rounded-full bg-black/40 backdrop-blur-lg border border-white/10">
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-toast flex gap-1 p-1 rounded-full bg-black/40 backdrop-blur-lg border border-white/10">
             {['foryou', 'remix'].map(view => (
               <button
                 key={view}
@@ -321,6 +342,21 @@ export default function FeedPage() {
           <div className="w-10 h-10 border-2 border-white/20 border-t-white/70 rounded-full animate-spin" />
           <div className="text-text-muted text-sm animate-pulse">Loading feed...</div>
         </div>
+      </div>
+    )
+  }
+
+  if (initialized && feedError && buffer.length === 0) {
+    return (
+      <div className="h-dvh w-full bg-black flex flex-col items-center justify-center gap-3">
+        <div className="text-2xl">⚠</div>
+        <div className="text-text-muted text-sm font-medium">{feedError}</div>
+        <button
+          onClick={() => { resetFeed(); setTimeout(() => initFeed(), 100) }}
+          className="mt-2 px-5 py-2 rounded-full bg-accent text-white text-sm font-medium active:scale-95 transition-transform"
+        >
+          Retry
+        </button>
       </div>
     )
   }
@@ -386,7 +422,7 @@ export default function FeedPage() {
       {(!immersive || overlayVisible) && !theatreMode && (
         <button
           onClick={() => setFilterOpen(true)}
-          className={`fixed top-4 left-4 z-50 h-10 rounded-full
+          className={`fixed top-4 left-4 z-toast h-10 rounded-full
             bg-white/10 backdrop-blur-lg border border-white/20
             flex items-center justify-center gap-1.5 text-white/70
             active:scale-95 transition-all px-3
@@ -398,7 +434,7 @@ export default function FeedPage() {
             <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
           </svg>
           {hasActiveFilters && (
-            <span className="text-[11px] font-semibold">{filters.sources.length + filters.tags.length}</span>
+            <span className="text-caption font-semibold">{filters.sources.length + filters.tags.length}</span>
           )}
         </button>
       )}
@@ -411,7 +447,7 @@ export default function FeedPage() {
             resetFeed()
             useFeedStore.getState().initFeed().finally(() => setRefreshing(false))
           }}
-          className="fixed top-4 right-4 z-50 w-10 h-10 rounded-full
+          className="fixed top-4 right-4 z-toast w-10 h-10 rounded-full
             bg-white/10 backdrop-blur-lg border border-white/20
             flex items-center justify-center text-white/70
             active:scale-95 transition-transform"
@@ -429,7 +465,7 @@ export default function FeedPage() {
       {(!immersive || overlayVisible) && !theatreMode && (
         <button
           onClick={() => useFeedStore.getState().toggleImmersive()}
-          className={`fixed z-50 w-10 h-10 rounded-full
+          className={`fixed z-toast w-10 h-10 rounded-full
             bg-white/10 backdrop-blur-lg border border-white/20
             flex items-center justify-center text-white/70
             active:scale-95 transition-all duration-200
@@ -458,7 +494,7 @@ export default function FeedPage() {
 
       {/* Pull-to-refresh indicator */}
       {refreshing && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-toast px-4 py-2 rounded-full
           bg-white/15 backdrop-blur-lg border border-white/20 text-white text-sm">
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -485,11 +521,6 @@ export default function FeedPage() {
           onDone={() => setHearts(prev => prev.filter(p => p.id !== h.id))}
         />
       ))}
-
-      {/* Queue swipe animation */}
-      {showSwipeAnim && (
-        <QueueSwipeAnimation onDone={() => setShowSwipeAnim(false)} />
-      )}
 
       {/* Bottom navigation */}
       <FeedBottomNav hidden={navHidden || (immersive && !overlayVisible) || theatreMode} onFilterOpen={() => setFilterOpen(true)} />

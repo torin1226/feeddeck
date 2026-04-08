@@ -52,7 +52,7 @@ export default function DebugPanel({ open, onClose }) {
   const tabs = ['state', 'console', 'storage', 'network']
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-[200] bg-surface-raised border-t border-surface-border shadow-2xl">
+    <div className="fixed bottom-0 left-0 right-0 z-system bg-surface-raised border-t border-surface-border shadow-modal">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-surface-border">
         <div className="flex items-center gap-3">
@@ -130,7 +130,7 @@ export default function DebugPanel({ open, onClose }) {
                     <span className="text-accent">{key}</span>
                     <span className="text-text-muted">{kb} KB</span>
                   </div>
-                  <pre className="text-text-muted text-[10px] whitespace-pre-wrap break-all max-h-16 overflow-y-auto">
+                  <pre className="text-text-muted text-micro whitespace-pre-wrap break-all max-h-16 overflow-y-auto">
                     {raw ? JSON.stringify(JSON.parse(raw), null, 2).slice(0, 400) : 'empty'}
                   </pre>
                 </div>

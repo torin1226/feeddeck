@@ -8,7 +8,7 @@ import NextUpDialog from './NextUpDialog'
 export default function ForYouFeed() {
   const containerRef = useRef(null)
   const activeVideoRef = useRef(null)
-  const nextUpVisible = false // TODO: wire up NextUp feature
+  const [nextUpVisible] = useState(false)
 
   const buffer = useFeedStore(s => s.buffer)
   const currentIndex = useFeedStore(s => s.currentIndex)
@@ -17,6 +17,7 @@ export default function ForYouFeed() {
   const loading = useFeedStore(s => s.loading)
   const initialized = useFeedStore(s => s.initialized)
   const theatreMode = useFeedStore(s => s.theatreMode)
+  const feedError = useFeedStore(s => s.error)
 
   const nextVideo = buffer[currentIndex + 1] || null
 
@@ -111,6 +112,21 @@ export default function ForYouFeed() {
     )
   }
 
+  if (initialized && feedError && buffer.length === 0) {
+    return (
+      <div className="h-dvh w-full bg-black flex flex-col items-center justify-center gap-3">
+        <div className="text-2xl">⚠</div>
+        <div className="text-white/50 text-sm">{feedError}</div>
+        <button
+          onClick={() => { useFeedStore.getState().resetFeed(); setTimeout(() => initFeed(), 100) }}
+          className="mt-2 px-5 py-2 rounded-full bg-accent text-white text-sm font-medium active:scale-95 transition-transform"
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
+
   if (initialized && buffer.length === 0) {
     return (
       <div className="h-dvh w-full bg-black flex items-center justify-center">
@@ -137,16 +153,42 @@ export default function ForYouFeed() {
         ))}
       </div>
 
-      {/* Theatre mode overlays — rendered outside the scroll container */}
+      {/* Navigation arrows — always visible */}
+      {buffer.length > 1 && !theatreMode && (
+        <>
+          {currentIndex > 0 && (
+            <button
+              onClick={() => containerRef.current?.children[currentIndex - 1]?.scrollIntoView({ behavior: 'smooth', inline: 'start' })}
+              className="absolute left-4 top-1/2 -translate-y-1/2 z-overlay w-10 h-10 rounded-full bg-black/40 backdrop-blur-lg border border-white/10 text-white/70 flex items-center justify-center hover:bg-black/60 hover:text-white transition-colors"
+              aria-label="Previous video"
+            >
+              &#9664;
+            </button>
+          )}
+          {currentIndex < buffer.length - 1 && (
+            <button
+              onClick={() => containerRef.current?.children[currentIndex + 1]?.scrollIntoView({ behavior: 'smooth', inline: 'start' })}
+              className="absolute right-4 top-1/2 -translate-y-1/2 z-overlay w-10 h-10 rounded-full bg-black/40 backdrop-blur-lg border border-white/10 text-white/70 flex items-center justify-center hover:bg-black/60 hover:text-white transition-colors"
+              aria-label="Next video"
+            >
+              &#9654;
+            </button>
+          )}
+        </>
+      )}
+
+      {/* NextUpDialog — always available so auto-advance works */}
+      <NextUpDialog
+        videoRef={activeVideoRef}
+        nextVideo={nextVideo}
+        onAdvance={advanceToNext}
+      />
+
+      {/* Theatre mode overlays */}
       {theatreMode && (
         <>
           <TheatreOverlay videoRef={activeVideoRef} />
           <TheatreTimeline videoRef={activeVideoRef} nextUpVisible={nextUpVisible} />
-          <NextUpDialog
-            videoRef={activeVideoRef}
-            nextVideo={nextVideo}
-            onAdvance={advanceToNext}
-          />
         </>
       )}
     </div>
