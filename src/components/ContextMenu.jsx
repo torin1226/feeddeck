@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import useQueueStore from '../stores/queueStore'
 import useLibraryStore from '../stores/libraryStore'
+import useFocusTrap from '../hooks/useFocusTrap'
 
 // ============================================================
 // ContextMenu
@@ -11,6 +12,7 @@ import useLibraryStore from '../stores/libraryStore'
 
 export default function ContextMenu({ video, position, onClose }) {
   const menuRef = useRef(null)
+  const trapRef = useFocusTrap()
   const { addToQueue, insertNext } = useQueueStore()
   const { toggleFavorite, toggleWatchLater, setRating } = useLibraryStore()
 
@@ -36,11 +38,13 @@ export default function ContextMenu({ video, position, onClose }) {
     }
   }, [onClose])
 
-  // Clamp position so menu stays within viewport
+  // Clamp position so menu stays within viewport (all 4 edges)
+  const menuWidth = 200
+  const menuHeight = 260
   const style = {
     position: 'fixed',
-    left: Math.min(position.x, window.innerWidth - 200),
-    top: Math.min(position.y, window.innerHeight - 260),
+    left: Math.max(8, Math.min(position.x, window.innerWidth - menuWidth - 8)),
+    top: Math.max(8, Math.min(position.y, window.innerHeight - menuHeight - 8)),
     zIndex: 9999,
   }
 
@@ -56,10 +60,10 @@ export default function ContextMenu({ video, position, onClose }) {
 
   return (
     <div
-      ref={menuRef}
+      ref={(node) => { menuRef.current = node; trapRef.current = node }}
       style={style}
       className="min-w-[160px] bg-gray-900/95 backdrop-blur-md border border-white/15
-        rounded-lg shadow-2xl py-1 animate-fade-slide-in"
+        rounded-lg shadow-modal py-1 animate-fade-slide-in"
     >
       <button
         onClick={handleAddToQueue}
@@ -96,7 +100,7 @@ export default function ContextMenu({ video, position, onClose }) {
       </button>
       <div className="border-t border-white/10 my-1" />
       <div className="px-4 py-2">
-        <span className="text-white/50 text-[10px] uppercase tracking-wider font-semibold block mb-1.5">Rate</span>
+        <span className="text-white/50 text-micro uppercase tracking-wider font-semibold block mb-1.5">Rate</span>
         <div className="flex items-center gap-0.5">
           {[1, 2, 3, 4, 5].map(star => (
             <button

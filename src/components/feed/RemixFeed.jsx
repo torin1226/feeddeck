@@ -3,7 +3,23 @@ import useFeedStore from '../../stores/feedStore'
 import RemixHero from './RemixHero'
 import RemixCarousel from './RemixCarousel'
 
-// Group videos into categories by source
+// Seeded shuffle (Fisher-Yates with simple hash seed for stability within session)
+function seededShuffle(arr, seed = 0) {
+  const a = [...arr]
+  let s = seed
+  const next = () => { s = (s * 1664525 + 1013904223) & 0x7fffffff; return s / 0x7fffffff }
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(next() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+// Session-stable seed (changes daily, not on every render)
+const SESSION_SEED = Math.floor(Date.now() / 86400000)
+
+// Build categories that feel distinct from ForYou's sequential order.
+// Remix prioritizes discovery and variety over algorithmic ranking.
 function buildCategories(buffer) {
   const bySource = {}
 
@@ -13,15 +29,26 @@ function buildCategories(buffer) {
     bySource[src].push(video)
   }
 
-  // "All" category: first 20 videos
-  const categories = [{ id: 'all', label: 'All', videos: buffer.slice(0, 20) }]
+  const categories = []
 
-  // Per-source categories
-  for (const [source, videos] of Object.entries(bySource)) {
+  // "Discovery" — videos from the back half of the buffer (lower-ranked by algorithm,
+  // so these are things ForYou wouldn't surface prominently)
+  const backHalf = buffer.slice(Math.floor(buffer.length / 2))
+  if (backHalf.length > 0) {
+    categories.push({ id: 'discovery', label: 'Discovery', videos: seededShuffle(backHalf, SESSION_SEED).slice(0, 20) })
+  }
+
+  // Per-source categories, seeded shuffle for variety
+  const sourceEntries = Object.entries(bySource).sort((a, b) => b[1].length - a[1].length)
+  for (const [source, videos] of sourceEntries) {
     if (videos.length >= 2) {
-      categories.push({ id: source, label: source, videos: videos.slice(0, 15) })
+      categories.push({ id: source, label: source, videos: seededShuffle(videos, SESSION_SEED + source.length).slice(0, 15) })
     }
   }
+
+  // "Mix" — reverse-order seeded shuffle of all content (opposite end from ForYou)
+  const reversed = [...buffer].reverse()
+  categories.push({ id: 'mix', label: 'Mix', videos: seededShuffle(reversed, SESSION_SEED + 42).slice(0, 20) })
 
   return categories
 }
@@ -31,6 +58,7 @@ export default function RemixFeed() {
   const initFeed = useFeedStore(s => s.initFeed)
   const loading = useFeedStore(s => s.loading)
   const initialized = useFeedStore(s => s.initialized)
+  const feedError = useFeedStore(s => s.error)
 
   const [activeVideo, setActiveVideo] = useState(null)
   const [activeCategoryIdx, setActiveCategoryIdx] = useState(0)
@@ -96,6 +124,21 @@ export default function RemixFeed() {
     )
   }
 
+  if (initialized && feedError && buffer.length === 0) {
+    return (
+      <div className="h-dvh w-full bg-black flex flex-col items-center justify-center gap-3">
+        <div className="text-2xl">⚠</div>
+        <div className="text-white/50 text-sm">{feedError}</div>
+        <button
+          onClick={() => { useFeedStore.getState().resetFeed(); setTimeout(() => initFeed(), 100) }}
+          className="mt-2 px-5 py-2 rounded-full bg-accent text-white text-sm font-medium active:scale-95 transition-transform"
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
+
   if (initialized && buffer.length === 0) {
     return (
       <div className="h-dvh w-full bg-black flex items-center justify-center">
@@ -105,7 +148,7 @@ export default function RemixFeed() {
   }
 
   return (
-    <div className="relative w-full bg-black overflow-hidden select-none" style={{ height: '100vh' }}>
+    <div className="relative w-full bg-black overflow-hidden select-none" style={{ height: '100dvh' }}>
       <RemixHero video={activeVideo} />
       <RemixCarousel
         categories={categories}
