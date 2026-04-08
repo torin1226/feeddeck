@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import useViewTransitionNavigate from '../hooks/useViewTransitionNavigate'
 import useModeStore from '../stores/modeStore'
 import useLibraryStore from '../stores/libraryStore'
 import HomeHeader from '../components/home/HomeHeader'
@@ -23,7 +23,7 @@ const TABS = [
 ]
 
 export default function LibraryPage() {
-  const navigate = useNavigate()
+  const navigate = useViewTransitionNavigate()
   const isSFW = useModeStore((s) => s.isSFW)
   const { videos, loadFromServer, seedDemoData } = useLibraryStore()
   const [activeTab, setActiveTab] = useState('all')

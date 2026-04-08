@@ -53,6 +53,7 @@ const COOKIE_MAP = {
   'redtube.com':    { mode: 'nsfw' },
   'xhamster.com':   { mode: 'nsfw' },
   'youporn.com':    { mode: 'nsfw' },
+  'xnxx.com':       { mode: 'nsfw' },
 }
 
 /**

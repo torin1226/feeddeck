@@ -5,7 +5,7 @@ import { existsSync, writeFileSync, unlinkSync, statSync, readFileSync } from 'f
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { randomBytes } from 'crypto'
-import { getCookieArgs, MODE_COOKIE_FILES, LEGACY_COOKIE_FILE } from './cookies.js'
+import { getCookieArgs, COOKIE_MAP, MODE_COOKIE_FILES, LEGACY_COOKIE_FILE } from './cookies.js'
 import { initDatabase, db } from './database.js'
 import { registry, ytdlp as ytdlpAdapter, scraper as scraperAdapter, closeAllSources } from './sources/index.js'
 import { logger } from './logger.js'
@@ -57,10 +57,10 @@ app.use(express.json())
 // -----------------------------------------------------------
 // Mode inference: determine if a URL/source is NSFW or social
 // -----------------------------------------------------------
-const NSFW_DOMAINS = new Set([
-  'pornhub.com', 'xvideos.com', 'spankbang.com', 'redtube.com',
-  'youporn.com', 'xhamster.com', 'redgifs.com', 'fikfap.com', 'xnxx.com',
-])
+// Derived from COOKIE_MAP (single source of truth for domain→mode mapping)
+const NSFW_DOMAINS = new Set(
+  Object.entries(COOKIE_MAP).filter(([, v]) => v.mode === 'nsfw').map(([k]) => k)
+)
 
 function inferMode(urlOrSource) {
   if (!urlOrSource) return 'social'
