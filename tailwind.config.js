@@ -107,5 +107,10 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    // Variant for pointer: fine (non-touch devices) — used by CategoryRow nav arrows
+    function({ addVariant }) {
+      addVariant('pointer-fine', '@media (pointer: fine)')
+    },
+  ],
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import useThemeStore from '../stores/themeStore'
 import useModeStore from '../stores/modeStore'
+import useToastStore from '../stores/toastStore'
 import useViewTransitionNavigate from '../hooks/useViewTransitionNavigate'
 
 const API = '/api'
@@ -9,6 +10,7 @@ export default function SettingsPage() {
   const navigate = useViewTransitionNavigate()
   const { theme, toggleTheme } = useThemeStore()
   const { isSFW } = useModeStore()
+  const showToast = useToastStore(s => s.showToast)
   const [sources, setSources] = useState([])
   const [adapterHealth, setAdapterHealth] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -113,11 +115,13 @@ export default function SettingsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ active: !currentActive }),
     })
+    showToast(`Source ${!currentActive ? 'resumed' : 'paused'}`, 'success')
     fetchSources()
   }
 
   const deleteSource = async (domain) => {
     await fetch(`${API}/sources/${domain}`, { method: 'DELETE' })
+    showToast('Source removed', 'success')
     fetchSources()
   }
 
@@ -136,6 +140,7 @@ export default function SettingsPage() {
         setAddError(data.error || 'Failed to add source')
         return
       }
+      showToast(`Source "${data.source?.label || newSource.label}" added`, 'success')
       setNewSource({ domain: '', mode: 'nsfw', label: '', query: '' })
       setShowAdd(false)
       fetchSources()
@@ -159,15 +164,17 @@ export default function SettingsPage() {
     })
     const data = await res.json()
     if (res.ok) {
+      showToast('Cookies imported', 'success')
       fetchSources() // refresh cookie status
     } else {
-      alert(data.error || 'Failed to import cookies')
+      showToast(data.error || 'Failed to import cookies', 'error')
     }
     e.target.value = '' // reset file input
   }
 
   const handleCookieDelete = async (mode) => {
     await fetch(cookieUrl(mode), { method: 'DELETE' })
+    showToast('Cookies removed', 'success')
     fetchSources()
   }
 
@@ -178,12 +185,14 @@ export default function SettingsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tag: newTag.trim(), preference: newTagPref }),
     })
+    showToast(`Tag "${newTag.trim()}" ${newTagPref}`, 'success')
     setNewTag('')
     fetchSources()
   }
 
   const removeTagPref = async (tag) => {
     await fetch(`${API}/tags/preferences/${encodeURIComponent(tag)}`, { method: 'DELETE' })
+    showToast(`Tag "${tag}" removed`, 'success')
     fetchSources()
   }
 

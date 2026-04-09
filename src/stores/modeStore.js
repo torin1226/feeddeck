@@ -89,10 +89,21 @@ const useModeStore = create(
       // On hydration, always force SFW — no NSFW content before user explicitly toggles
       onRehydrateStorage: () => {
         setDocumentMeta(true)
-        return () => {
-          // Force SFW regardless of persisted value, then mark hydrated.
-          // This prevents any NSFW content from flashing on page load.
-          useModeStore.setState({ isSFW: true, _hydrated: true })
+        return (_state, error) => {
+          if (error) {
+            console.warn('[modeStore] Hydration error:', error)
+          }
+          // Use set from closure — useModeStore may not be assigned yet
+          // during initial module evaluation (circular ref race condition).
+          // Fall back to useModeStore.setState only if needed.
+          try {
+            useModeStore.setState({ isSFW: true, _hydrated: true })
+          } catch {
+            // If useModeStore isn't ready, retry on next microtask
+            queueMicrotask(() => {
+              useModeStore.setState({ isSFW: true, _hydrated: true })
+            })
+          }
           setDocumentMeta(true)
         }
       },

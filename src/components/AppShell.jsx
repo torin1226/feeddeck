@@ -6,6 +6,7 @@ import useDeviceStore from '../stores/deviceStore'
 import useModeStore from '../stores/modeStore'
 import ErrorBoundary from './ErrorBoundary'
 import FloatingQueue from './FloatingQueue'
+import GlobalToast from './GlobalToast'
 import OfflineBanner from './OfflineBanner'
 
 // Code-split route-level pages for smaller initial bundle
@@ -69,6 +70,7 @@ export default function AppShell() {
 
       {/* Global overlays — hide FloatingQueue on feed (immersive) */}
       {!isFeed && <FloatingQueue />}
+      <GlobalToast />
       <OfflineBanner />
     </>
   )

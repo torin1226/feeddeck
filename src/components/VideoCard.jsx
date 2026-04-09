@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import clsx from 'clsx'
 import useQueueStore from '../stores/queueStore'
 import useLibraryStore from '../stores/libraryStore'
+import useToastStore from '../stores/toastStore'
 import useHoverPreview from '../hooks/useHoverPreview'
 import ContextMenu from './ContextMenu'
 
@@ -16,8 +17,11 @@ import ContextMenu from './ContextMenu'
 export default function VideoCard({ video, onClick }) {
   const { addToQueue } = useQueueStore()
   const { toggleFavorite } = useLibraryStore()
+  const showToast = useToastStore(s => s.showToast)
   const [ctxMenu, setCtxMenu] = useState(null)
   const { startPreview, cancelPreview } = useHoverPreview()
+  const longPressTimer = useRef(null)
+  const longPressTriggered = useRef(false)
 
   const display = {
     title: video.title,
@@ -33,11 +37,34 @@ export default function VideoCard({ video, onClick }) {
     setCtxMenu({ x: e.clientX, y: e.clientY })
   }
 
+  const handleTouchStart = useCallback((e) => {
+    longPressTriggered.current = false
+    const touch = e.touches[0]
+    longPressTimer.current = setTimeout(() => {
+      longPressTriggered.current = true
+      setCtxMenu({ x: touch.clientX, y: touch.clientY })
+    }, 600)
+  }, [])
+
+  const handleTouchEnd = useCallback(() => {
+    clearTimeout(longPressTimer.current)
+  }, [])
+
+  const handleTouchMove = useCallback(() => {
+    clearTimeout(longPressTimer.current)
+  }, [])
+
   return (
     <div
       className="group cursor-pointer"
-      onClick={() => onClick?.(video)}
+      onClick={(e) => {
+        if (longPressTriggered.current) { longPressTriggered.current = false; return }
+        onClick?.(video)
+      }}
       onContextMenu={handleContextMenu}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchMove={handleTouchMove}
     >
       {/* Thumbnail container */}
       <div
@@ -80,7 +107,7 @@ export default function VideoCard({ video, onClick }) {
           <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
             {/* Add to queue */}
             <button
-              onClick={() => addToQueue(video)}
+              onClick={() => { addToQueue(video); showToast('Added to queue') }}
               title="Add to queue"
               aria-label="Add to queue"
               className="w-9 h-9 rounded-full bg-black/70 text-white flex items-center justify-center

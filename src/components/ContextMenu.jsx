@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import useQueueStore from '../stores/queueStore'
 import useLibraryStore from '../stores/libraryStore'
+import useToastStore from '../stores/toastStore'
 import useFocusTrap from '../hooks/useFocusTrap'
 
 // ============================================================
@@ -15,6 +16,7 @@ export default function ContextMenu({ video, position, onClose }) {
   const trapRef = useFocusTrap()
   const { addToQueue, insertNext } = useQueueStore()
   const { toggleFavorite, toggleWatchLater, setRating } = useLibraryStore()
+  const showToast = useToastStore(s => s.showToast)
 
   // Close on click outside or Escape
   useEffect(() => {
@@ -50,11 +52,13 @@ export default function ContextMenu({ video, position, onClose }) {
 
   const handleAddToQueue = () => {
     addToQueue(video)
+    showToast('Added to queue')
     onClose()
   }
 
   const handlePlayNext = () => {
     insertNext(video)
+    showToast('Playing next')
     onClose()
   }
 
