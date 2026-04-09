@@ -1680,7 +1680,12 @@ async function _refillFeedCacheImpl(mode) {
       // Personalize query by mixing in random liked tags
       let query = src.query
       if (likedTags.length > 0) {
-        const picked = likedTags.sort(() => Math.random() - 0.5).slice(0, 2)
+        const shuffled = [...likedTags]
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+        }
+        const picked = shuffled.slice(0, 2)
         query = `${src.query} ${picked.join(' ')}`
         logger.info(`  🎯 Personalized feed query: "${query}"`)
       }

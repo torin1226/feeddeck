@@ -113,13 +113,12 @@ export default function useFeedGestures({
     el.addEventListener('touchend', handleTouchEnd, { passive: true })
     el.addEventListener('touchcancel', handleTouchCancel, { passive: true })
 
-    const timer = longPressTimer.current
     return () => {
       el.removeEventListener('touchstart', handleTouchStart)
       el.removeEventListener('touchmove', handleTouchMove)
       el.removeEventListener('touchend', handleTouchEnd)
       el.removeEventListener('touchcancel', handleTouchCancel)
-      clearTimeout(timer)
+      clearTimeout(longPressTimer.current)
     }
   }, [containerRef])
 }

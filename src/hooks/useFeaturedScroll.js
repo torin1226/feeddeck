@@ -35,7 +35,6 @@ function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
 
 export default function useFeaturedScroll({
   zoneRef,
-  _stickyRef,
   cardsRef,
   chromeRef,
   overlayRef,

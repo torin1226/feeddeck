@@ -25,8 +25,7 @@ function doCancel(timerRef) {
 
   if (activeVideo) {
     activeVideo.pause()
-    activeVideo.removeAttribute('src')
-    activeVideo.load()
+    activeVideo.src = ''
     activeVideo.style.opacity = '0'
     activeVideo = null
   }

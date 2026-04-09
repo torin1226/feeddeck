@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import useThemeStore from '../stores/themeStore'
 import useModeStore from '../stores/modeStore'
 import useViewTransitionNavigate from '../hooks/useViewTransitionNavigate'
@@ -33,6 +33,17 @@ export default function SettingsPage() {
   const [seedLog, setSeedLog] = useState([])
   const [seedRunning, setSeedRunning] = useState(false)
   const [seedResult, setSeedResult] = useState(null)
+  const seedEsRef = useRef(null)
+
+  // Cleanup EventSource on unmount
+  useEffect(() => {
+    return () => {
+      if (seedEsRef.current) {
+        seedEsRef.current.close()
+        seedEsRef.current = null
+      }
+    }
+  }, [])
 
   const fetchSources = useCallback(async () => {
     try {
@@ -81,26 +92,31 @@ export default function SettingsPage() {
     setSeedLog([])
     setSeedResult(null)
     try {
+      if (seedEsRef.current) seedEsRef.current.close()
       const es = new EventSource(`${API}/recommendations/seed?platform=${seedPlatform}&force=1`)
+      seedEsRef.current = es
       es.onmessage = (e) => {
         const data = JSON.parse(e.data)
         if (data.type === 'complete') {
           setSeedResult(data)
           setSeedRunning(false)
           es.close()
+          seedEsRef.current = null
           fetchSources() // refresh tag prefs
         } else if (data.type === 'error') {
           setSeedLog(prev => [...prev, data.message])
           setSeedRunning(false)
           es.close()
+          seedEsRef.current = null
         } else {
           const msg = data.message || `${data.phase}: ${data.current}/${data.total}`
-          setSeedLog(prev => [...prev.slice(-20), msg])
+          setSeedLog(prev => [...prev.slice(-19), msg])
         }
       }
       es.onerror = () => {
         setSeedRunning(false)
         es.close()
+        seedEsRef.current = null
       }
     } catch {
       setSeedRunning(false)
