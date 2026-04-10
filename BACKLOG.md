@@ -389,7 +389,8 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 **Backend: Username Config**
 - [x] Store platform usernames in `preferences` table (key: `{platform}_username`)
 - [x] `PUT /api/recommendations/username` + `GET /api/recommendations/username` endpoints
-- [ ] Settings UI: text field for PornHub username (pre-filled if already set)
+- [x] Settings UI: text field for PornHub username (pre-filled if already set)
+  > Already implemented in Seed Recommendations section — platform selector + username field with auto-save on blur
 - [x] Endpoint uses stored username to construct history/favorites URLs
 - [x] Multi-platform support: pornhub, youtube, tiktok URL builders
 
@@ -428,7 +429,8 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 
 **Adapter changes needed:**
 - [x] Update `server/cookies.js` with per-domain → per-mode → legacy fallback chain (getCookieArgs resolves best cookie file automatically)
-- [ ] Update all callers that pass mode context (refillCategory, feed refill, search, metadata extraction) to forward mode to the adapter
+- [x] Update all callers that pass mode context (refillCategory, feed refill, search, metadata extraction) to forward mode to the adapter
+  > getCookieArgs() now accepts optional mode param. Mode threaded through: ytdlp adapter, registry, /api/search, /api/metadata, /api/stream-url, /api/stream-formats, refillCategory, _refillFeedCacheImpl, _preResolveStreamUrls
 - [x] Update `POST /api/cookies` endpoint to accept a `mode` param (social|nsfw) and write to the correct file
 - [x] Update `GET /api/cookies/status` to return status for both files (social, nsfw, legacy)
 - [x] Update Settings UI: two cookie import sections (Social cookies / NSFW cookies) with independent status indicators
