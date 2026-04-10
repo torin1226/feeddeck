@@ -234,7 +234,7 @@ function QueueRow({
   item,
   _index,
   isCurrent,
-  isSFW,
+  _isSFW,
   showDropIndicator,
   onRemove,
   onDragStart,
