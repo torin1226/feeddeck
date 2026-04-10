@@ -103,9 +103,10 @@ app.get('/api/health', async (req, res) => {
 app.get('/api/metadata', async (req, res) => {
   const { url } = req.query
   if (!url) return res.status(400).json({ error: 'URL required' })
+  const mode = req.query.mode || inferMode(url)
 
   try {
-    const metadata = await registry.extractMetadata(url)
+    const metadata = await registry.extractMetadata(url, { mode })
 
     // Save to database
     try {
@@ -147,6 +148,7 @@ app.get('/api/metadata', async (req, res) => {
 app.get('/api/stream-url', async (req, res) => {
   const { url, format } = req.query
   if (!url) return res.status(400).json({ error: 'URL required' })
+  const mode = req.query.mode || inferMode(url)
 
   // Check feed_cache for a cached, non-expired stream URL (skip cache if specific format requested)
   if (!format) {
@@ -170,7 +172,7 @@ app.get('/api/stream-url', async (req, res) => {
 
   try {
     // Use registry with fallback chain (yt-dlp → cobalt)
-    const cdnUrl = await registry.getStreamUrl(url, format ? { format } : undefined)
+    const cdnUrl = await registry.getStreamUrl(url, { mode, ...(format ? { format } : {}) })
 
     logger.info('Resolved stream URL', { format: cdnUrl.includes('.m3u8') ? 'HLS' : 'MP4', url: cdnUrl.substring(0, 80) })
 
@@ -208,6 +210,7 @@ app.get('/api/stream-url', async (req, res) => {
 app.get('/api/stream-formats', async (req, res) => {
   const { url } = req.query
   if (!url) return res.status(400).json({ error: 'URL required' })
+  const mode = req.query.mode || inferMode(url)
 
   try {
     const { execFile } = await import('child_process')
@@ -215,7 +218,7 @@ app.get('/api/stream-formats', async (req, res) => {
     const execFileAsync = promisify(execFile)
 
     const { stdout } = await execFileAsync('yt-dlp', [
-      ...getCookieArgs(url), '-j', '--no-warnings', '--no-playlist', url
+      ...getCookieArgs(url, mode), '-j', '--no-warnings', '--no-playlist', url
     ], { timeout: 30000 })
 
     const info = JSON.parse(stdout)
@@ -731,7 +734,9 @@ app.get('/api/recommendations/seed', async (req, res) => {
           const d = JSON.parse(line)
           const url = d.webpage_url || d.url
           if (url) allVideoUrls.push(url)
-        } catch {}
+        } catch (parseErr) {
+          logger.warn('Skipping malformed yt-dlp JSON line during seed', { line: line.substring(0, 120) })
+        }
       }
       send({ type: 'status', message: `${src.label}: found ${entries.length} videos` })
     } catch (err) {
@@ -887,12 +892,16 @@ app.get('/api/discover', (req, res) => {
           if (liked.has(t)) score += 2
           if (disliked.has(t)) score -= 5
         }
-      } catch {}
+      } catch (parseErr) {
+        logger.warn('Malformed tags JSON in discover scoring', { videoId: v.id, tags: String(v.tags).substring(0, 80) })
+      }
       // Bonus for favorited
       if (v.favorite) score += 1
       // Bonus for highly rated
       if (v.rating >= 4) score += 1
-      return { ...v, score, tags: v.tags ? JSON.parse(v.tags) : [], durationFormatted: formatDuration(v.duration) }
+      let parsedTags = []
+      try { parsedTags = v.tags ? JSON.parse(v.tags) : [] } catch {}
+      return { ...v, score, tags: parsedTags, durationFormatted: formatDuration(v.duration) }
     })
 
     // Sort by score descending, then by added_at
@@ -1010,6 +1019,7 @@ app.delete('/api/playlists/:id/items/:itemId', (req, res) => {
 app.get('/api/search', (req, res) => {
   const { q, count = 12, site } = req.query
   if (!q) return res.status(400).json({ error: 'Search query required' })
+  const mode = getMode(req)
 
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -1020,7 +1030,7 @@ app.get('/api/search', (req, res) => {
   const limit = parseInt(count, 10)
 
   // Use the yt-dlp adapter's streaming search for SSE
-  const stream = ytdlpAdapter.streamSearch(q, { site, limit })
+  const stream = ytdlpAdapter.streamSearch(q, { site, limit, mode })
 
   stream.onVideo((video) => {
     res.write(`data: ${JSON.stringify({ ...video, durationFormatted: formatDuration(video.duration) })}\n\n`)
@@ -1411,12 +1421,12 @@ async function refillCategory(categoryKey) {
       // Extract domain from URL for site-specific routing
       try {
         const domain = new URL(query).hostname.replace(/^www\./, '')
-        videos = await registry.search(query, { site: domain, limit: 12 })
+        videos = await registry.search(query, { site: domain, limit: 12, mode: cat.mode })
       } catch {
-        videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
+        videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12, mode: cat.mode })
       }
     } else {
-      videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
+      videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12, mode: cat.mode })
     }
 
     const insert = db.prepare(`
@@ -1685,7 +1695,7 @@ async function _refillFeedCacheImpl(mode) {
         logger.info(`  🎯 Personalized feed query: "${query}"`)
       }
       // Use registry search with fallback chain (scraper → yt-dlp)
-      const videos = await registry.search(query, { site: src.domain, limit: 20 })
+      const videos = await registry.search(query, { site: src.domain, limit: 20, mode })
 
       const insert = db.prepare(`
         INSERT OR IGNORE INTO feed_cache (id, source_domain, mode, url, title, creator, thumbnail, duration, orientation, tags, fetched_at, expires_at)
@@ -1722,7 +1732,7 @@ async function _refillFeedCacheImpl(mode) {
       // Pre-resolve stream URLs for newly added videos (2.8 Tier 1)
       if (newVideoUrls.length > 0) {
         logger.info(`  🔗 Pre-resolving stream URLs for ${newVideoUrls.length} new videos...`)
-        await _preResolveStreamUrls(newVideoUrls)
+        await _preResolveStreamUrls(newVideoUrls, mode)
       }
     } catch (err) {
       logger.error(`  ❌ Feed refill failed for ${src.label}:`, { error: err.message })
@@ -1737,7 +1747,7 @@ async function _refillFeedCacheImpl(mode) {
 // ready-to-play URLs without a per-video /api/stream-url call.
 // -----------------------------------------------------------
 const STREAM_RESOLVE_CONCURRENCY = 3
-async function _preResolveStreamUrls(videoUrls) {
+async function _preResolveStreamUrls(videoUrls, mode) {
   const updateStmt = db.prepare(
     `UPDATE feed_cache SET stream_url = ?, expires_at = datetime('now', '+2 hours') WHERE url = ?`
   )
@@ -1750,7 +1760,7 @@ async function _preResolveStreamUrls(videoUrls) {
     const results = await Promise.allSettled(
       batch.map(async (url) => {
         // Use registry with fallback chain (yt-dlp → cobalt)
-        const cdnUrl = await registry.getStreamUrl(url)
+        const cdnUrl = await registry.getStreamUrl(url, { mode })
         updateStmt.run(cdnUrl, url)
         return cdnUrl
       })

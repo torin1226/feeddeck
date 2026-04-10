@@ -150,10 +150,26 @@ export class ScraperAdapter extends SourceAdapter {
     })
     this.browser = null
     this._consecutiveFailures = 0
+    this._browserLaunchedAt = null
   }
 
   async _getBrowser() {
+    // Force-restart browser after 30 minutes to prevent memory bloat
+    const MAX_BROWSER_AGE_MS = 30 * 60_000
+    if (this.browser?.connected && this._browserLaunchedAt &&
+        Date.now() - this._browserLaunchedAt > MAX_BROWSER_AGE_MS) {
+      logger.info('Scraper: recycling browser after 30min')
+      await this.browser.close().catch(() => {})
+      this.browser = null
+    }
+
     if (this.browser?.connected) return this.browser
+
+    // Previous browser disconnected or never started — clean up
+    if (this.browser) {
+      await this.browser.close().catch(() => {})
+      this.browser = null
+    }
 
     const pptr = await getPuppeteer()
     this.browser = await pptr.launch({
@@ -165,6 +181,7 @@ export class ScraperAdapter extends SourceAdapter {
         '--disable-gpu',
       ],
     })
+    this._browserLaunchedAt = Date.now()
     return this.browser
   }
 
@@ -307,8 +324,14 @@ export class ScraperAdapter extends SourceAdapter {
       }))
     } catch (err) {
       this._consecutiveFailures++
-      // Close browser after 3 consecutive failures to prevent zombie processes
-      if (this._consecutiveFailures >= 3) {
+      // Close browser immediately if it disconnected (crashed)
+      if (this.browser && !this.browser.connected) {
+        logger.warn('Scraper: browser disconnected, cleaning up', { error: err.message })
+        await this.browser.close().catch(() => {})
+        this.browser = null
+        this._consecutiveFailures = 0
+      } else if (this._consecutiveFailures >= 3) {
+        // Close browser after 3 consecutive failures to prevent zombie processes
         logger.warn(`Scraper: ${this._consecutiveFailures} consecutive failures, closing browser`, { error: err.message })
         await this.browser?.close().catch(() => {})
         this.browser = null

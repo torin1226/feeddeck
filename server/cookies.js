@@ -60,9 +60,11 @@ const COOKIE_MAP = {
  * Returns yt-dlp cookie arguments for a given URL.
  * Handles regular URLs, yt-dlp search strings (ytsearch:...), and unknown domains.
  * @param {string} url - URL or yt-dlp search string
+ * @param {string} [mode] - Optional mode hint ('social'|'nsfw') used for mode-based
+ *   cookie fallback when the URL domain isn't in COOKIE_MAP
  * @returns {string[]} yt-dlp args (e.g. ['--cookies', '/path/to/file'] or [])
  */
-export function getCookieArgs(url) {
+export function getCookieArgs(url, mode) {
   if (!url) return []
 
   let domain
@@ -87,6 +89,12 @@ export function getCookieArgs(url) {
         break
       }
     }
+  }
+
+  // If no domain config found but caller provided a mode hint, use it
+  // for mode-based cookie fallback
+  if (!config && mode) {
+    config = { mode }
   }
 
   // Resolve cookie file: per-domain → mode-based → legacy → none

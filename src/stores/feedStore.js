@@ -214,14 +214,15 @@ function _warmStreamUrls(videos) {
       .then(r => r.json())
       .then(data => {
         if (data.streamUrl) {
-          // Update the video in the buffer so FeedVideo picks it up
-          const state = useFeedStore.getState()
-          const idx = state.buffer.findIndex(b => b.id === v.id)
-          if (idx !== -1) {
+          // Atomic update — avoids read-modify-write race when multiple
+          // warm requests resolve concurrently
+          useFeedStore.setState(state => {
+            const idx = state.buffer.findIndex(b => b.id === v.id)
+            if (idx === -1) return state
             const updated = [...state.buffer]
             updated[idx] = { ...updated[idx], streamUrl: data.streamUrl }
-            useFeedStore.setState({ buffer: updated })
-          }
+            return { buffer: updated }
+          })
         }
       })
       .catch(() => {}) // silent — video will still resolve on-demand
