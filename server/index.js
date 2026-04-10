@@ -103,9 +103,10 @@ app.get('/api/health', async (req, res) => {
 app.get('/api/metadata', async (req, res) => {
   const { url } = req.query
   if (!url) return res.status(400).json({ error: 'URL required' })
+  const mode = getMode(req)
 
   try {
-    const metadata = await registry.extractMetadata(url)
+    const metadata = await registry.extractMetadata(url, { mode })
 
     // Save to database
     try {
@@ -147,6 +148,7 @@ app.get('/api/metadata', async (req, res) => {
 app.get('/api/stream-url', async (req, res) => {
   const { url, format } = req.query
   if (!url) return res.status(400).json({ error: 'URL required' })
+  const mode = getMode(req)
 
   // Check feed_cache for a cached, non-expired stream URL (skip cache if specific format requested)
   if (!format) {
@@ -170,7 +172,7 @@ app.get('/api/stream-url', async (req, res) => {
 
   try {
     // Use registry with fallback chain (yt-dlp → cobalt)
-    const cdnUrl = await registry.getStreamUrl(url, format ? { format } : undefined)
+    const cdnUrl = await registry.getStreamUrl(url, { mode, ...(format ? { format } : {}) })
 
     logger.info('Resolved stream URL', { format: cdnUrl.includes('.m3u8') ? 'HLS' : 'MP4', url: cdnUrl.substring(0, 80) })
 
@@ -215,7 +217,7 @@ app.get('/api/stream-formats', async (req, res) => {
     const execFileAsync = promisify(execFile)
 
     const { stdout } = await execFileAsync('yt-dlp', [
-      ...getCookieArgs(url), '-j', '--no-warnings', '--no-playlist', url
+      ...getCookieArgs(url, getMode(req)), '-j', '--no-warnings', '--no-playlist', url
     ], { timeout: 30000 })
 
     const info = JSON.parse(stdout)
@@ -716,12 +718,13 @@ app.get('/api/recommendations/seed', async (req, res) => {
   const { execFile } = await import('child_process')
   const { promisify } = await import('util')
   const execFileP = promisify(execFile)
+  const seedMode = platform === 'pornhub' ? 'nsfw' : 'social'
   const allVideoUrls = []
   for (const src of urls) {
     send({ type: 'progress', phase: 'scan', source: src.label })
     try {
       const { stdout } = await execFileP('yt-dlp', [
-        ...getCookieArgs(src.url), '--flat-playlist', '--dump-json', '--no-warnings',
+        ...getCookieArgs(src.url, seedMode), '--flat-playlist', '--dump-json', '--no-warnings',
         '--socket-timeout', '10', src.url
       ], { encoding: 'utf8', timeout: 60000, maxBuffer: 10 * 1024 * 1024, windowsHide: true })
 
@@ -762,7 +765,7 @@ app.get('/api/recommendations/seed', async (req, res) => {
     }
     try {
       const { stdout } = await execFileP('yt-dlp', [
-        ...getCookieArgs(url), '--dump-json', '--skip-download', '--no-playlist', '--no-warnings',
+        ...getCookieArgs(url, seedMode), '--dump-json', '--skip-download', '--no-playlist', '--no-warnings',
         '--socket-timeout', '10', url
       ], { encoding: 'utf8', timeout: 30000, maxBuffer: 5 * 1024 * 1024, windowsHide: true })
 
@@ -1009,6 +1012,7 @@ app.delete('/api/playlists/:id/items/:itemId', (req, res) => {
 // -----------------------------------------------------------
 app.get('/api/search', (req, res) => {
   const { q, count = 12, site } = req.query
+  const mode = getMode(req)
   if (!q) return res.status(400).json({ error: 'Search query required' })
 
   res.writeHead(200, {
@@ -1020,7 +1024,7 @@ app.get('/api/search', (req, res) => {
   const limit = parseInt(count, 10)
 
   // Use the yt-dlp adapter's streaming search for SSE
-  const stream = ytdlpAdapter.streamSearch(q, { site, limit })
+  const stream = ytdlpAdapter.streamSearch(q, { site, limit, mode })
 
   stream.onVideo((video) => {
     res.write(`data: ${JSON.stringify({ ...video, durationFormatted: formatDuration(video.duration) })}\n\n`)
@@ -1060,7 +1064,7 @@ app.get('/api/search/multi', async (req, res) => {
       videos = await scraperAdapter.searchAll(q, { limit: parseInt(limit, 10) })
     } else {
       // Social: use yt-dlp YouTube search (scraper only has NSFW sites)
-      videos = await registry.search(q, { site: 'youtube.com', limit: parseInt(limit, 10) })
+      videos = await registry.search(q, { site: 'youtube.com', limit: parseInt(limit, 10), mode })
     }
     res.json({
       query: q,
@@ -1212,7 +1216,7 @@ app.post('/api/sources', express.json(), async (req, res) => {
   // Test the source with a quick search to verify it works
   try {
     logger.info(`Testing new source: ${domain}`, { query })
-    const testResults = await registry.search(query, { site: domain, limit: 3 })
+    const testResults = await registry.search(query, { site: domain, limit: 3, mode })
     if (testResults.length === 0) {
       return res.status(422).json({ error: `Source test returned 0 results for "${query}" on ${domain}` })
     }
@@ -1411,12 +1415,12 @@ async function refillCategory(categoryKey) {
       // Extract domain from URL for site-specific routing
       try {
         const domain = new URL(query).hostname.replace(/^www\./, '')
-        videos = await registry.search(query, { site: domain, limit: 12 })
+        videos = await registry.search(query, { site: domain, limit: 12, mode: cat.mode })
       } catch {
-        videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
+        videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12, mode: cat.mode })
       }
     } else {
-      videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
+      videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12, mode: cat.mode })
     }
 
     const insert = db.prepare(`
@@ -1685,7 +1689,7 @@ async function _refillFeedCacheImpl(mode) {
         logger.info(`  🎯 Personalized feed query: "${query}"`)
       }
       // Use registry search with fallback chain (scraper → yt-dlp)
-      const videos = await registry.search(query, { site: src.domain, limit: 20 })
+      const videos = await registry.search(query, { site: src.domain, limit: 20, mode })
 
       const insert = db.prepare(`
         INSERT OR IGNORE INTO feed_cache (id, source_domain, mode, url, title, creator, thumbnail, duration, orientation, tags, fetched_at, expires_at)
@@ -1722,7 +1726,7 @@ async function _refillFeedCacheImpl(mode) {
       // Pre-resolve stream URLs for newly added videos (2.8 Tier 1)
       if (newVideoUrls.length > 0) {
         logger.info(`  🔗 Pre-resolving stream URLs for ${newVideoUrls.length} new videos...`)
-        await _preResolveStreamUrls(newVideoUrls)
+        await _preResolveStreamUrls(newVideoUrls, mode)
       }
     } catch (err) {
       logger.error(`  ❌ Feed refill failed for ${src.label}:`, { error: err.message })
@@ -1737,7 +1741,7 @@ async function _refillFeedCacheImpl(mode) {
 // ready-to-play URLs without a per-video /api/stream-url call.
 // -----------------------------------------------------------
 const STREAM_RESOLVE_CONCURRENCY = 3
-async function _preResolveStreamUrls(videoUrls) {
+async function _preResolveStreamUrls(videoUrls, mode) {
   const updateStmt = db.prepare(
     `UPDATE feed_cache SET stream_url = ?, expires_at = datetime('now', '+2 hours') WHERE url = ?`
   )
@@ -1750,7 +1754,7 @@ async function _preResolveStreamUrls(videoUrls) {
     const results = await Promise.allSettled(
       batch.map(async (url) => {
         // Use registry with fallback chain (yt-dlp → cobalt)
-        const cdnUrl = await registry.getStreamUrl(url)
+        const cdnUrl = await registry.getStreamUrl(url, { mode })
         updateStmt.run(cdnUrl, url)
         return cdnUrl
       })
@@ -1858,7 +1862,7 @@ function startStreamUrlTTLMonitor() {
     try {
       // Find URLs expiring in the next 15 minutes that still have a stream_url
       const expiring = db.prepare(`
-        SELECT url FROM feed_cache
+        SELECT url, mode FROM feed_cache
         WHERE stream_url IS NOT NULL
           AND expires_at IS NOT NULL
           AND expires_at <= datetime('now', '+15 minutes')
@@ -1869,7 +1873,15 @@ function startStreamUrlTTLMonitor() {
       if (expiring.length === 0) return
 
       logger.info(`  🔄 TTL monitor: ${expiring.length} stream URLs expiring soon, re-resolving...`)
-      await _preResolveStreamUrls(expiring.map(v => v.url))
+      // Group by mode to pass correct cookie context
+      const byMode = {}
+      for (const v of expiring) {
+        const m = v.mode || 'social'
+        ;(byMode[m] ||= []).push(v.url)
+      }
+      for (const [m, urls] of Object.entries(byMode)) {
+        await _preResolveStreamUrls(urls, m)
+      }
     } catch (err) {
       logger.error('TTL monitor error:', { error: err.message })
     }

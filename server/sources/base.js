@@ -35,11 +35,11 @@ export class SourceAdapter {
   }
 
   // Extraction methods (getting details for a known URL)
-  async extractMetadata(url) {
+  async extractMetadata(url, options = {}) {
     throw new Error(`${this.name}: extractMetadata() not implemented`)
   }
 
-  async getStreamUrl(url) {
+  async getStreamUrl(url, options = {}) {
     throw new Error(`${this.name}: getStreamUrl() not implemented`)
   }
 

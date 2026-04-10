@@ -34,7 +34,7 @@ export default function SourceControlSheet({ video, onClose }) {
         className="relative w-full max-w-md bg-surface-raised/90 backdrop-blur-2xl rounded-t-2xl p-5 pb-8 animate-fade-slide-in shadow-[0_-4px_24px_rgba(0,0,0,0.3)]"
         onClick={e => e.stopPropagation()}
       >
-        <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mb-4" />
+        <div className="w-10 h-1 bg-highlight-strong rounded-full mx-auto mb-4" />
 
         <div className="text-sm text-text-muted mb-3 truncate">
           Source: <span className="text-text-primary">{video.source || 'Unknown'}</span>
@@ -43,8 +43,8 @@ export default function SourceControlSheet({ video, onClose }) {
         <button
           onClick={() => handleAction('boost')}
           disabled={submitting}
-          className="w-full py-3 px-4 rounded-xl bg-white/10 text-white text-sm font-medium
-            hover:bg-white/15 transition-colors mb-2 text-left"
+          className="w-full py-3 px-4 rounded-xl bg-highlight text-white text-sm font-medium
+            hover:bg-highlight-medium transition-colors mb-2 text-left"
         >
           + More from this source
         </button>
@@ -52,7 +52,7 @@ export default function SourceControlSheet({ video, onClose }) {
         <button
           onClick={() => handleAction('hide')}
           disabled={submitting}
-          className="w-full py-3 px-4 rounded-xl bg-white/10 text-red-400 text-sm font-medium
+          className="w-full py-3 px-4 rounded-xl bg-highlight text-red-400 text-sm font-medium
             hover:bg-red-500/15 transition-colors text-left"
         >
           - Hide this source

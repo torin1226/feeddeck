@@ -22,6 +22,14 @@
   --color-gradient-mid: rgba(17, 17, 19, 0.55);
   --color-gradient-light: rgba(17, 17, 19, 0.3);
   --color-gradient-faint: rgba(17, 17, 19, 0.15);
+  /* Glass material backgrounds */
+  --color-glass: rgba(17, 17, 19, 0.80);
+  --color-glass-heavy: rgba(17, 17, 19, 0.95);
+  /* Interactive highlight overlays */
+  --color-highlight-subtle: rgba(255, 255, 255, 0.05);
+  --color-highlight: rgba(255, 255, 255, 0.10);
+  --color-highlight-medium: rgba(255, 255, 255, 0.15);
+  --color-highlight-strong: rgba(255, 255, 255, 0.20);
 }
 
 .light {
@@ -39,6 +47,24 @@
   --color-gradient-mid: rgba(248, 248, 250, 0.55);
   --color-gradient-light: rgba(248, 248, 250, 0.3);
   --color-gradient-faint: rgba(248, 248, 250, 0.15);
+  --color-glass: rgba(255, 255, 255, 0.80);
+  --color-glass-heavy: rgba(255, 255, 255, 0.95);
+  --color-highlight-subtle: rgba(0, 0, 0, 0.03);
+  --color-highlight: rgba(0, 0, 0, 0.06);
+  --color-highlight-medium: rgba(0, 0, 0, 0.09);
+  --color-highlight-strong: rgba(0, 0, 0, 0.12);
+}
+
+/* Glass material utilities — two standard levels for floating UI */
+.glass {
+  background: var(--color-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.glass-heavy {
+  background: var(--color-glass-heavy);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 /* Global focus-visible styles for keyboard accessibility */

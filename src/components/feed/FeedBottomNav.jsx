@@ -26,7 +26,7 @@ export default function FeedBottomNav({ hidden = false, onFilterOpen }) {
 
   return (
     <nav className={`fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around
-      bg-black/80 backdrop-blur-lg border-t border-white/10 pb-safe
+      glass border-t border-highlight pb-safe
       transition-transform duration-200 ${hidden ? 'translate-y-full' : 'translate-y-0'}`}
       style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 8px)' }}
     >

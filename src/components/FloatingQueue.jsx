@@ -119,8 +119,8 @@ export default function FloatingQueue() {
       <button
         onClick={() => setExpanded(true)}
         className={`fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-2.5
-          bg-gray-900/90 backdrop-blur-sm rounded-full shadow-lg
-          border border-white/10 hover:border-white/20
+          glass rounded-full shadow-lg
+          border border-highlight hover:border-highlight-strong
           transition-all duration-200 cursor-pointer
           ${pulsing ? 'animate-queue-pulse' : ''}`}
       >
@@ -157,11 +157,11 @@ export default function FloatingQueue() {
     <div
       ref={panelRef}
       className="fixed bottom-6 right-6 z-50 w-80 max-h-[60vh] flex flex-col
-        bg-gray-900/95 backdrop-blur-md rounded-xl border border-white/10 shadow-2xl
+        glass-heavy rounded-xl border border-highlight shadow-2xl border-t-highlight-medium
         animate-fade-slide-in"
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-highlight shrink-0">
         <h3 className="text-sm font-semibold text-white">
           Queue
           {queue.length > 0 && (
@@ -214,7 +214,7 @@ export default function FloatingQueue() {
       <button
         onClick={() => setExpanded(false)}
         aria-label="Collapse queue"
-        className="flex items-center justify-center py-2 border-t border-white/10
+        className="flex items-center justify-center py-2 border-t border-highlight
           text-white/40 hover:text-white/70 transition-colors shrink-0"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>

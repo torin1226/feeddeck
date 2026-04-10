@@ -27,7 +27,17 @@ export default {
         sfw: {
           DEFAULT: '#f59e0b',
           bg: '#78350f',
-        }
+        },
+        glass: {
+          DEFAULT: 'var(--color-glass)',
+          heavy: 'var(--color-glass-heavy)',
+        },
+        highlight: {
+          subtle: 'var(--color-highlight-subtle)',
+          DEFAULT: 'var(--color-highlight)',
+          medium: 'var(--color-highlight-medium)',
+          strong: 'var(--color-highlight-strong)',
+        },
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],

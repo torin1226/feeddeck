@@ -259,7 +259,8 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 - [x] Increase preload window: bump PRELOAD_AHEAD from 2 to 3-4 on fast connections. Detect via `navigator.connection.effectiveType`
 
 **Tier 3 — Premium smoothness:**
-- [ ] Service worker video segment caching: cache first ~500KB of each preloaded video response. Swipe transitions start from cache instantly while rest streams in background
+- [x] Service worker video segment caching: cache first ~500KB of each preloaded video response. Swipe transitions start from cache instantly while rest streams in background
+  > Done (2026-04-10): `public/sw.js` intercepts `/api/proxy-stream` requests, caches first 500KB per video (max 30 entries), registered in `src/main.jsx`. Range requests bypass cache for seeking.
 - [x] Adaptive preload depth: use Network Information API to adjust strategy. 4G/WiFi → preload 4 ahead, 3G → preload 1 + lower quality (already implemented in FeedVideo._getPreloadWindow())
 - [x] Stream URL TTL monitoring: proactive re-resolve for URLs expiring within 15min (5min check interval). Also fixed /api/stream-url to check expires_at before serving cached URLs
 
@@ -428,7 +429,8 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 
 **Adapter changes needed:**
 - [x] Update `server/cookies.js` with per-domain → per-mode → legacy fallback chain (getCookieArgs resolves best cookie file automatically)
-- [ ] Update all callers that pass mode context (refillCategory, feed refill, search, metadata extraction) to forward mode to the adapter
+- [x] Update all callers that pass mode context (refillCategory, feed refill, search, metadata extraction) to forward mode to the adapter
+  > Done (2026-04-10): Added `mode` parameter to `getCookieArgs()`, threaded through `ytdlp()` helper, `SourceAdapter` base class, `SourceRegistry`, and all 12+ call sites in `server/index.js`. NSFW cookies now stay isolated from social requests.
 - [x] Update `POST /api/cookies` endpoint to accept a `mode` param (social|nsfw) and write to the correct file
 - [x] Update `GET /api/cookies/status` to return status for both files (social, nsfw, legacy)
 - [x] Update Settings UI: two cookie import sections (Social cookies / NSFW cookies) with independent status indicators
@@ -633,12 +635,12 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 - [x] Shift accent from Netflix Red (#e50914) to Rose (#f43f5e) — one Tailwind token change
 - [x] Update accent-hover and accent-muted tokens to match new accent
 - [x] Warm up base surface: shift #0a0a0b to #111113 (subtle blue tint)
-- [?] Consolidate raw color values to tokens: replace all `bg-gray-900/*`, `bg-white/*`, `bg-black/*` with surface-token equivalents
-  > NOTE: This is a large sweeping change best done as a dedicated cleanup pass
-- [?] Establish two glass material tokens in index.css
-  > NOTE: Deferred to a dedicated cleanup pass
-- [?] Add 1px top highlight (`border-t border-white/[0.04]`) on raised cards for depth
-  > NOTE: Deferred to a dedicated cleanup pass
+- [x] Consolidate raw color values to tokens: replace all `bg-gray-900/*`, `bg-white/*`, `bg-black/*` with surface-token equivalents
+  > Done (2026-04-10): Added `highlight` tokens (subtle/DEFAULT/medium/strong) to CSS vars + Tailwind config. Replaced raw `bg-gray-900/*`, `bg-white/*`, `border-white/*` in 7 key components (FloatingQueue, ContextMenu, FeedBottomNav, NextUpDialog, TheatreOverlay, FeedFilterSheet, SourceControlSheet). Light theme equivalents use inverted black-opacity values.
+- [x] Establish two glass material tokens in index.css
+  > Done (2026-04-10): `.glass` (80% opacity + 16px blur) and `.glass-heavy` (95% opacity + 12px blur) utility classes in index.css with CSS vars for dark/light theming. Applied to FloatingQueue, ContextMenu, FeedBottomNav, NextUpDialog, TheatreOverlay.
+- [x] Add 1px top highlight (`border-t border-white/[0.04]`) on raised cards for depth
+  > Done (2026-04-10): Used `border-t-highlight-medium` (15% white) to create a subtle overhead-light effect on raised glass panels — FloatingQueue expanded panel, ContextMenu, NextUpDialog. Brighter than side borders (10%) to simulate depth.
 - [x] Mode toggle pill: reduce SFW amber from `bg-amber-500/[0.12]` to `bg-amber-500/[0.06]` — too bright, competes with hero CTA
 
 ### 5.5 Motion & Micro-Interactions (P1)

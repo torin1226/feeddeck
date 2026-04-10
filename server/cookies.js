@@ -60,9 +60,11 @@ const COOKIE_MAP = {
  * Returns yt-dlp cookie arguments for a given URL.
  * Handles regular URLs, yt-dlp search strings (ytsearch:...), and unknown domains.
  * @param {string} url - URL or yt-dlp search string
+ * @param {string} [mode] - Explicit mode ('social'|'nsfw') for cookie selection.
+ *   When provided, overrides domain-inferred mode for unmapped domains.
  * @returns {string[]} yt-dlp args (e.g. ['--cookies', '/path/to/file'] or [])
  */
-export function getCookieArgs(url) {
+export function getCookieArgs(url, mode) {
   if (!url) return []
 
   let domain
@@ -90,7 +92,7 @@ export function getCookieArgs(url) {
   }
 
   // Resolve cookie file: per-domain → mode-based → legacy → none
-  const cookiePath = _resolveCookiePath(config)
+  const cookiePath = _resolveCookiePath(config, mode)
   if (!cookiePath) return []
 
   return _tempCopyArgs(cookiePath)
@@ -99,17 +101,20 @@ export function getCookieArgs(url) {
 /**
  * Resolve the best cookie file for a domain config.
  * Priority: per-domain file → mode-based file → legacy cookies.txt
+ * @param {object} config - Domain config from COOKIE_MAP (may be undefined)
+ * @param {string} [explicitMode] - Caller-provided mode override for unmapped domains
  */
-function _resolveCookiePath(config) {
+function _resolveCookiePath(config, explicitMode) {
   // 1. Per-domain cookie file (most specific)
   if (config?.file) {
     const fullPath = join(COOKIES_DIR, config.file)
     if (existsSync(fullPath)) return fullPath
   }
 
-  // 2. Mode-based cookie file
-  if (config?.mode && MODE_COOKIE_FILES[config.mode] && existsSync(MODE_COOKIE_FILES[config.mode])) {
-    return MODE_COOKIE_FILES[config.mode]
+  // 2. Mode-based cookie file — prefer explicit mode from caller, fall back to domain-inferred mode
+  const mode = explicitMode || config?.mode
+  if (mode && MODE_COOKIE_FILES[mode] && existsSync(MODE_COOKIE_FILES[mode])) {
+    return MODE_COOKIE_FILES[mode]
   }
 
   // 3. Legacy combined cookies.txt

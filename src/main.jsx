@@ -9,3 +9,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <AppShell />
   </BrowserRouter>
 )
+
+// Register service worker for video segment caching (2.8 Tier 3)
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  })
+}

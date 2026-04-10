@@ -151,7 +151,7 @@ export default function FeedFilterSheet({ onClose }) {
         onClick={e => e.stopPropagation()}
       >
         {/* Handle */}
-        <div className="w-10 h-1 bg-white/20 rounded-full mx-auto mt-3 mb-2" />
+        <div className="w-10 h-1 bg-highlight-strong rounded-full mx-auto mt-3 mb-2" />
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 pb-3">
@@ -202,9 +202,9 @@ export default function FeedFilterSheet({ onClose }) {
                 }}
                 placeholder="Search videos..."
                 autoComplete="off"
-                className="w-full h-10 bg-white/[0.07] border border-white/10 rounded-xl
+                className="w-full h-10 bg-highlight-subtle border border-highlight rounded-xl
                   text-white text-sm pl-10 pr-4 outline-none
-                  focus:bg-white/[0.11] focus:border-white/[0.22] transition-all
+                  focus:bg-highlight focus:border-highlight-strong transition-all
                   placeholder:text-white/30"
               />
               {searchQuery && (
@@ -227,8 +227,8 @@ export default function FeedFilterSheet({ onClose }) {
                   <button
                     key={v.id || i}
                     onClick={() => playSearchResult(v)}
-                    className="w-full flex items-center gap-3 p-2 rounded-lg bg-white/[0.05]
-                      hover:bg-white/[0.1] transition-colors text-left"
+                    className="w-full flex items-center gap-3 p-2 rounded-lg bg-highlight-subtle
+                      hover:bg-highlight transition-colors text-left"
                   >
                     {v.thumbnail && (
                       <img src={v.thumbnail} alt="" className="w-16 h-10 rounded object-cover flex-none" />
@@ -271,7 +271,7 @@ export default function FeedFilterSheet({ onClose }) {
                       className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border
                         ${active
                           ? 'bg-accent/20 border-accent/40 text-accent'
-                          : 'bg-white/[0.06] border-white/10 text-white/60 hover:text-white/80 hover:bg-white/[0.1]'
+                          : 'bg-highlight-subtle border-highlight text-white/60 hover:text-white/80 hover:bg-highlight'
                         }`}
                     >
                       {label}
@@ -306,7 +306,7 @@ export default function FeedFilterSheet({ onClose }) {
                       className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all border
                         ${active
                           ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
-                          : 'bg-white/[0.05] border-white/[0.08] text-white/50 hover:text-white/70 hover:bg-white/[0.08]'
+                          : 'bg-highlight-subtle border-highlight text-white/50 hover:text-white/70 hover:bg-highlight'
                         }`}
                     >
                       {tagName}

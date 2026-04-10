@@ -58,13 +58,13 @@ export default function ContextMenu({ video, position, onClose }) {
     <div
       ref={menuRef}
       style={style}
-      className="min-w-[160px] bg-gray-900/95 backdrop-blur-md border border-white/15
-        rounded-lg shadow-2xl py-1 animate-fade-slide-in"
+      className="min-w-[160px] glass-heavy border border-highlight-medium
+        rounded-lg shadow-2xl py-1 animate-fade-slide-in border-t-highlight-medium"
     >
       <button
         onClick={handleAddToQueue}
         className="w-full text-left px-4 py-2 text-sm text-white/90
-          hover:bg-white/10 transition-colors flex items-center gap-2.5"
+          hover:bg-highlight transition-colors flex items-center gap-2.5"
       >
         <span className="text-white/50 text-xs">+</span>
         Add to queue
@@ -72,16 +72,16 @@ export default function ContextMenu({ video, position, onClose }) {
       <button
         onClick={handlePlayNext}
         className="w-full text-left px-4 py-2 text-sm text-white/90
-          hover:bg-white/10 transition-colors flex items-center gap-2.5"
+          hover:bg-highlight transition-colors flex items-center gap-2.5"
       >
         <span className="text-white/50 text-xs">▶</span>
         Play next
       </button>
-      <div className="border-t border-white/10 my-1" />
+      <div className="border-t border-highlight my-1" />
       <button
         onClick={() => { toggleFavorite(video.id); onClose() }}
         className="w-full text-left px-4 py-2 text-sm text-white/90
-          hover:bg-white/10 transition-colors flex items-center gap-2.5"
+          hover:bg-highlight transition-colors flex items-center gap-2.5"
       >
         <span className="text-white/50 text-xs">{video.favorite ? '♥' : '♡'}</span>
         {video.favorite ? 'Remove favorite' : 'Favorite'}
@@ -89,12 +89,12 @@ export default function ContextMenu({ video, position, onClose }) {
       <button
         onClick={() => { toggleWatchLater(video.id); onClose() }}
         className="w-full text-left px-4 py-2 text-sm text-white/90
-          hover:bg-white/10 transition-colors flex items-center gap-2.5"
+          hover:bg-highlight transition-colors flex items-center gap-2.5"
       >
         <span className="text-white/50 text-xs">⏱</span>
         {video.watchLater ? 'Remove from Watch Later' : 'Watch Later'}
       </button>
-      <div className="border-t border-white/10 my-1" />
+      <div className="border-t border-highlight my-1" />
       <div className="px-4 py-2">
         <span className="text-white/50 text-[10px] uppercase tracking-wider font-semibold block mb-1.5">Rate</span>
         <div className="flex items-center gap-0.5">

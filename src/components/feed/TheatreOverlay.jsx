@@ -37,7 +37,7 @@ export default function TheatreOverlay({ videoRef }) {
       {/* Exit button — top right */}
       <button
         onClick={() => useFeedStore.getState().setTheatreMode(false)}
-        className="absolute top-6 right-6 w-10 h-10 rounded-full bg-black/40 backdrop-blur-lg flex items-center justify-center text-white/70 hover:text-white hover:bg-black/60 border border-white/10 transition-colors"
+        className="absolute top-6 right-6 w-10 h-10 rounded-full bg-glass backdrop-blur-lg flex items-center justify-center text-white/70 hover:text-white hover:bg-highlight-strong border border-highlight transition-colors"
         aria-label="Exit theatre mode"
       >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -52,7 +52,7 @@ export default function TheatreOverlay({ videoRef }) {
           onPointerDown={() => startHold('backward')}
           onPointerUp={() => endHold('backward')}
           onPointerLeave={() => endHold('backward')}
-          className="relative w-12 h-12 rounded-full bg-black/40 backdrop-blur-lg flex items-center justify-center text-white border border-white/10 hover:bg-black/60 transition-colors active:scale-95"
+          className="relative w-12 h-12 rounded-full bg-glass backdrop-blur-lg flex items-center justify-center text-white border border-highlight hover:bg-highlight-strong transition-colors active:scale-95"
           aria-label="Rewind 10 seconds"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -67,7 +67,7 @@ export default function TheatreOverlay({ videoRef }) {
         {/* Play/Pause */}
         <button
           onClick={togglePlay}
-          className="w-16 h-16 rounded-full bg-black/40 backdrop-blur-lg flex items-center justify-center text-white border border-white/10 hover:bg-black/60 transition-colors active:scale-95"
+          className="w-16 h-16 rounded-full bg-glass backdrop-blur-lg flex items-center justify-center text-white border border-highlight hover:bg-highlight-strong transition-colors active:scale-95"
           aria-label={paused ? 'Play' : 'Pause'}
         >
           {paused ? (
@@ -87,7 +87,7 @@ export default function TheatreOverlay({ videoRef }) {
           onPointerDown={() => startHold('forward')}
           onPointerUp={() => endHold('forward')}
           onPointerLeave={() => endHold('forward')}
-          className="relative w-12 h-12 rounded-full bg-black/40 backdrop-blur-lg flex items-center justify-center text-white border border-white/10 hover:bg-black/60 transition-colors active:scale-95"
+          className="relative w-12 h-12 rounded-full bg-glass backdrop-blur-lg flex items-center justify-center text-white border border-highlight hover:bg-highlight-strong transition-colors active:scale-95"
           aria-label="Fast forward 10 seconds"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
