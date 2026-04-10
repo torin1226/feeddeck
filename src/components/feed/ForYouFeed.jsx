@@ -8,7 +8,7 @@ import NextUpDialog from './NextUpDialog'
 export default function ForYouFeed() {
   const containerRef = useRef(null)
   const activeVideoRef = useRef(null)
-  const [nextUpVisible, setNextUpVisible] = useState(false)
+  const [nextUpVisible] = useState(false)
 
   const buffer = useFeedStore(s => s.buffer)
   const currentIndex = useFeedStore(s => s.currentIndex)

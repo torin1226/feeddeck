@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 
 export default function NextUpDialog({ videoRef, nextVideo, onAdvance }) {
   const [visible, setVisible] = useState(false)

@@ -5,10 +5,15 @@ import { existsSync, writeFileSync, unlinkSync, statSync, readFileSync } from 'f
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { randomBytes } from 'crypto'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
+import { Readable } from 'stream'
 import { getCookieArgs, COOKIE_MAP, MODE_COOKIE_FILES, LEGACY_COOKIE_FILE } from './cookies.js'
 import { initDatabase, db } from './database.js'
 import { registry, ytdlp as ytdlpAdapter, scraper as scraperAdapter, closeAllSources } from './sources/index.js'
 import { logger } from './logger.js'
+
+const execFileAsync = promisify(execFile)
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -210,10 +215,6 @@ app.get('/api/stream-formats', async (req, res) => {
   if (!url) return res.status(400).json({ error: 'URL required' })
 
   try {
-    const { execFile } = await import('child_process')
-    const { promisify } = await import('util')
-    const execFileAsync = promisify(execFile)
-
     const { stdout } = await execFileAsync('yt-dlp', [
       ...getCookieArgs(url), '-j', '--no-warnings', '--no-playlist', url
     ], { timeout: 30000 })
@@ -283,7 +284,6 @@ app.get('/api/proxy-stream', async (req, res) => {
     }
 
     // Pipe the body using Node streams (more robust than manual reader pump)
-    const { Readable } = await import('stream')
     const nodeStream = Readable.fromWeb(upstream.body)
 
     // Per-chunk timeout: if no data arrives for 30s, abort the stalled stream
@@ -355,7 +355,6 @@ app.get('/api/hls-proxy', async (req, res) => {
       if (cl) res.setHeader('Content-Length', cl)
       res.setHeader('Access-Control-Allow-Origin', '*')
 
-      const { Readable } = await import('stream')
       const nodeStream = Readable.fromWeb(upstream.body)
       nodeStream.pipe(res)
       nodeStream.on('error', () => { if (!res.writableEnded) res.end() })
@@ -713,14 +712,11 @@ app.get('/api/recommendations/seed', async (req, res) => {
   send({ type: 'status', message: `Starting ${platform} import for user "${username}"...`, sources: urls.map(u => u.label) })
 
   // Phase 1: Collect video URLs from all sources via flat-playlist
-  const { execFile } = await import('child_process')
-  const { promisify } = await import('util')
-  const execFileP = promisify(execFile)
   const allVideoUrls = []
   for (const src of urls) {
     send({ type: 'progress', phase: 'scan', source: src.label })
     try {
-      const { stdout } = await execFileP('yt-dlp', [
+      const { stdout } = await execFileAsync('yt-dlp', [
         ...getCookieArgs(src.url), '--flat-playlist', '--dump-json', '--no-warnings',
         '--socket-timeout', '10', src.url
       ], { encoding: 'utf8', timeout: 60000, maxBuffer: 10 * 1024 * 1024, windowsHide: true })
@@ -761,7 +757,7 @@ app.get('/api/recommendations/seed', async (req, res) => {
       send({ type: 'progress', phase: 'extract', current: processed, total: toProcess.length })
     }
     try {
-      const { stdout } = await execFileP('yt-dlp', [
+      const { stdout } = await execFileAsync('yt-dlp', [
         ...getCookieArgs(url), '--dump-json', '--skip-download', '--no-playlist', '--no-warnings',
         '--socket-timeout', '10', url
       ], { encoding: 'utf8', timeout: 30000, maxBuffer: 5 * 1024 * 1024, windowsHide: true })
@@ -1377,10 +1373,6 @@ app.post('/api/homepage/viewed', (req, res) => {
 // -----------------------------------------------------------
 // Async refill: fetch new videos for a category via yt-dlp
 // -----------------------------------------------------------
-// NSFW site round-robin for even distribution across sources
-const _nsfwSites = ['pornhub.com', 'xvideos.com', 'spankbang.com']
-let _nsfwSiteIdx = 0
-
 async function refillCategory(categoryKey) {
   const cat = db.prepare('SELECT query, mode FROM categories WHERE key = ?').get(categoryKey)
   if (!cat) return
@@ -1881,8 +1873,10 @@ function startStreamUrlTTLMonitor() {
 // -----------------------------------------------------------
 function formatDuration(seconds) {
   if (!seconds) return '0:00'
-  const m = Math.floor(seconds / 60)
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
   const s = String(Math.floor(seconds % 60)).padStart(2, '0')
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${s}`
   return `${m}:${s}`
 }
 
@@ -1940,9 +1934,7 @@ app.get('/api/tiktok/recent', (req, res) => {
     const limit = Math.min(parseInt(req.query.limit) || 50, 200)
     const mode = req.query.mode
     const whereMode = mode ? 'AND ti.mode = ?' : ''
-    const params = mode ? ['done', limit, mode] : ['done', limit]
 
-    // Reorder params for the query
     const rows = db.prepare(`
       SELECT ti.url, ti.source, ti.tiktok_date, ti.mode, ti.processed_at,
              v.title, v.thumbnail, v.duration, v.tags
