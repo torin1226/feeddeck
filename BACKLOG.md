@@ -259,7 +259,7 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 - [x] Increase preload window: bump PRELOAD_AHEAD from 2 to 3-4 on fast connections. Detect via `navigator.connection.effectiveType`
 
 **Tier 3 — Premium smoothness:**
-- [ ] Service worker video segment caching: cache first ~500KB of each preloaded video response. Swipe transitions start from cache instantly while rest streams in background
+- [x] Service worker video segment caching: cache first ~500KB of each preloaded video response. Swipe transitions start from cache instantly while rest streams in background. SW registered in main.jsx, feedStore sends PRECACHE_VIDEO messages on stream URL resolve. LRU eviction at 50 entries.
 - [x] Adaptive preload depth: use Network Information API to adjust strategy. 4G/WiFi → preload 4 ahead, 3G → preload 1 + lower quality (already implemented in FeedVideo._getPreloadWindow())
 - [x] Stream URL TTL monitoring: proactive re-resolve for URLs expiring within 15min (5min check interval). Also fixed /api/stream-url to check expires_at before serving cached URLs
 
@@ -340,7 +340,7 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 - [x] Rule-based scoring: +2 liked tag, -5 disliked tag, +1 favorite, +1 highly rated
 - [x] "Discover" endpoint: `GET /api/discover` returns unwatched videos sorted by score
 - [x] GET /api/tags/popular endpoint returns top 50 tags by frequency
-- [ ] Future: system searches for content discovery (see 3.4 Cookie Auth)
+- [x] System content discovery: `GET /api/discover/search` searches for new content based on liked tags via registry, filters out existing library/feed_cache duplicates. NSFW uses scraper multi-site search, social uses yt-dlp YouTube search.
 
 ### 3.3.1 Seed Recommendations from PornHub History (Cookie-Powered) — HIGH PRIORITY
 
@@ -378,7 +378,7 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 - [x] New endpoint: `GET /api/recommendations/seed` (SSE) triggers the import job
 - [x] Use yt-dlp with cookies to fetch favorites/history via flat-playlist
 - [x] Also try watched, rated URLs (gracefully handles private/empty with error message)
-- [ ] For playlists: fetch playlist index first, then crawl each playlist for video metadata. Playlists are high-signal — curated content reveals stronger preferences than passive watch history
+- [x] For playlists: fetch playlist index first, then crawl each playlist for video metadata. Phase 0 in seed endpoint discovers up to 5 playlists per platform (PornHub user playlists, YouTube library), adds them to the scrape list before Phase 1 begins.
 - [x] Parse returned JSON for each video: extract `tags`, `categories`, `uploader`, `duration`, `view_count`
 - [x] Build tag frequency map from all extracted videos
 - [x] Auto-insert top N tags (threshold: 2+ appearances) into `tag_preferences` as `liked`
@@ -389,7 +389,7 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 **Backend: Username Config**
 - [x] Store platform usernames in `preferences` table (key: `{platform}_username`)
 - [x] `PUT /api/recommendations/username` + `GET /api/recommendations/username` endpoints
-- [ ] Settings UI: text field for PornHub username (pre-filled if already set)
+- [x] Settings UI: text field for PornHub username (pre-filled if already set) — implemented with platform selector + auto-save in SettingsPage.jsx
 - [x] Endpoint uses stored username to construct history/favorites URLs
 - [x] Multi-platform support: pornhub, youtube, tiktok URL builders
 
@@ -428,7 +428,7 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 
 **Adapter changes needed:**
 - [x] Update `server/cookies.js` with per-domain → per-mode → legacy fallback chain (getCookieArgs resolves best cookie file automatically)
-- [ ] Update all callers that pass mode context (refillCategory, feed refill, search, metadata extraction) to forward mode to the adapter
+- [x] Update all callers that pass mode context (refillCategory, feed refill, search, metadata extraction, seed, stream-url, stream-formats) to forward mode to the adapter. getCookieArgs(url, mode) propagated through ytdlp adapter, registry, and all server/index.js endpoints.
 - [x] Update `POST /api/cookies` endpoint to accept a `mode` param (social|nsfw) and write to the correct file
 - [x] Update `GET /api/cookies/status` to return status for both files (social, nsfw, legacy)
 - [x] Update Settings UI: two cookie import sections (Social cookies / NSFW cookies) with independent status indicators
