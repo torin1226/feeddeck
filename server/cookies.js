@@ -60,9 +60,10 @@ const COOKIE_MAP = {
  * Returns yt-dlp cookie arguments for a given URL.
  * Handles regular URLs, yt-dlp search strings (ytsearch:...), and unknown domains.
  * @param {string} url - URL or yt-dlp search string
+ * @param {string} [mode] - Optional mode context ('social'|'nsfw') for fallback cookie selection
  * @returns {string[]} yt-dlp args (e.g. ['--cookies', '/path/to/file'] or [])
  */
-export function getCookieArgs(url) {
+export function getCookieArgs(url, mode) {
   if (!url) return []
 
   let domain
@@ -90,7 +91,8 @@ export function getCookieArgs(url) {
   }
 
   // Resolve cookie file: per-domain → mode-based → legacy → none
-  const cookiePath = _resolveCookiePath(config)
+  // When caller provides mode context, it's used as fallback for domains not in COOKIE_MAP
+  const cookiePath = _resolveCookiePath(config, mode)
   if (!cookiePath) return []
 
   return _tempCopyArgs(cookiePath)
@@ -98,18 +100,21 @@ export function getCookieArgs(url) {
 
 /**
  * Resolve the best cookie file for a domain config.
- * Priority: per-domain file → mode-based file → legacy cookies.txt
+ * Priority: per-domain file → mode-based file (from config or caller) → legacy cookies.txt
+ * @param {object} [config] - COOKIE_MAP entry for the domain
+ * @param {string} [callerMode] - Mode context from the caller ('social'|'nsfw')
  */
-function _resolveCookiePath(config) {
+function _resolveCookiePath(config, callerMode) {
   // 1. Per-domain cookie file (most specific)
   if (config?.file) {
     const fullPath = join(COOKIES_DIR, config.file)
     if (existsSync(fullPath)) return fullPath
   }
 
-  // 2. Mode-based cookie file
-  if (config?.mode && MODE_COOKIE_FILES[config.mode] && existsSync(MODE_COOKIE_FILES[config.mode])) {
-    return MODE_COOKIE_FILES[config.mode]
+  // 2. Mode-based cookie file (prefer domain config's mode, fall back to caller-provided mode)
+  const effectiveMode = config?.mode || callerMode
+  if (effectiveMode && MODE_COOKIE_FILES[effectiveMode] && existsSync(MODE_COOKIE_FILES[effectiveMode])) {
+    return MODE_COOKIE_FILES[effectiveMode]
   }
 
   // 3. Legacy combined cookies.txt

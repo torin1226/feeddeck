@@ -146,6 +146,7 @@ export default function ForYouFeed() {
             videoRef={activeVideoRef}
             nextVideo={nextVideo}
             onAdvance={advanceToNext}
+            onVisibilityChange={setNextUpVisible}
           />
         </>
       )}

@@ -105,7 +105,8 @@ app.get('/api/metadata', async (req, res) => {
   if (!url) return res.status(400).json({ error: 'URL required' })
 
   try {
-    const metadata = await registry.extractMetadata(url)
+    const mode = inferMode(url)
+    const metadata = await registry.extractMetadata(url, { mode })
 
     // Save to database
     try {
@@ -121,7 +122,7 @@ app.get('/api/metadata', async (req, res) => {
         metadata.duration,
         JSON.stringify(metadata.tags),
         metadata.source,
-        inferMode(url)
+        mode
       )
     } catch (dbErr) {
       logger.warn('DB save failed', { error: dbErr.message })
@@ -169,8 +170,8 @@ app.get('/api/stream-url', async (req, res) => {
   }
 
   try {
-    // Use registry with fallback chain (yt-dlp → cobalt)
-    const cdnUrl = await registry.getStreamUrl(url, format ? { format } : undefined)
+    // Use registry with fallback chain (yt-dlp → cobalt), forwarding mode for correct cookies
+    const cdnUrl = await registry.getStreamUrl(url, { mode: inferMode(url), ...(format ? { format } : {}) })
 
     logger.info('Resolved stream URL', { format: cdnUrl.includes('.m3u8') ? 'HLS' : 'MP4', url: cdnUrl.substring(0, 80) })
 
@@ -215,7 +216,7 @@ app.get('/api/stream-formats', async (req, res) => {
     const execFileAsync = promisify(execFile)
 
     const { stdout } = await execFileAsync('yt-dlp', [
-      ...getCookieArgs(url), '-j', '--no-warnings', '--no-playlist', url
+      ...getCookieArgs(url, inferMode(url)), '-j', '--no-warnings', '--no-playlist', url
     ], { timeout: 30000 })
 
     const info = JSON.parse(stdout)
@@ -710,18 +711,80 @@ app.get('/api/recommendations/seed', async (req, res) => {
     )
   }
 
-  send({ type: 'status', message: `Starting ${platform} import for user "${username}"...`, sources: urls.map(u => u.label) })
+  // Determine mode from platform for cookie routing
+  const seedMode = platform === 'pornhub' ? 'nsfw' : 'social'
 
-  // Phase 1: Collect video URLs from all sources via flat-playlist
+  // Phase 0: Discover user playlists (high-signal curated content)
   const { execFile } = await import('child_process')
   const { promisify } = await import('util')
   const execFileP = promisify(execFile)
+  const MAX_PLAYLISTS = 5
+
+  if (platform === 'pornhub' && username) {
+    send({ type: 'progress', phase: 'playlists', source: 'Discovering playlists...' })
+    try {
+      const playlistPageUrl = `https://www.pornhub.com/users/${username}/playlists`
+      const { stdout } = await execFileP('yt-dlp', [
+        ...getCookieArgs(playlistPageUrl, seedMode), '--flat-playlist', '--dump-json', '--no-warnings',
+        '--socket-timeout', '10', playlistPageUrl
+      ], { encoding: 'utf8', timeout: 60000, maxBuffer: 10 * 1024 * 1024, windowsHide: true })
+
+      const entries = stdout.trim().split('\n').filter(Boolean)
+      let added = 0
+      for (const line of entries) {
+        if (added >= MAX_PLAYLISTS) break
+        try {
+          const d = JSON.parse(line)
+          const plUrl = d.webpage_url || d.url
+          if (plUrl) {
+            urls.push({ label: `Playlist: ${d.title || `#${added + 1}`}`, url: plUrl })
+            added++
+          }
+        } catch {}
+      }
+      if (added > 0) send({ type: 'status', message: `Found ${added} playlists to crawl` })
+    } catch (err) {
+      send({ type: 'status', message: `Playlists: ${err.message?.includes('404') ? 'none found' : 'skipped (' + (err.message?.substring(0, 40) || 'error') + ')'}` })
+    }
+  } else if (platform === 'youtube') {
+    send({ type: 'progress', phase: 'playlists', source: 'Discovering playlists...' })
+    try {
+      // YouTube: list public playlists from the authenticated user's channel
+      const channelPlaylistsUrl = 'https://www.youtube.com/feed/library'
+      const { stdout } = await execFileP('yt-dlp', [
+        ...getCookieArgs(channelPlaylistsUrl, seedMode), '--flat-playlist', '--dump-json', '--no-warnings',
+        '--socket-timeout', '10', '--playlist-end', String(MAX_PLAYLISTS * 5), channelPlaylistsUrl
+      ], { encoding: 'utf8', timeout: 60000, maxBuffer: 10 * 1024 * 1024, windowsHide: true })
+
+      const entries = stdout.trim().split('\n').filter(Boolean)
+      let added = 0
+      for (const line of entries) {
+        if (added >= MAX_PLAYLISTS) break
+        try {
+          const d = JSON.parse(line)
+          const plUrl = d.webpage_url || d.url
+          // Only add playlist URLs (not individual videos from library)
+          if (plUrl && (plUrl.includes('playlist?list=') || d._type === 'playlist')) {
+            urls.push({ label: `Playlist: ${d.title || `#${added + 1}`}`, url: plUrl })
+            added++
+          }
+        } catch {}
+      }
+      if (added > 0) send({ type: 'status', message: `Found ${added} playlists to crawl` })
+    } catch (err) {
+      send({ type: 'status', message: `Playlists: skipped (${err.message?.substring(0, 40) || 'error'})` })
+    }
+  }
+
+  send({ type: 'status', message: `Starting ${platform} import for user "${username}"...`, sources: urls.map(u => u.label) })
+
+  // Phase 1: Collect video URLs from all sources via flat-playlist
   const allVideoUrls = []
   for (const src of urls) {
     send({ type: 'progress', phase: 'scan', source: src.label })
     try {
       const { stdout } = await execFileP('yt-dlp', [
-        ...getCookieArgs(src.url), '--flat-playlist', '--dump-json', '--no-warnings',
+        ...getCookieArgs(src.url, seedMode), '--flat-playlist', '--dump-json', '--no-warnings',
         '--socket-timeout', '10', src.url
       ], { encoding: 'utf8', timeout: 60000, maxBuffer: 10 * 1024 * 1024, windowsHide: true })
 
@@ -762,7 +825,7 @@ app.get('/api/recommendations/seed', async (req, res) => {
     }
     try {
       const { stdout } = await execFileP('yt-dlp', [
-        ...getCookieArgs(url), '--dump-json', '--skip-download', '--no-playlist', '--no-warnings',
+        ...getCookieArgs(url, seedMode), '--dump-json', '--skip-download', '--no-playlist', '--no-warnings',
         '--socket-timeout', '10', url
       ], { encoding: 'utf8', timeout: 30000, maxBuffer: 5 * 1024 * 1024, windowsHide: true })
 
@@ -906,6 +969,76 @@ app.get('/api/discover', (req, res) => {
 })
 
 // -----------------------------------------------------------
+// System Content Discovery (3.3)
+// Searches for NEW content based on liked tags, supplementing
+// the library-only /api/discover endpoint. Picks top liked tags,
+// builds search queries, and uses the registry to find fresh content.
+// Results are NOT stored in the library — they're ephemeral
+// discovery results the user can choose to save.
+// -----------------------------------------------------------
+app.get('/api/discover/search', async (req, res) => {
+  const mode = getMode(req)
+  const limit = Math.min(parseInt(req.query.limit) || 20, 50)
+
+  try {
+    // Get liked tags, shuffled for variety across calls
+    const likedRows = db.prepare(
+      "SELECT tag FROM tag_preferences WHERE preference = 'liked'"
+    ).all()
+    if (likedRows.length === 0) {
+      return res.json({ videos: [], message: 'No liked tags yet. Seed recommendations or like some tags in Settings.' })
+    }
+
+    // Pick up to 3 random liked tags for this search
+    const shuffled = likedRows.map(r => r.tag).sort(() => Math.random() - 0.5)
+    const queryTags = shuffled.slice(0, 3)
+    const searchQuery = queryTags.join(' ')
+
+    logger.info(`Discovery search: "${searchQuery}" (mode: ${mode})`)
+
+    // Get existing library URLs to filter out duplicates
+    const existingUrls = new Set()
+    try {
+      db.prepare('SELECT url FROM videos WHERE mode = ?').all(mode).forEach(r => existingUrls.add(r.url))
+      db.prepare('SELECT url FROM feed_cache WHERE mode = ?').all(mode).forEach(r => existingUrls.add(r.url))
+    } catch {}
+
+    // Search using registry with mode-aware cookies
+    let videos = []
+    try {
+      if (mode === 'nsfw') {
+        // NSFW: try scraper's multi-site search first, fall back to yt-dlp
+        try {
+          videos = await scraperAdapter.searchAll(searchQuery, { limit: Math.ceil(limit * 1.5) })
+        } catch {
+          videos = await registry.search(searchQuery, { adapter: 'yt-dlp', limit, mode })
+        }
+      } else {
+        videos = await registry.search(searchQuery, { adapter: 'yt-dlp', limit, mode })
+      }
+    } catch (err) {
+      logger.warn('Discovery search failed', { error: err.message, query: searchQuery })
+      return res.json({ videos: [], message: 'Search failed — try again later.' })
+    }
+
+    // Filter out videos already in library/feed cache
+    const fresh = videos
+      .filter(v => v.url && !existingUrls.has(v.url))
+      .slice(0, limit)
+      .map(v => ({
+        ...v,
+        durationFormatted: formatDuration(v.duration),
+        discoveryTags: queryTags,
+      }))
+
+    res.json({ videos: fresh, query: searchQuery, tagsUsed: queryTags })
+  } catch (err) {
+    logger.error('Discovery search error', { error: err.message })
+    res.json({ videos: [], message: 'Discovery search failed.' })
+  }
+})
+
+// -----------------------------------------------------------
 // Playlist CRUD
 // -----------------------------------------------------------
 
@@ -1019,8 +1152,9 @@ app.get('/api/search', (req, res) => {
 
   const limit = parseInt(count, 10)
 
-  // Use the yt-dlp adapter's streaming search for SSE
-  const stream = ytdlpAdapter.streamSearch(q, { site, limit })
+  // Use the yt-dlp adapter's streaming search for SSE, forwarding mode for cookies
+  const mode = getMode(req)
+  const stream = ytdlpAdapter.streamSearch(q, { site, limit, mode })
 
   stream.onVideo((video) => {
     res.write(`data: ${JSON.stringify({ ...video, durationFormatted: formatDuration(video.duration) })}\n\n`)
@@ -1060,7 +1194,7 @@ app.get('/api/search/multi', async (req, res) => {
       videos = await scraperAdapter.searchAll(q, { limit: parseInt(limit, 10) })
     } else {
       // Social: use yt-dlp YouTube search (scraper only has NSFW sites)
-      videos = await registry.search(q, { site: 'youtube.com', limit: parseInt(limit, 10) })
+      videos = await registry.search(q, { site: 'youtube.com', limit: parseInt(limit, 10), mode })
     }
     res.json({
       query: q,
@@ -1411,12 +1545,12 @@ async function refillCategory(categoryKey) {
       // Extract domain from URL for site-specific routing
       try {
         const domain = new URL(query).hostname.replace(/^www\./, '')
-        videos = await registry.search(query, { site: domain, limit: 12 })
+        videos = await registry.search(query, { site: domain, limit: 12, mode: cat.mode })
       } catch {
-        videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
+        videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12, mode: cat.mode })
       }
     } else {
-      videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
+      videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12, mode: cat.mode })
     }
 
     const insert = db.prepare(`
@@ -1684,8 +1818,8 @@ async function _refillFeedCacheImpl(mode) {
         query = `${src.query} ${picked.join(' ')}`
         logger.info(`  🎯 Personalized feed query: "${query}"`)
       }
-      // Use registry search with fallback chain (scraper → yt-dlp)
-      const videos = await registry.search(query, { site: src.domain, limit: 20 })
+      // Use registry search with fallback chain (scraper → yt-dlp), forwarding mode for cookies
+      const videos = await registry.search(query, { site: src.domain, limit: 20, mode })
 
       const insert = db.prepare(`
         INSERT OR IGNORE INTO feed_cache (id, source_domain, mode, url, title, creator, thumbnail, duration, orientation, tags, fetched_at, expires_at)

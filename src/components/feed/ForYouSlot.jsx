@@ -49,7 +49,11 @@ const ForYouSlot = memo(function ForYouSlot({ video, index, isActive, onVideoRef
               useFeedStore.setState({ buffer: updated })
             }
           }
-        } catch { /* fallback below */ }
+        } catch {
+          // Stream URL resolution failed — clear spinner so user isn't stuck
+          setResolving(false)
+          return
+        }
         setResolving(false)
       }
 

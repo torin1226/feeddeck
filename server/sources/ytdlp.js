@@ -19,9 +19,9 @@ const YTDLP_SEARCH_TIMEOUT = 120_000
 const MAX_BUFFER = 50 * 1024 * 1024
 
 // Safe yt-dlp execution — uses execFile (no shell) to prevent command injection
-// Routes cookies per-domain based on the URL being fetched
+// Routes cookies per-domain based on the URL being fetched, with optional mode context
 async function ytdlp(args, url, options = {}) {
-  const finalArgs = [...getCookieArgs(url), ...args]
+  const finalArgs = [...getCookieArgs(url, options.mode), ...args]
   const { stdout } = await execFileAsync('yt-dlp', finalArgs, {
     encoding: 'utf8',
     timeout: options.timeout || YTDLP_TIMEOUT,
@@ -64,9 +64,9 @@ export class YtDlpAdapter extends SourceAdapter {
     return true
   }
 
-  async extractMetadata(url) {
+  async extractMetadata(url, options = {}) {
     if (!this.isAvailable()) throw new Error('yt-dlp not installed')
-    const stdout = await ytdlp(['--dump-json', '--no-download', url], url)
+    const stdout = await ytdlp(['--dump-json', '--no-download', url], url, { mode: options.mode })
     let data
     try {
       data = JSON.parse(stdout)
@@ -76,18 +76,18 @@ export class YtDlpAdapter extends SourceAdapter {
     return this.normalizeVideo(data)
   }
 
-  async getStreamUrl(url) {
+  async getStreamUrl(url, options = {}) {
     if (!this.isAvailable()) throw new Error('yt-dlp not installed')
 
     const formatStr = '480p/240p/720p/best[height<=480][protocol=https][ext=mp4][vcodec!*=av01]/best[height<=480][ext=mp4]/18/best[ext=mp4]/best'
-    const stdout = await ytdlp(['-g', '-f', formatStr, url], url)
+    const stdout = await ytdlp(['-g', '-f', formatStr, url], url, { mode: options.mode })
 
     let cdnUrl = stdout.trim().split('\n')[0]
 
     // If yt-dlp returned HLS, retry with direct MP4 formats
     if (cdnUrl.includes('.m3u8')) {
       try {
-        const mp4Out = await ytdlp(['-g', '-f', '480p/240p/720p/18', url], url)
+        const mp4Out = await ytdlp(['-g', '-f', '480p/240p/720p/18', url], url, { mode: options.mode })
         cdnUrl = mp4Out.trim().split('\n')[0]
       } catch { /* keep original if format 18 fails */ }
     }
@@ -134,7 +134,7 @@ export class YtDlpAdapter extends SourceAdapter {
       searchUrl = `ytsearch${limit}:${query}`
     }
 
-    return this._fetchPlaylist(searchUrl, limit)
+    return this._fetchPlaylist(searchUrl, limit, options.mode)
   }
 
   // Convert social feed URLs (that require auth) to yt-dlp search queries
@@ -160,7 +160,7 @@ export class YtDlpAdapter extends SourceAdapter {
 
   async fetchCategory(categoryUrl, options = {}) {
     const { limit = 20 } = options
-    return this._fetchPlaylist(categoryUrl, limit)
+    return this._fetchPlaylist(categoryUrl, limit, options.mode)
   }
 
   async fetchTrending(options = {}) {
@@ -176,17 +176,17 @@ export class YtDlpAdapter extends SourceAdapter {
     const url = trendingUrls[site]
     if (!url) throw new Error(`No trending URL configured for ${site}`)
 
-    return this._fetchPlaylist(url, limit)
+    return this._fetchPlaylist(url, limit, options.mode)
   }
 
   // Core: run yt-dlp on a playlist/search URL and return normalized videos
-  async _fetchPlaylist(url, limit = 12) {
+  async _fetchPlaylist(url, limit = 12, mode) {
     if (!this.isAvailable()) throw new Error('yt-dlp not installed')
 
     const stdout = await ytdlp(
       ['--dump-json', '--playlist-end', String(limit), '--no-download', url],
       url,
-      { timeout: YTDLP_SEARCH_TIMEOUT }
+      { timeout: YTDLP_SEARCH_TIMEOUT, mode }
     )
 
     const lines = stdout.trim().split('\n')
@@ -216,7 +216,7 @@ export class YtDlpAdapter extends SourceAdapter {
       searchUrl = `ytsearch${limit}:${query}`
     }
 
-    const child = spawn('yt-dlp', [...getCookieArgs(searchUrl), '--dump-json', '--playlist-end', String(limit), searchUrl])
+    const child = spawn('yt-dlp', [...getCookieArgs(searchUrl, options.mode), '--dump-json', '--playlist-end', String(limit), searchUrl])
 
     // Kill subprocess after 60s to prevent resource leaks
     const timeout = setTimeout(() => { try { child.kill('SIGTERM') } catch {} }, 60000)

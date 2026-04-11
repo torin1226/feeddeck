@@ -1,6 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
 
-export default function NextUpDialog({ videoRef, nextVideo, onAdvance }) {
+// Keyframes defined once outside the component to avoid DOM bloat from duplicate <style> tags
+const SLIDE_IN_STYLE = (
+  <style>{`
+    @keyframes foryou-slideInRight {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+  `}</style>
+)
+
+export default function NextUpDialog({ videoRef, nextVideo, onAdvance, onVisibilityChange }) {
   const [visible, setVisible] = useState(false)
   const [dismissed, setDismissed] = useState(false)
   const [countdown, setCountdown] = useState(1) // 1 = full, 0 = empty
@@ -11,6 +21,11 @@ export default function NextUpDialog({ videoRef, nextVideo, onAdvance }) {
     setVisible(false)
     setCountdown(1)
   }, [nextVideo?.id])
+
+  // Notify parent of visibility changes for timeline layout
+  useEffect(() => {
+    onVisibilityChange?.(visible && !dismissed)
+  }, [visible, dismissed, onVisibilityChange])
 
   // Track video time to show/hide dialog
   useEffect(() => {
@@ -55,15 +70,10 @@ export default function NextUpDialog({ videoRef, nextVideo, onAdvance }) {
         className="absolute bottom-20 right-4 z-50 w-[280px] rounded-xl bg-black/60 backdrop-blur-xl border border-white/10 shadow-2xl p-4 text-center"
         style={{ animation: 'foryou-slideInRight 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' }}
       >
-        <div className="text-2xl mb-2">✓</div>
+        <div className="text-2xl mb-2">&#10003;</div>
         <p className="text-white text-sm font-medium">You're all caught up</p>
         <p className="text-white/50 text-xs mt-1">Pull in more videos or try a different mode</p>
-        <style>{`
-          @keyframes foryou-slideInRight {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-          }
-        `}</style>
+        {SLIDE_IN_STYLE}
       </div>
     )
   }
@@ -120,12 +130,7 @@ export default function NextUpDialog({ videoRef, nextVideo, onAdvance }) {
         />
       </div>
 
-      <style>{`
-        @keyframes foryou-slideInRight {
-          from { transform: translateX(100%); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
-        }
-      `}</style>
+      {SLIDE_IN_STYLE}
     </div>
   )
 }

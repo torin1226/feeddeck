@@ -222,10 +222,23 @@ function _warmStreamUrls(videos) {
             updated[idx] = { ...updated[idx], streamUrl: data.streamUrl }
             useFeedStore.setState({ buffer: updated })
           }
+          // Ask service worker to precache the first segment of this video
+          _precacheVideoSegment(data.streamUrl)
         }
       })
       .catch(() => {}) // silent — video will still resolve on-demand
   }
+}
+
+// Tell the service worker to pre-cache the first ~500KB of a video URL
+function _precacheVideoSegment(streamUrl) {
+  if (!navigator.serviceWorker?.controller) return
+  // Build the proxy-stream URL the video element will actually request
+  const proxyUrl = `/api/proxy-stream?url=${encodeURIComponent(streamUrl)}`
+  navigator.serviceWorker.controller.postMessage({
+    type: 'PRECACHE_VIDEO',
+    url: proxyUrl,
+  })
 }
 
 export default useFeedStore

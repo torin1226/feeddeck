@@ -4,6 +4,15 @@ import { BrowserRouter } from 'react-router-dom'
 import AppShell from './components/AppShell'
 import './index.css'
 
+// Register service worker for video segment caching (2.8 Tier 3)
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      // SW registration failure is non-fatal
+    })
+  })
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <BrowserRouter>
     <AppShell />

@@ -29,9 +29,11 @@ export default function useTheatreControls(videoRef) {
     }
   }, [showControls])
 
+  // Subscribe to theatreMode so keyboard effect reacts to mode changes
+  const theatreMode = useFeedStore(s => s.theatreMode)
+
   // Keyboard shortcuts for theatre mode
   useEffect(() => {
-    const theatreMode = useFeedStore.getState().theatreMode
     if (!theatreMode) return
 
     const onKey = (e) => {
@@ -99,7 +101,7 @@ export default function useTheatreControls(videoRef) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [videoRef, showControls])
+  }, [videoRef, showControls, theatreMode])
 
   // Hold-to-scrub: start
   const startHold = useCallback((direction) => {
@@ -161,6 +163,15 @@ export default function useTheatreControls(videoRef) {
     setScrubSpeed(null)
     holdDirection.current = null
   }, [videoRef, scrubbing])
+
+  // Cleanup hold timers on unmount to prevent stale callbacks
+  useEffect(() => {
+    return () => {
+      clearTimeout(holdTimer.current)
+      clearTimeout(rampTimer.current)
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    }
+  }, [])
 
   return { controlsVisible, scrubSpeed, scrubbing, showControls, startHold, endHold }
 }
