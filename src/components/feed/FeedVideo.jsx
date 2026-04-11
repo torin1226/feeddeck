@@ -132,7 +132,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
 
   // Resolve stream URL when within preload range
   useEffect(() => {
-    if (!shouldLoad || streamUrl || streamLoading) return
+    if (!shouldLoad || streamUrl || streamLoading || videoError) return
     if (!video.url) return
     if (video.streamUrl) { setStreamUrl(video.streamUrl); return }
 
@@ -143,11 +143,13 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
     fetch(`/api/stream-url?url=${encodeURIComponent(video.url)}`)
       .then(r => r.json())
       .then(data => {
-        if (!cancelled && data.streamUrl) {
+        if (cancelled) return
+        if (data.streamUrl) {
           setStreamUrl(data.streamUrl)
           setDebugMsg('got stream url')
         } else {
-          setDebugMsg('no streamUrl in response')
+          setDebugMsg('stream error: ' + (data.error || 'no url'))
+          setVideoError(true)
         }
         setStreamLoading(false)
       })
@@ -160,7 +162,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
       })
 
     return () => { cancelled = true }
-  }, [shouldLoad, video.url, video.streamUrl, streamUrl, streamLoading])
+  }, [shouldLoad, video.url, video.streamUrl, streamUrl, streamLoading, videoError])
 
   // Claim the shared video element when this slot becomes active
   useEffect(() => {
