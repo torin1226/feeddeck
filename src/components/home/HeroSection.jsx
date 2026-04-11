@@ -21,6 +21,7 @@ export default function HeroSection() {
     _activeVideo, setActiveVideo, isPlaying, setPlaying,
     currentTime, setCurrentTime, duration, setDuration,
     streamUrl, streamLoading, streamError, resolveStream, handleStreamError,
+    prewarmStream, getPrewarmedUrl,
   } = usePlayerStore()
 
   const {
@@ -33,7 +34,7 @@ export default function HeroSection() {
   const badgeTimer = useRef(null)
   const videoRef = useRef(null)
 
-  // Start Ken Burns animation when hero item changes
+  // Start Ken Burns animation and pre-warm stream URL when hero item changes
   useEffect(() => {
     setPreviewing(false)
     requestAnimationFrame(() => {
@@ -42,11 +43,15 @@ export default function HeroSection() {
       clearTimeout(badgeTimer.current)
       badgeTimer.current = setTimeout(() => setShowBadge(false), 3000)
     })
+    // Pre-warm the stream URL so Play is instant (covers reduced motion / HLS cases
+    // where useHeroAutoplay doesn't resolve a URL)
+    if (heroItem?.url) prewarmStream(heroItem.url)
     return () => clearTimeout(badgeTimer.current)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [heroItem?.id])
 
   // When theatre mode activates, set active video and resolve stream.
-  // If autoplay already resolved a stream URL, reuse it to avoid re-fetching.
+  // Priority: autoplay URL > prewarmed URL > fresh resolve
   useEffect(() => {
     if (theatreMode && heroItem) {
       setActiveVideo(heroItem)
@@ -54,8 +59,14 @@ export default function HeroSection() {
         // Reuse the pre-resolved stream URL from autoplay — instant transition
         usePlayerStore.setState({ streamUrl: autoplayUrl, streamLoading: false, streamError: null })
       } else if (heroItem.url) {
-        // Fallback: resolve fresh if autoplay didn't have it
-        resolveStream(heroItem.url)
+        const prewarmed = getPrewarmedUrl(heroItem.url)
+        if (prewarmed) {
+          // Use pre-warmed URL (covers reduced motion / HLS cases)
+          usePlayerStore.setState({ streamUrl: prewarmed, streamLoading: false, streamError: null })
+        } else {
+          // Fallback: resolve fresh
+          resolveStream(heroItem.url)
+        }
       }
       setPlaying(true)
     } else if (!theatreMode) {
@@ -324,7 +335,7 @@ export default function HeroSection() {
         {/* Tags */}
         <div className="flex gap-1.5 mb-3 flex-wrap">
           <span className="text-[11px] font-semibold text-text-muted">
-            {2020 + Math.floor(Math.random() * 6)}
+            {heroItem.uploadYear || new Date(heroItem.addedAt || Date.now()).getFullYear()}
           </span>
           <span className="px-2.5 py-0.5 rounded text-[11px] font-semibold bg-white/10 text-text-secondary tracking-wide">
             {heroItem.genre}

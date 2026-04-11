@@ -733,11 +733,11 @@ _Added by automated daily design review. Prioritized by impact on core user expe
 
 ### P1 (Next 2 Weeks)
 - [x] **Toast feedback for queue operations** -- Created toastStore + GlobalToast component. "Added to queue" / "Playing next" toasts on all queue add points (VideoCard, HeroSection, ContextMenu, MobileSwipeView) (2026-04-08).
-- [ ] **Library loading skeleton** -- Show skeleton grid while loadFromServer() runs.
-- [ ] **Label or remove demo data** -- Show "Demo" badge on seeded videos, or don't auto-seed.
-- [ ] **Settings action feedback** -- Success/error toasts for source add, tag prefs, cookie import (replace alert()).
-- [ ] **Pre-resolve hero stream URL** -- Call resolveStream when heroItem is set, not on Play click.
-- [ ] **Persist watchedIds from server** -- Hydrate client-side Set from /api/feed/watched on load.
+- [x] **Library loading skeleton** -- SkeletonLibrary component already existed and is used in LibraryPage (verified 2026-04-10).
+- [x] **Label or remove demo data** -- Added amber "Demo" badge on VideoCard when source === 'demo' (2026-04-10).
+- [x] **Settings action feedback** -- Already using showToast for all actions: source add/pause/delete, tag add/remove, cookie import/delete (verified 2026-04-10).
+- [x] **Pre-resolve hero stream URL** -- Added prewarmStream() to playerStore, called on heroItem change. Covers reduced motion and HLS edge cases where autoplay hook doesn't resolve (2026-04-10).
+- [x] **Persist watchedIds from server** -- Already implemented in feedStore.initFeed() via /api/feed/watched-ids (verified 2026-04-10).
 
 ### P2 (Month 2)
 - [ ] **Content-aware skeleton shapes** -- Match skeleton layout to actual component dimensions.
@@ -762,10 +762,10 @@ _Added by automated daily design review. Live comparison against Netflix and HBO
 
 ### P1 (Next 2 Weeks — Premium Feel)
 - [ ] **Personalized row titles** -- Replace source-based labels with contextual names ("Because You Watched X", "Quick Watches", "Fresh Today"). Netflix and HBO Max personalize every row title.
-- [x] **Fix random year in HeroSection** -- Line 281 generated random year on every render (flickered on Like). Replaced with upload year extraction (2026-04-08 run 4).
+- [x] **Fix random year in HeroSection** -- Line 328 still had `2020 + Math.random()` despite prior fix claim. Actually fixed: now uses heroItem.uploadYear or extracted year from addedAt (2026-04-10).
 - [x] **Skeleton → content crossfade** -- Added contentReveal keyframe (200ms ease-out fade+slide) to index.css. Both Netflix and HBO use subtle opacity transitions (2026-04-08 run 4).
-- [ ] **Carousel navigation arrows** -- Left/right chevron buttons on category rows, visible on hover. Both Netflix and HBO use this.
-- [ ] **Progress indicator bar on cards** -- Thin colored bar at bottom of thumbnail showing watch progress (Netflix red bar, HBO blue bar).
+- [x] **Carousel navigation arrows** -- Already implemented in CategoryRow.jsx with left/right chevron buttons, pointer-fine media query, scroll state tracking (verified 2026-04-10).
+- [x] **Progress indicator bar on cards** -- Added 3px accent-colored progress bar at bottom of VideoCard thumbnails when watchProgress > 5% (2026-04-10).
 
 ### P2 (Month 2 — Differentiation)
 - [ ] **Top 10 / Trending row** -- Special row with large rank numbers beside cards (Netflix pattern). Use view counts for ranking.
@@ -782,6 +782,11 @@ _Added by automated daily design review. Live comparison against Netflix and HBO
 
 ## Completed
 
+- [x] (2026-04-10) Fix random year in HeroSection — actually fixed `2020 + Math.random()` on line 328 (prior claim was incomplete). Now uses heroItem.uploadYear || year from addedAt
+- [x] (2026-04-10) Pre-resolve hero stream URL — added prewarmStream()/getPrewarmedUrl() to playerStore, called on heroItem change for instant Play even with reduced motion or HLS
+- [x] (2026-04-10) Progress indicator bar on VideoCards — 3px accent-colored bar at bottom of thumbnails when watchProgress > 5% (Netflix/HBO competitive parity)
+- [x] (2026-04-10) Demo data badge — amber "DEMO" badge on VideoCard when source === 'demo'
+- [x] (2026-04-10) Backlog audit — verified 5 items already implemented (library skeleton, carousel arrows, settings toasts, watchedIds, continue watching row)
 - [x] (2026-04-08) Fix random year in HeroSection — replaced `2020 + Math.random()` with upload year extraction from heroItem data (design review run 4)
 - [x] (2026-04-08) Skeleton-to-content crossfade — added `contentReveal` keyframe animation (200ms ease-out opacity + translateY) to index.css (design review run 4)
 - [x] (2026-04-08) Fix truncated index.css — fadeIn keyframe was cut off, completed it + removed duplicate view transition rules

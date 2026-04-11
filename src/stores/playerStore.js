@@ -18,6 +18,10 @@ const usePlayerStore = create((set, get) => ({
   streamLoading: false,
   streamError: null,
 
+  // Pre-warmed stream URL cache (resolved before user clicks Play)
+  _prewarmedStreamUrl: null,
+  _prewarmedVideoUrl: null,
+
   // Actions
   setActiveVideo: (video) => set({
     activeVideo: video,
@@ -50,6 +54,28 @@ const usePlayerStore = create((set, get) => ({
     }
   },
 
+  // Pre-warm a stream URL for a video (resolves in background, doesn't affect active player)
+  prewarmStream: async (videoUrl) => {
+    if (!videoUrl) return
+    try {
+      const res = await fetch(`/api/stream-url?url=${encodeURIComponent(videoUrl)}`)
+      if (!res.ok) return
+      const data = await res.json()
+      if (data.streamUrl) {
+        set({ _prewarmedStreamUrl: data.streamUrl, _prewarmedVideoUrl: videoUrl })
+      }
+    } catch { /* non-fatal */ }
+  },
+
+  // Get pre-warmed URL if it matches the given video URL
+  getPrewarmedUrl: (videoUrl) => {
+    const { _prewarmedStreamUrl, _prewarmedVideoUrl } = get()
+    if (_prewarmedVideoUrl === videoUrl && _prewarmedStreamUrl) {
+      return _prewarmedStreamUrl
+    }
+    return null
+  },
+
   // Called when the video element fires an error (e.g. stale/expired CDN URL)
   // Auto-retries once by re-resolving the stream URL
   handleStreamError: () => {
@@ -68,6 +94,8 @@ const usePlayerStore = create((set, get) => ({
     streamUrl: null,
     streamLoading: false,
     streamError: null,
+    _prewarmedStreamUrl: null,
+    _prewarmedVideoUrl: null,
   }),
 }))
 

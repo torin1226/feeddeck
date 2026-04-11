@@ -97,10 +97,27 @@ export default function VideoCard({ video, onClick }) {
           loop
         />
 
+        {/* Demo badge */}
+        {video.source === 'demo' && (
+          <div className="absolute top-2 left-2 bg-amber-500/80 text-white text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wider z-content">
+            Demo
+          </div>
+        )}
+
         {/* Duration badge */}
         <div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-1.5 py-0.5 rounded font-medium z-content">
           {display.duration}
         </div>
+
+        {/* Watch progress bar (Netflix-style thin bar at bottom of thumbnail) */}
+        {video.watchProgress > 0.05 && (
+          <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/10 z-content">
+            <div
+              className="h-full bg-accent rounded-r-sm"
+              style={{ width: `${Math.round(video.watchProgress * 100)}%` }}
+            />
+          </div>
+        )}
 
         {/* Hover overlay with actions */}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100 z-content">

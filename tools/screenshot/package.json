@@ -1,0 +1,9 @@
+{
+  "name": "feeddeck-screenshot",
+  "private": true,
+  "description": "Screenshot tooling for FeedDeck design reviews. Chromium binary persists locally; puppeteer-core installs from npm on first run.",
+  "dependencies": {
+    "puppeteer-core": "^24.0.0",
+    "ws": "^8.20.0"
+  }
+}

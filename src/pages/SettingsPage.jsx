@@ -3,6 +3,7 @@ import useThemeStore from '../stores/themeStore'
 import useModeStore from '../stores/modeStore'
 import useToastStore from '../stores/toastStore'
 import useViewTransitionNavigate from '../hooks/useViewTransitionNavigate'
+import { getStorageUsage } from '../stores/safeStorage'
 
 const API = '/api'
 
@@ -567,8 +568,79 @@ export default function SettingsPage() {
             </div>
           </section>
         )}
+
+        {/* Storage */}
+        <StorageSection showToast={showToast} />
       </div>
     </div>
+  )
+}
+
+// Storage usage indicator with prune option
+function StorageSection({ showToast }) {
+  const [usage, setUsage] = useState(0)
+  const QUOTA = 5 * 1024 * 1024 // 5MB typical localStorage quota
+
+  useEffect(() => { setUsage(getStorageUsage()) }, [])
+
+  const usageKB = (usage / 1024).toFixed(1)
+  const quotaKB = (QUOTA / 1024).toFixed(0)
+  const pct = Math.min(100, (usage / QUOTA) * 100)
+
+  const pruneOldData = () => {
+    const keys = ['fd-lib', 'fd-queue', 'fd-mode', 'fd-theme']
+    // Only prune library — it's typically the largest store
+    try {
+      const raw = localStorage.getItem('fd-lib')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (parsed?.state?.videos?.length > 100) {
+          // Keep only the 100 most recent videos (by addedAt)
+          const sorted = [...parsed.state.videos].sort((a, b) =>
+            (b.addedAt || '').localeCompare(a.addedAt || '')
+          )
+          parsed.state.videos = sorted.slice(0, 100)
+          localStorage.setItem('fd-lib', JSON.stringify(parsed))
+        }
+      }
+      setUsage(getStorageUsage())
+      showToast('Storage pruned', 'success')
+    } catch (err) {
+      showToast('Failed to prune storage', 'error')
+    }
+  }
+
+  return (
+    <section>
+      <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-3">Storage</h2>
+      <div className="bg-surface-raised rounded-xl border border-surface-border p-4 space-y-3">
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-text-primary">Local storage usage</span>
+          <span className="text-text-muted">{usageKB} KB / ~{quotaKB} KB</span>
+        </div>
+        <div className="h-2 bg-surface-overlay rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-300 ${
+              pct > 80 ? 'bg-accent' : pct > 50 ? 'bg-amber-500' : 'bg-green-500'
+            }`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        {pct > 50 && (
+          <div className="flex items-center justify-between">
+            <span className="text-text-muted text-xs">
+              {pct > 80 ? 'Storage nearly full. Prune old library entries to free space.' : 'Storage getting full.'}
+            </span>
+            <button
+              onClick={pruneOldData}
+              className="px-3 py-1.5 rounded-lg text-xs border border-surface-border text-text-secondary hover:text-text-primary hover:border-text-muted transition-colors"
+            >
+              Prune old entries
+            </button>
+          </div>
+        )}
+      </div>
+    </section>
   )
 }
 
