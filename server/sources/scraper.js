@@ -221,12 +221,14 @@ export class ScraperAdapter extends SourceAdapter {
 
       // Scroll to load lazy content
       for (let i = 0; i < scrollCount; i++) {
+        // eslint-disable-next-line no-undef
         await page.evaluate(() => window.scrollBy(0, window.innerHeight))
         await new Promise(r => setTimeout(r, 800))
       }
 
       // Extract video data from the DOM
       const videos = await page.evaluate((cfg, maxResults) => {
+        // eslint-disable-next-line no-undef
         const cards = document.querySelectorAll(cfg.selectors.videoCard)
         const results = []
 

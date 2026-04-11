@@ -3,7 +3,7 @@ import { db } from '../database.js'
 import { getCookieArgs } from '../cookies.js'
 import { registry, ytdlp as ytdlpAdapter } from '../sources/index.js'
 import { logger } from '../logger.js'
-import { isAllowedCdnUrl, getMode, inferMode, formatDuration } from '../utils.js'
+import { isAllowedCdnUrl, inferMode, safeParse } from '../utils.js'
 
 const router = Router()
 
@@ -143,7 +143,8 @@ router.get('/api/stream-formats', async (req, res) => {
       ...getCookieArgs(url), '-j', '--no-warnings', '--no-playlist', url
     ], { timeout: 30000 })
 
-    const info = JSON.parse(stdout)
+    const info = safeParse(stdout)
+    if (!info) return res.status(502).json({ error: 'yt-dlp returned invalid JSON' })
     const formats = (info.formats || [])
       .filter(f => f.vcodec !== 'none' && f.ext === 'mp4')
       .map(f => ({

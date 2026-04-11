@@ -476,7 +476,7 @@ export async function seedTagPreferences(dbPath, rankedTags, options = {}) {
   const skipped = [];
 
   const insertMany = db.transaction((tags) => {
-    for (const { tag, score } of tags) {
+    for (const { tag, score: _score } of tags) {
       const normalizedTag = tag.trim().toLowerCase();
       if (existing.has(normalizedTag)) {
         skipped.push({ tag: normalizedTag, reason: 'already exists' });

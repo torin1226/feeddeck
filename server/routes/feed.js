@@ -2,7 +2,7 @@ import { Router } from 'express'
 import express from 'express'
 import { db } from '../database.js'
 import { logger } from '../logger.js'
-import { getMode, formatDuration } from '../utils.js'
+import { formatDuration } from '../utils.js'
 
 const router = Router()
 

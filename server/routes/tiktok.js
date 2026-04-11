@@ -1,6 +1,5 @@
 import { Router } from 'express'
 import { db } from '../database.js'
-import { logger } from '../logger.js'
 
 const router = Router()
 
@@ -25,7 +24,7 @@ router.get('/api/tiktok/status', (req, res) => {
     for (const row of counts) summary[row.status] = row.count
 
     res.json({ summary, byMode, watchHistory })
-  } catch (err) {
+  } catch {
     // Tables may not exist yet
     res.json({ summary: { pending: 0, done: 0, failed: 0 }, byMode: [], watchHistory: [] })
   }
@@ -37,8 +36,6 @@ router.get('/api/tiktok/recent', (req, res) => {
     const limit = Math.min(parseInt(req.query.limit) || 50, 200)
     const mode = req.query.mode
     const whereMode = mode ? 'AND ti.mode = ?' : ''
-    const params = mode ? ['done', limit, mode] : ['done', limit]
-
     // Reorder params for the query
     const rows = db.prepare(`
       SELECT ti.url, ti.source, ti.tiktok_date, ti.mode, ti.processed_at,
@@ -51,7 +48,7 @@ router.get('/api/tiktok/recent', (req, res) => {
     `).all(...(mode ? ['done', mode, limit] : ['done', limit]))
 
     res.json(rows)
-  } catch (err) {
+  } catch {
     res.json([])
   }
 })
@@ -66,7 +63,7 @@ router.get('/api/tiktok/failed', (req, res) => {
       ORDER BY processed_at DESC LIMIT ?
     `).all(limit)
     res.json(rows)
-  } catch (err) {
+  } catch {
     res.json([])
   }
 })
@@ -80,7 +77,7 @@ router.get('/api/tiktok/watch-history', (req, res) => {
       ? db.prepare('SELECT * FROM tiktok_watch_history WHERE mode = ? ORDER BY watched_at DESC LIMIT ?').all(mode, limit)
       : db.prepare('SELECT * FROM tiktok_watch_history ORDER BY watched_at DESC LIMIT ?').all(limit)
     res.json(rows)
-  } catch (err) {
+  } catch {
     res.json([])
   }
 })

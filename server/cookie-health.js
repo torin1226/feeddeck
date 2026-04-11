@@ -6,11 +6,9 @@
 
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { existsSync } from 'fs'
-import { join, dirname } from 'path'
+import { dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { getCookieArgs, COOKIE_MAP } from './cookies.js'
-import { logger } from './logger.js'
+import { getCookieArgs } from './cookies.js'
 
 const execFileAsync = promisify(execFile)
 const __dirname = dirname(fileURLToPath(import.meta.url))

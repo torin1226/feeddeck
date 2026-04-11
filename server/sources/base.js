@@ -22,24 +22,24 @@ export class SourceAdapter {
   }
 
   // Discovery methods (finding new content)
-  async search(query, options = {}) {
+  async search(query, _options = {}) {
     throw new Error(`${this.name}: search() not implemented`)
   }
 
-  async fetchCategory(categoryUrl, options = {}) {
+  async fetchCategory(categoryUrl, _options = {}) {
     throw new Error(`${this.name}: fetchCategory() not implemented`)
   }
 
-  async fetchTrending(options = {}) {
+  async fetchTrending(_options = {}) {
     throw new Error(`${this.name}: fetchTrending() not implemented`)
   }
 
   // Extraction methods (getting details for a known URL)
-  async extractMetadata(url) {
+  async extractMetadata(_url) {
     throw new Error(`${this.name}: extractMetadata() not implemented`)
   }
 
-  async getStreamUrl(url) {
+  async getStreamUrl(_url) {
     throw new Error(`${this.name}: getStreamUrl() not implemented`)
   }
 

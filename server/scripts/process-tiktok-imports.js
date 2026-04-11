@@ -74,7 +74,7 @@ function extractMetadata(url) {
     })
     return JSON.parse(output)
   } catch (err) {
-    throw new Error(err.stderr?.split('\n')[0] || err.message)
+    throw new Error(err.stderr?.split('\n')[0] || err.message, { cause: err })
   }
 }
 

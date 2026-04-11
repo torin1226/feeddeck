@@ -2,7 +2,7 @@ import { Router } from 'express'
 import express from 'express'
 import { existsSync, writeFileSync, unlinkSync, statSync, readFileSync } from 'fs'
 import { db } from '../database.js'
-import { getCookieArgs, COOKIE_MAP, MODE_COOKIE_FILES, LEGACY_COOKIE_FILE } from '../cookies.js'
+import { MODE_COOKIE_FILES, LEGACY_COOKIE_FILE } from '../cookies.js'
 import { logger } from '../logger.js'
 import { getMode, formatDuration } from '../utils.js'
 

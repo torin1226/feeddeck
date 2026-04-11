@@ -2,9 +2,8 @@ import { Router } from 'express'
 import express from 'express'
 import { db } from '../database.js'
 import { getCookieArgs } from '../cookies.js'
-import { registry } from '../sources/index.js'
 import { logger } from '../logger.js'
-import { getMode, inferMode, formatDuration } from '../utils.js'
+import { getMode, inferMode, formatDuration, safeParse } from '../utils.js'
 
 const router = Router()
 
@@ -210,7 +209,8 @@ router.get('/api/recommendations/seed', async (req, res) => {
         '--socket-timeout', '10', url
       ], { encoding: 'utf8', timeout: 30000, maxBuffer: 5 * 1024 * 1024, windowsHide: true })
 
-      const meta = JSON.parse(stdout)
+      const meta = safeParse(stdout)
+      if (!meta) { failed++; continue }
       const tags = meta.tags || []
       const categories = meta.categories || []
 

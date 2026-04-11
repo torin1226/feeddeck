@@ -13,7 +13,7 @@
 // cron (Beelink). Does NOT start an Express server.
 // ============================================================
 
-import { dirname, join } from 'path'
+import { dirname } from 'path'
 import { fileURLToPath } from 'url'
 import os from 'os'
 
@@ -36,9 +36,8 @@ console.log(`   Platform: ${isWindows ? 'Windows (laptop)' : 'Linux (server)'}`)
 console.log(`   Dry run: ${dryRun}\n`)
 
 // Import project modules
-const { initDatabase, db: getDb } = await import('../database.js')
-const { registry, scraper, closeAllSources } = await import('../sources/index.js')
-const { logger } = await import('../logger.js')
+const { initDatabase } = await import('../database.js')
+const { registry, closeAllSources } = await import('../sources/index.js')
 
 // Initialize database
 initDatabase()
