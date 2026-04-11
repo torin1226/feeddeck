@@ -12,6 +12,7 @@ import HeartBurst from '../components/feed/HeartBurst'
 import SourceControlSheet from '../components/feed/SourceControlSheet'
 import { useNavigate } from 'react-router-dom'
 import FeedBottomNav from '../components/feed/FeedBottomNav'
+import { SkeletonCard } from '../components/Skeletons'
 import FeedFilterSheet from '../components/feed/FeedFilterSheet'
 // QueueSwipeAnimation removed — swipe-to-queue gesture replaced by explicit button
 
@@ -35,6 +36,7 @@ export default function FeedPage() {
   const [sourceSheet, setSourceSheet] = useState(null)
 
 
+
   const navigate = useNavigate()
   const isDesktop = useDesktopBreakpoint()
   const feedView = useFeedStore(s => s.feedView)
@@ -45,6 +47,18 @@ export default function FeedPage() {
   const [filterOpen, setFilterOpen] = useState(false)
   const filters = useFeedStore(s => s.filters)
   const hasActiveFilters = (filters.sources?.length > 0) || (filters.tags?.length > 0)
+
+  // Sources count for context-aware empty state
+  const [sourcesCount, setSourcesCount] = useState(null)
+  useEffect(() => {
+    fetch('/api/sources/list')
+      .then(r => r.json())
+      .then(data => {
+        const sources = Array.isArray(data) ? data : (data.sources || [])
+        setSourcesCount(sources.length)
+      })
+      .catch(() => setSourcesCount(0))
+  }, [])
 
   // Pull-to-refresh state
   const [refreshing, setRefreshing] = useState(false)
@@ -362,18 +376,36 @@ export default function FeedPage() {
   }
 
   if (initialized && buffer.length === 0) {
+    const noSources = sourcesCount !== null && sourcesCount === 0
     return (
       <div className="h-dvh w-full bg-black flex flex-col items-center justify-center gap-3">
-        <div className="text-2xl">📡</div>
-        <div className="text-text-muted text-sm font-medium">No videos in feed yet</div>
-        <div className="text-text-muted/60 text-xs max-w-[240px] text-center">Add your first source to start discovering videos</div>
+        <div className="text-2xl">{noSources ? '⚙' : '📡'}</div>
+        <div className="text-text-muted text-sm font-medium">
+          {noSources
+            ? 'Add sources in Settings to start your feed'
+            : 'No videos match your current filters'}
+        </div>
+        {!noSources && (
+          <div className="text-text-muted/60 text-xs max-w-[260px] text-center">
+            Try adjusting your source or tag filters.
+          </div>
+        )}
         <div className="flex gap-2 mt-4">
-          <button
-            onClick={() => { import('react-router-dom').then(m => m.default || m).catch(() => {}); window.location.href = '/settings' }}
-            className="px-4 py-2 rounded-full bg-accent text-white text-sm font-medium"
-          >
-            Add Sources
-          </button>
+          {noSources ? (
+            <button
+              onClick={() => navigate('/settings')}
+              className="px-4 py-2 rounded-full bg-accent text-white text-sm font-medium"
+            >
+              Go to Settings
+            </button>
+          ) : (
+            <button
+              onClick={() => navigate('/settings')}
+              className="px-4 py-2 rounded-full bg-accent text-white text-sm font-medium"
+            >
+              Manage Sources
+            </button>
+          )}
           <button
             onClick={() => { useModeStore.getState().toggleMode(); resetFeed(); setTimeout(() => initFeed(), 100) }}
             className="px-4 py-2 rounded-full bg-white/10 text-white text-sm border border-white/20"
@@ -405,8 +437,12 @@ export default function FeedPage() {
         ))}
 
         {loading && (
-          <div className="h-dvh w-full snap-start flex items-center justify-center bg-black">
-            <div className="text-text-muted text-sm animate-pulse">Loading more...</div>
+          <div className="h-dvh w-full snap-start flex flex-col items-center justify-center bg-black gap-6 px-8">
+            {[0, 1].map(i => (
+              <div key={i} className="w-full max-w-sm">
+                <SkeletonCard />
+              </div>
+            ))}
           </div>
         )}
 

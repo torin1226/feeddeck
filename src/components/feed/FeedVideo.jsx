@@ -19,6 +19,10 @@ import useFeedStore from '../../stores/feedStore'
 let _sharedVideo = null
 let _sharedHls = null
 function getSharedVideo() {
+  if (_sharedVideo && !_sharedVideo.parentNode) {
+    _sharedVideo = null
+    _sharedHls = null
+  }
   if (!_sharedVideo) {
     _sharedVideo = document.createElement('video')
     _sharedVideo.playsInline = true
@@ -107,6 +111,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
   const [streamUrl, setStreamUrl] = useState(video.streamUrl || null)
   const [streamLoading, setStreamLoading] = useState(false)
   const streamRetries = useRef(0)
+  const [videoError, setVideoError] = useState(false)
   const muted = useFeedStore(s => s.muted)
   const setMuted = useFeedStore(s => s.setMuted)
   const [paused, setPaused] = useState(false)
@@ -150,6 +155,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
         if (!cancelled) {
           setStreamLoading(false)
           setDebugMsg('fetch error: ' + err.message)
+          setVideoError(true)
         }
       })
 
@@ -158,7 +164,19 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
 
   // Claim the shared video element when this slot becomes active
   useEffect(() => {
-    if (!isActive || !streamUrl || !containerEl.current) return
+    if (!isActive || !streamUrl || !containerEl.current) {
+      // Always return cleanup even when early-exiting, so that if
+      // conditions change mid-cycle any prior setup is torn down.
+      return () => {
+        const vid = videoEl.current
+        if (vid) {
+          vid.pause()
+          if (vid.parentNode) vid.parentNode.removeChild(vid)
+          if (_sharedHls) { _sharedHls.destroy(); _sharedHls = null }
+          videoEl.current = null
+        }
+      }
+    }
     let cancelled = false
 
     const vid = getSharedVideo()
@@ -183,6 +201,8 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
         setStreamUrl(null)
         setStreamLoading(false)
         setDebugMsg('retrying stream URL...')
+      } else {
+        setVideoError(true)
       }
     }
     const onLoadedMetadata = () => {
@@ -196,6 +216,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
     vid.addEventListener('loadedmetadata', onLoadedMetadata)
 
     setDebugMsg('loading source...')
+    setVideoError(false)
 
     // Load source (waits for HLS manifest if needed), then play.
     // Always attempt play — the separate pause/unpause effect will
@@ -225,6 +246,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
     }).catch((err) => {
       if (!cancelled) {
         setDebugMsg(`HLS load failed: ${err.message}`)
+        setVideoError(true)
       }
     })
 
@@ -243,6 +265,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
       vid.removeEventListener('loadedmetadata', onLoadedMetadata)
       window.removeEventListener('feed:seek', onSeek)
       vid.pause()
+      if (vid.parentNode) vid.parentNode.removeChild(vid)
       if (_sharedHls) { _sharedHls.destroy(); _sharedHls = null }
       videoEl.current = null
     }
@@ -298,9 +321,40 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
       {/* The shared <video> element is appended via DOM when active — no React <video> here */}
 
       {/* Loading spinner overlay */}
-      {shouldLoad && streamLoading && (
+      {shouldLoad && streamLoading && !videoError && (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+        </div>
+      )}
+
+      {/* Error recovery card */}
+      {videoError && isActive && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black z-20 gap-4">
+          <div className="text-text-muted text-sm font-medium">Couldn't load this video</div>
+          <div className="flex gap-3">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setVideoError(false)
+                streamRetries.current = 0
+                setStreamUrl(null)
+                setStreamLoading(false)
+              }}
+              className="px-4 py-2 bg-surface-overlay border border-surface-border rounded-lg text-white text-sm font-medium active:scale-95 transition-transform"
+            >
+              Tap to retry
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setVideoError(false)
+                useFeedStore.getState().setCurrentIndex(currentIndex + 1)
+              }}
+              className="px-4 py-2 bg-surface-overlay border border-surface-border rounded-lg text-text-muted text-sm font-medium active:scale-95 transition-transform"
+            >
+              Skip
+            </button>
+          </div>
         </div>
       )}
 
