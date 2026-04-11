@@ -374,11 +374,7 @@ app.get('/api/videos', (req, res) => {
   try {
     const mode = getMode(req)
     const rows = db.prepare('SELECT * FROM videos WHERE mode = ? ORDER BY added_at DESC').all(mode)
-    const videos = rows.map((row) => ({
-      ...row,
-      tags: row.tags ? JSON.parse(row.tags) : [],
-      durationFormatted: formatDuration(row.duration),
-    }))
+    const videos = rows.map(transformVideoRow)
     res.json({ videos })
   } catch (err) {
     logger.error('DB read error:', { error: err.message })
@@ -444,7 +440,7 @@ app.get('/api/videos/favorites', (req, res) => {
   try {
     const mode = getMode(req)
     const rows = db.prepare('SELECT * FROM videos WHERE favorite = 1 AND mode = ? ORDER BY added_at DESC').all(mode)
-    const videos = rows.map(row => ({ ...row, tags: row.tags ? JSON.parse(row.tags) : [], durationFormatted: formatDuration(row.duration) }))
+    const videos = rows.map(transformVideoRow)
     res.json({ videos })
   } catch (err) {
     logger.error('Favorites fetch error', { error: err.message })
@@ -459,7 +455,7 @@ app.get('/api/videos/watch-later', (req, res) => {
   try {
     const mode = getMode(req)
     const rows = db.prepare('SELECT * FROM videos WHERE watch_later = 1 AND mode = ? ORDER BY added_at DESC').all(mode)
-    const videos = rows.map(row => ({ ...row, tags: row.tags ? JSON.parse(row.tags) : [], durationFormatted: formatDuration(row.duration) }))
+    const videos = rows.map(transformVideoRow)
     res.json({ videos })
   } catch (err) {
     logger.error('Watch later fetch error', { error: err.message })
@@ -888,7 +884,7 @@ app.get('/api/discover', (req, res) => {
       if (v.favorite) score += 1
       // Bonus for highly rated
       if (v.rating >= 4) score += 1
-      return { ...v, score, tags: v.tags ? JSON.parse(v.tags) : [], durationFormatted: formatDuration(v.duration) }
+      return { ...transformVideoRow(v), score }
     })
 
     // Sort by score descending, then by added_at
@@ -1293,26 +1289,30 @@ app.get('/api/homepage', (req, res) => {
       'SELECT key, label, query FROM categories WHERE mode = ? ORDER BY sort_order'
     ).all(mode)
 
-    // Get cached videos for each category
-    const result = categories.map(cat => {
-      const videos = db.prepare(
-        `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, tags, viewed
-         FROM homepage_cache
-         WHERE category_key = ? AND expires_at > datetime('now')
-         ORDER BY fetched_at DESC
-         LIMIT 20`
-      ).all(cat.key)
+    // Single query: fetch all cached videos for all categories at once (avoids N+1)
+    const catKeys = categories.map(c => c.key)
+    const allVideos = catKeys.length > 0
+      ? db.prepare(
+          `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, tags, viewed, category_key
+           FROM homepage_cache
+           WHERE category_key IN (${catKeys.map(() => '?').join(',')}) AND expires_at > datetime('now')
+           ORDER BY fetched_at DESC`
+        ).all(...catKeys)
+      : []
 
-      return {
-        key: cat.key,
-        label: cat.label,
-        videos: videos.map(v => ({
-          ...v,
-          tags: v.tags ? JSON.parse(v.tags) : [],
-          durationFormatted: formatDuration(v.duration),
-        })),
-      }
-    })
+    // Group by category_key and limit to 20 per category
+    const videosByCategory = new Map()
+    for (const v of allVideos) {
+      const arr = videosByCategory.get(v.category_key)
+      if (arr) { if (arr.length < 20) arr.push(v) }
+      else videosByCategory.set(v.category_key, [v])
+    }
+
+    const result = categories.map(cat => ({
+      key: cat.key,
+      label: cat.label,
+      videos: (videosByCategory.get(cat.key) || []).map(transformVideoRow),
+    }))
 
     // Check if any category needs refill (below 8 videos)
     const needsRefill = result.some(cat => cat.videos.length < 8)
@@ -1345,10 +1345,9 @@ app.post('/api/homepage/viewed', (req, res) => {
   if (!id) return res.status(400).json({ error: 'Video ID required' })
 
   try {
-    db.prepare('UPDATE homepage_cache SET viewed = 1 WHERE id = ?').run(id)
-
-    // Check if the category needs refill
+    // Fetch category_key before update (single read, avoids second query)
     const video = db.prepare('SELECT category_key FROM homepage_cache WHERE id = ?').get(id)
+    db.prepare('UPDATE homepage_cache SET viewed = 1 WHERE id = ?').run(id)
     if (video) {
       const unviewed = db.prepare(
         `SELECT COUNT(*) as n FROM homepage_cache
@@ -1866,6 +1865,17 @@ function startStreamUrlTTLMonitor() {
       logger.error('TTL monitor error:', { error: err.message })
     }
   }, TTL_CHECK_INTERVAL)
+}
+
+// -----------------------------------------------------------
+// Helper: transform a DB video row for JSON response
+// -----------------------------------------------------------
+function transformVideoRow(row) {
+  return {
+    ...row,
+    tags: row.tags ? JSON.parse(row.tags) : [],
+    durationFormatted: formatDuration(row.duration),
+  }
 }
 
 // -----------------------------------------------------------
