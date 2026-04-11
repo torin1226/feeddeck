@@ -34,17 +34,55 @@ router.get('/api/feed/next', (req, res) => {
 
     params.push(count)
 
-    // Get unwatched videos from cache, ordered by source weight
-    // Include stream_url so client doesn't need a second API call
-    const videos = db.prepare(`
+    // Get unwatched videos using a two-pass approach for source diversity:
+    // 1. Pick up to 2 videos per source (round-robin fairness)
+    // 2. Fill remaining slots with weighted random from all sources
+    //
+    // Weight logic: base weight from sources table, then 5x boost if the
+    // video's creator is in subscription_backups (user's followed accounts).
+    const perSourceLimit = Math.max(2, Math.ceil(count / 5))
+    const allUnwatched = db.prepare(`
       SELECT fc.id, fc.url, fc.stream_url AS streamUrl, fc.title, fc.creator AS uploader, fc.thumbnail,
-             fc.duration, fc.orientation, fc.source_domain AS source, fc.tags
+             fc.duration, fc.orientation, fc.source_domain AS source, fc.tags,
+             COALESCE(s.weight, 1.0) * CASE WHEN sb.id IS NOT NULL THEN 5.0 ELSE 1.0 END AS weight
       FROM feed_cache fc
       LEFT JOIN sources s ON fc.source_domain = s.domain
+      LEFT JOIN subscription_backups sb ON fc.creator IS NOT NULL
+        AND (sb.handle = fc.creator OR sb.display_name = fc.creator)
       WHERE fc.mode = ? AND fc.watched = 0${whereExtra}
-      ORDER BY COALESCE(s.weight, 1.0) DESC, RANDOM()
-      LIMIT ?
-    `).all(...params)
+      ORDER BY RANDOM()
+      LIMIT ${count * 10}
+    `).all(...params.slice(0, -1)) // remove the original LIMIT param
+
+    // Round-robin: take perSourceLimit from each source
+    const bySource = {}
+    for (const v of allUnwatched) {
+      if (!bySource[v.source]) bySource[v.source] = []
+      bySource[v.source].push(v)
+    }
+
+    const videos = []
+    const used = new Set()
+    // First pass: round-robin
+    for (const [src, vids] of Object.entries(bySource)) {
+      for (const v of vids.slice(0, perSourceLimit)) {
+        if (videos.length >= count) break
+        videos.push(v)
+        used.add(v.id)
+      }
+    }
+    // Second pass: fill remaining slots with weighted random sampling
+    if (videos.length < count) {
+      const remaining = allUnwatched.filter(v => !used.has(v.id))
+      // Weighted shuffle: items with higher weight are more likely to appear first
+      remaining.sort((a, b) => (Math.random() ** (1 / b.weight)) - (Math.random() ** (1 / a.weight)))
+      for (const v of remaining) {
+        if (videos.length >= count) break
+        videos.push(v)
+      }
+    }
+    // Final shuffle so sources are interleaved, not grouped
+    videos.sort(() => Math.random() - 0.5)
 
     // Apply tag filter (tags stored as JSON array in feed_cache)
     // Also matches against title as fallback for videos without tags

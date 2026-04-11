@@ -15,6 +15,8 @@ import recommendationRoutes from './routes/recommendations.js'
 import contentRoutes, { refillCategory } from './routes/content.js'
 import feedRoutes, { setRefillFeedCache } from './routes/feed.js'
 import tiktokRoutes from './routes/tiktok.js'
+import creatorsRoutes from './routes/creators.js'
+import subscriptionBackupRoutes from './routes/subscription-backup.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -43,6 +45,8 @@ app.use(recommendationRoutes)
 app.use(contentRoutes)
 app.use(feedRoutes)
 app.use(tiktokRoutes)
+app.use(creatorsRoutes)
+app.use(subscriptionBackupRoutes)
 
 // SPA catch-all: serve index.html for non-API routes (client-side routing)
 if (existsSync(distPath)) {
@@ -86,8 +90,9 @@ async function _refillFeedCacheImpl(mode) {
 
     try {
       // Personalize query by mixing in random liked tags
+      // Skip personalization for __creators__ sentinel — CreatorAdapter needs the exact string
       let query = src.query
-      if (likedTags.length > 0) {
+      if (likedTags.length > 0 && !src.query.startsWith('__')) {
         const picked = likedTags.sort(() => Math.random() - 0.5).slice(0, 2)
         query = `${src.query} ${picked.join(' ')}`
         logger.info(`  🎯 Personalized feed query: "${query}"`)
@@ -117,9 +122,9 @@ async function _refillFeedCacheImpl(mode) {
             v.orientation,
             tags
           )
-          added++
-          if (result.changes > 0 && v.url) {
-            newVideoUrls.push(v.url)
+          if (result.changes > 0) {
+            added++
+            if (v.url) newVideoUrls.push(v.url)
           }
         } catch { /* skip duplicates */ }
       }
