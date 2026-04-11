@@ -223,8 +223,7 @@ export default function FeedPage() {
     const prev = theatreDoubleTapRef.current
     if (now - prev.lastTap < 300) {
       // Double tap detected
-      const { getSharedVideoEl: _getSharedVideoEl } = window.__feedSharedVideo || {}
-      // Access shared video via module-level reference through a custom event
+      // Access shared video via custom event dispatch
       const seekEvent = new CustomEvent('feed:seek', {
         detail: { delta: touch.clientX < window.innerWidth / 2 ? -10 : 10 }
       })

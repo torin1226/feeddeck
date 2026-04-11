@@ -37,8 +37,7 @@ export default function useKeyboard() {
           const vid = document.querySelector('video')
           if (vid) break // Let VideoPlayer handle it
           e.preventDefault()
-          const _next = useQueueStore.getState().advance()
-          // next video loaded via queue store
+          useQueueStore.getState().advance()
           break
         }
 

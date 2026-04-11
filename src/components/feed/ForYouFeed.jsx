@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from 'react'
+import { useRef, useEffect, useCallback } from 'react'
 import useFeedStore from '../../stores/feedStore'
 import ForYouSlot from './ForYouSlot'
 import TheatreOverlay from './TheatreOverlay'
@@ -8,7 +8,7 @@ import NextUpDialog from './NextUpDialog'
 export default function ForYouFeed() {
   const containerRef = useRef(null)
   const activeVideoRef = useRef(null)
-  const [nextUpVisible] = useState(false)
+  const nextUpVisible = false // TODO: wire up NextUp feature
 
   const buffer = useFeedStore(s => s.buffer)
   const currentIndex = useFeedStore(s => s.currentIndex)

@@ -232,9 +232,7 @@ export default function FloatingQueue() {
 // -------------------------------------------------------
 function QueueRow({
   item,
-  _index,
   isCurrent,
-  _isSFW,
   showDropIndicator,
   onRemove,
   onDragStart,
