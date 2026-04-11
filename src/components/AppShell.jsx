@@ -33,7 +33,8 @@ export default function AppShell() {
       {/* Skip navigation link for keyboard users */}
       <a href="#main-content" className="skip-nav">Skip to main content</a>
 
-      <main id="main-content">
+      <main id="main-content" role="main">
+        <h1 className="absolute w-px h-px overflow-hidden" style={{ clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0 }}>FeedDeck</h1>
         <Suspense fallback={
           <div className="h-screen w-full flex items-center justify-center bg-surface">
             <div className="w-8 h-8 border-2 border-text-muted border-t-text-primary rounded-full animate-spin" />
