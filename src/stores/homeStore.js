@@ -90,6 +90,7 @@ function makeItem() {
     desc: descs[rnd(descs.length)],
     genre: genres[rnd(genres.length)],
     rating: (7 + Math.random() * 2.5).toFixed(1),
+    orient: Math.random() > 0.6 ? 'v' : 'h',
   }
 }
 
@@ -181,6 +182,7 @@ const useHomeStore = create((set, get) => ({
         rating: v.rating != null ? Number(v.rating).toFixed(1) : null,
         url: v.url,
         tags: v.tags || [],
+        orient: (v.height && v.width && v.height > v.width) ? 'v' : 'h',
       })
 
       // Collect all videos from all categories for carousel/hero/featured
