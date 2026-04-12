@@ -4,9 +4,9 @@ import useModeStore from '../stores/modeStore'
 import useFeedStore from '../stores/feedStore'
 import HomeHeader from '../components/home/HomeHeader'
 import HeroSection from '../components/home/HeroSection'
-import BrowseSection from '../components/home/BrowseSection'
+import PosterShelf from '../components/home/PosterShelf'
 import TheatreControls from '../components/home/TheatreControls'
-import { SkeletonHero, SkeletonCategoryRow } from '../components/Skeletons'
+import { SkeletonHero, SkeletonPosterShelf } from '../components/Skeletons'
 
 // ============================================================
 // HomePage
@@ -59,14 +59,14 @@ export default function HomePage() {
       {loading ? (
         <>
           <SkeletonHero />
-          <SkeletonCategoryRow />
+          <SkeletonPosterShelf />
         </>
       ) : (
         <>
           <HeroSection />
           {!theatreMode && (
             <div className="relative z-content">
-              <BrowseSection />
+              <PosterShelf />
             </div>
           )}
           <TheatreControls />
