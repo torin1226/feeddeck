@@ -1,9 +1,13 @@
 import { Router } from 'express'
 import express from 'express'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
 import { db } from '../database.js'
 import { getCookieArgs } from '../cookies.js'
 import { logger } from '../logger.js'
 import { getMode, inferMode, formatDuration, safeParse } from '../utils.js'
+
+const execFileP = promisify(execFile)
 
 const router = Router()
 
@@ -153,12 +157,10 @@ router.get('/api/recommendations/seed', async (req, res) => {
     )
   }
 
-  send({ type: 'status', message: `Starting ${platform} import for user "${username}"...`, sources: urls.map(u => u.label) })
+  const userLabel = username ? `user "${username}"` : platform
+  send({ type: 'status', message: `Starting ${platform} import for ${userLabel}...`, sources: urls.map(u => u.label) })
 
   // Phase 1: Collect video URLs from all sources via flat-playlist
-  const { execFile } = await import('child_process')
-  const { promisify } = await import('util')
-  const execFileP = promisify(execFile)
   const allVideoUrls = []
   for (const src of urls) {
     send({ type: 'progress', phase: 'scan', source: src.label })

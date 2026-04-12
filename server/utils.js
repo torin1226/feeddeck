@@ -64,7 +64,7 @@ export function safeParse(str, fallback = null) {
   try {
     return JSON.parse(str)
   } catch (err) {
-    console.error('[safeParse] Failed to parse:', str?.slice(0, 200), err.message)
+    logger.error('[safeParse] Failed to parse', { preview: str?.slice(0, 200), error: err.message })
     return fallback
   }
 }
