@@ -8,20 +8,42 @@
    Light theme activates when html has class="light".
    ============================================================ */
 :root {
-  --color-surface: #111113;
+  --color-surface: #0a0a0c;
   --color-surface-raised: #141416;
   --color-surface-overlay: #1c1c1f;
   --color-surface-border: #2a2a2e;
   --color-text-primary: #e5e5e5;
   --color-text-secondary: #a1a1a6;
   --color-text-muted: #8a8a90;
-  --color-scrollbar-track: #111113;
+  --color-scrollbar-track: #0a0a0c;
   --color-scrollbar-thumb: #2a2a2e;
   --color-scrollbar-hover: #3a3a3e;
-  --color-gradient-solid: rgba(17, 17, 19, 0.95);
-  --color-gradient-mid: rgba(17, 17, 19, 0.55);
-  --color-gradient-light: rgba(17, 17, 19, 0.3);
-  --color-gradient-faint: rgba(17, 17, 19, 0.15);
+  --color-gradient-solid: rgba(10, 10, 12, 0.95);
+  --color-gradient-mid: rgba(10, 10, 12, 0.55);
+  --color-gradient-light: rgba(10, 10, 12, 0.3);
+  --color-gradient-faint: rgba(10, 10, 12, 0.15);
+
+  /* ============================================================
+     Glass Material System — 3 Elevation Layers
+     Layer 0: Base surface (--color-surface, the void)
+     Layer 1: .glass — cards, panels, nav elements
+     Layer 2: .glass-elevated — modals, dropdowns, sheets
+     Accent: .glass-accent — rose-tinted, signature material
+
+     Rule: The void (#0a0a0c) is what makes glass register.
+     Never put glass on glass without stepping up an elevation.
+     Never blur text — glass is a container, not a filter over copy.
+     ============================================================ */
+  --glass-bg: rgba(255, 255, 255, 0.04);
+  --glass-bg-hover: rgba(255, 255, 255, 0.07);
+  --glass-bg-elevated: rgba(255, 255, 255, 0.08);
+  --glass-border: rgba(255, 255, 255, 0.06);
+  --glass-border-hover: rgba(255, 255, 255, 0.10);
+  --glass-highlight: rgba(255, 255, 255, 0.08);
+  --glass-accent-bg: rgba(244, 63, 94, 0.12);
+  --glass-accent-border: rgba(244, 63, 94, 0.20);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --glass-glow-accent: 0 0 40px rgba(244, 63, 94, 0.15);
 }
 
 .light {
@@ -39,6 +61,19 @@
   --color-gradient-mid: rgba(248, 248, 250, 0.55);
   --color-gradient-light: rgba(248, 248, 250, 0.3);
   --color-gradient-faint: rgba(248, 248, 250, 0.15);
+
+  /* Light mode glass: white-on-light, higher opacity, softer shadows.
+     Stronger blur compensates for the lower contrast base. */
+  --glass-bg: rgba(255, 255, 255, 0.60);
+  --glass-bg-hover: rgba(255, 255, 255, 0.70);
+  --glass-bg-elevated: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(0, 0, 0, 0.06);
+  --glass-border-hover: rgba(0, 0, 0, 0.10);
+  --glass-highlight: rgba(255, 255, 255, 0.90);
+  --glass-accent-bg: rgba(244, 63, 94, 0.08);
+  --glass-accent-border: rgba(244, 63, 94, 0.16);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --glass-glow-accent: 0 0 40px rgba(244, 63, 94, 0.10);
 }
 
 /* Global focus-visible styles for keyboard accessibility */
@@ -230,4 +265,41 @@ html {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ============================================================
+   Glass Utility Classes
+   Use these in JSX via className instead of inline styles.
+   See :root for token definitions and the 3-layer system.
+   ============================================================ */
+
+/* Layer 1 — Base glass: cards, nav, panels */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+.glass:hover {
+  background: var(--glass-bg-hover);
+  border-color: var(--glass-border-hover);
+}
+
+/* Layer 2 — Elevated glass: modals, dropdowns, sheets */
+.glass-elevated {
+  background: var(--glass-bg-elevated);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--glass-border-hover);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+}
+
+/* Accent glass — rose-tinted, signature material */
+.glass-accent {
+  background: var(--glass-accent-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-accent-border);
+  box-shadow: var(--glass-glow-accent);
 }
