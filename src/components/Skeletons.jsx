@@ -57,14 +57,6 @@ export function SkeletonHero() {
   )
 }
 
-export function SkeletonFeatured() {
-  return (
-    <div className="h-screen w-full flex items-center justify-center bg-surface">
-      <div className={`${shimmer} rounded-2xl`} style={{ width: '62vw', height: '380px' }} />
-    </div>
-  )
-}
-
 export function SkeletonLibrary() {
   return (
     <div className="pt-14">
