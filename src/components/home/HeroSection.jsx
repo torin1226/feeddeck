@@ -26,7 +26,7 @@ export default function HeroSection() {
 
   const {
     autoplayVideoRef, autoplayReady, autoplayUrl,
-    muted: autoplayMuted, toggleMute: toggleAutoplayMute, reducedMotion,
+    muted: autoplayMuted, toggleMute: toggleAutoplayMute, reducedMotion: _reducedMotion,
   } = useHeroAutoplay(heroItem, theatreMode)
 
   const [previewing, setPreviewing] = useState(false)
@@ -180,7 +180,7 @@ export default function HeroSection() {
       className={`relative overflow-hidden transition-[height] duration-500 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] ${
         theatreMode ? 'h-screen min-h-screen' : ''
       }`}
-      style={theatreMode ? {} : { height: '85vh', minHeight: '540px' }}
+      style={theatreMode ? {} : { height: '100vh', minHeight: '600px' }}
     >
       {/* Background image with Ken Burns + autoplay video overlay */}
       {/* Hero thumbnail — uses object-contain to avoid cropping + blurred fill behind for letterbox */}

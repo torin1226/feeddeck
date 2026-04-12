@@ -4,17 +4,15 @@ import useModeStore from '../stores/modeStore'
 import useFeedStore from '../stores/feedStore'
 import HomeHeader from '../components/home/HomeHeader'
 import HeroSection from '../components/home/HeroSection'
-import FeaturedSection from '../components/home/FeaturedSection'
-import CategoryRows from '../components/home/CategoryRows'
+import BrowseSection from '../components/home/BrowseSection'
 import TheatreControls from '../components/home/TheatreControls'
-import { SkeletonHero, SkeletonFeatured, SkeletonCategoryRow } from '../components/Skeletons'
+import { SkeletonHero, SkeletonCategoryRow } from '../components/Skeletons'
 
 // ============================================================
 // HomePage
-// Main landing page with hero, featured carousel, and category
-// rows. Fetches real data from backend on mount, falls back to
-// placeholders if the cache is empty.
-// In theatre mode, FeaturedSection and CategoryRows are hidden.
+// Main landing page with hero (100vh) and three curated browse
+// rows using theatre-size cards with parallax scrolling.
+// In theatre mode, BrowseSection is hidden.
 // ============================================================
 
 export default function HomePage() {
@@ -61,8 +59,6 @@ export default function HomePage() {
       {loading ? (
         <>
           <SkeletonHero />
-          <SkeletonFeatured />
-          <SkeletonCategoryRow />
           <SkeletonCategoryRow />
         </>
       ) : (
@@ -70,8 +66,7 @@ export default function HomePage() {
           <HeroSection />
           {!theatreMode && (
             <div className="relative z-content">
-              <FeaturedSection />
-              <CategoryRows />
+              <BrowseSection />
             </div>
           )}
           <TheatreControls />
