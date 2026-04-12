@@ -389,7 +389,7 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 **Backend: Username Config**
 - [x] Store platform usernames in `preferences` table (key: `{platform}_username`)
 - [x] `PUT /api/recommendations/username` + `GET /api/recommendations/username` endpoints
-- [ ] Settings UI: text field for PornHub username (pre-filled if already set)
+- [x] Settings UI: text field for PornHub username (pre-filled if already set) — already implemented in Seed Recommendations section with platform selector + username field + onBlur save (verified 2026-04-11)
 - [x] Endpoint uses stored username to construct history/favorites URLs
 - [x] Multi-platform support: pornhub, youtube, tiktok URL builders
 
@@ -742,7 +742,7 @@ _Added by automated daily design review. Prioritized by impact on core user expe
 ### P2 (Month 2)
 - [ ] **Content-aware skeleton shapes** -- Match skeleton layout to actual component dimensions.
 - [ ] **Ambient color extraction** -- Extract dominant thumbnail color for hero gradient overlay.
-- [ ] **Settings input validation** -- Client-side validation for domain format, non-empty fields.
+- [x] **Settings input validation** -- Client-side validation for source domain format (regex), non-empty label/query, trimmed values before API submission (2026-04-11).
 
 ### P3 (Month 3)
 - [ ] **Branded empty state SVGs** -- Replace emoji icons with custom illustrations.
@@ -756,19 +756,19 @@ _Added by automated daily design review. Prioritized by impact on core user expe
 _Added by automated daily design review. Live comparison against Netflix and HBO Max page structures._
 
 ### P0 (This Sprint — Competitive Parity)
-- [ ] **Continue Watching row on Homepage** -- Pull from library watch progress, position as 1st or 2nd row. Netflix has this as row 2, HBO Max as row 3. Currently FeedDeck only shows it in Library.
-- [ ] **Search UI** -- feedStore already has searchQuery infrastructure. Add search icon to Header expanding to input. Both Netflix and HBO Max treat search as primary navigation.
-- [ ] **Hero autoplay (muted)** -- Pre-resolve stream URL when heroItem is set. Auto-play muted video replacing Ken Burns. Add mute toggle. Every major streaming service does this.
+- [x] **Continue Watching row on Homepage** -- ContinueWatchingRow component wired into BrowseSection as first row before category rows (2026-04-11).
+- [x] **Search UI** -- Already implemented: Ctrl+K expanding search in HomeHeader with results dropdown (verified 2026-04-11).
+- [x] **Hero autoplay (muted)** -- Already implemented: useHeroAutoplay hook resolves stream URL, plays muted video with toggle button (verified 2026-04-11).
 
 ### P1 (Next 2 Weeks — Premium Feel)
-- [ ] **Personalized row titles** -- Replace source-based labels with contextual names ("Because You Watched X", "Quick Watches", "Fresh Today"). Netflix and HBO Max personalize every row title.
+- [x] **Personalized row titles** -- personalizeLabel() in homeStore generates contextual names based on content: "Quick Hits", "Fresh Today", "Picked for You", "Most Viewed", "More from {uploader}" (2026-04-11).
 - [x] **Fix random year in HeroSection** -- Line 328 still had `2020 + Math.random()` despite prior fix claim. Actually fixed: now uses heroItem.uploadYear or extracted year from addedAt (2026-04-10).
 - [x] **Skeleton → content crossfade** -- Added contentReveal keyframe (200ms ease-out fade+slide) to index.css. Both Netflix and HBO use subtle opacity transitions (2026-04-08 run 4).
 - [x] **Carousel navigation arrows** -- Already implemented in CategoryRow.jsx with left/right chevron buttons, pointer-fine media query, scroll state tracking (verified 2026-04-10).
 - [x] **Progress indicator bar on cards** -- Added 3px accent-colored progress bar at bottom of VideoCard thumbnails when watchProgress > 5% (2026-04-10).
 
 ### P2 (Month 2 — Differentiation)
-- [ ] **Top 10 / Trending row** -- Special row with large rank numbers beside cards (Netflix pattern). Use view counts for ranking.
+- [x] **Top 10 / Trending row** -- Top10Row component wired into BrowseSection after ContinueWatching. homeStore builds top10 from allVideos sorted by view count with rank numbers (2026-04-11).
 - [ ] **Content-aware hero gradient** -- Extract dominant color from hero thumbnail for gradient overlay.
 - [ ] **Lightweight detail card on hover** -- Expanded card with synopsis and action buttons before committing to Theatre (Netflix signature pattern).
 - [ ] **Editorial row variety** -- Increase from 3-5 to 8-10 rows: "Fresh Today", "Long Watches", "Quick Hits", "Most Viewed", source highlights.
@@ -782,6 +782,11 @@ _Added by automated daily design review. Live comparison against Netflix and HBO
 
 ## Completed
 
+- [x] (2026-04-11) Continue Watching row on Homepage — wired existing ContinueWatchingRow into BrowseSection as first row before category rows (Netflix competitive parity)
+- [x] (2026-04-11) Top 10 / Trending row — wired Top10Row into BrowseSection, added top10 state to homeStore populated by view count ranking from fetched data
+- [x] (2026-04-11) Personalized row titles — added personalizeLabel() to homeStore that generates contextual names (Quick Hits, Fresh Today, Picked for You, Most Viewed, More from X) with dedup logic
+- [x] (2026-04-11) Settings input validation — client-side domain format regex, non-empty label/query validation, trimmed values before API submission
+- [x] (2026-04-11) Verified: Search UI already implemented (Ctrl+K expanding input in HomeHeader), Hero autoplay already implemented (useHeroAutoplay hook + mute toggle), Settings username field already implemented (Seed Recommendations section)
 - [x] (2026-04-10) Fix random year in HeroSection — actually fixed `2020 + Math.random()` on line 328 (prior claim was incomplete). Now uses heroItem.uploadYear || year from addedAt
 - [x] (2026-04-10) Pre-resolve hero stream URL — added prewarmStream()/getPrewarmedUrl() to playerStore, called on heroItem change for instant Play even with reduced motion or HLS
 - [x] (2026-04-10) Progress indicator bar on VideoCards — 3px accent-colored bar at bottom of thumbnails when watchProgress > 5% (Netflix/HBO competitive parity)

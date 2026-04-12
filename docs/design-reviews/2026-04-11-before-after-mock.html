@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FeedDeck Run 9: Error Resilience Before/After</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: #0a0a0c;
+    color: #e5e5e5;
+    line-height: 1.5;
+  }
+
+  .header {
+    padding: 40px 48px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    position: sticky;
+    top: 0;
+    background: rgba(10,10,12,0.95);
+    backdrop-filter: blur(20px);
+    z-index: 10;
+  }
+
+  .header h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+
+  .header p {
+    color: #737373;
+    font-size: 14px;
+  }
+
+  .section {
+    padding: 48px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+
+  .section-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .section-desc {
+    color: #737373;
+    font-size: 13px;
+    margin-bottom: 32px;
+    max-width: 700px;
+  }
+
+  .badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge-p0 { background: #f43f5e; color: white; }
+  .badge-p1 { background: #f59e0b; color: #1a1a1a; }
+  .badge-p2 { background: #3b82f6; color: white; }
+  .badge-new { background: #10b981; color: white; }
+
+  .comparison {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 24px;
+  }
+
+  .mock {
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: #111113;
+  }
+
+  .mock-label {
+    padding: 10px 16px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .mock-label.before {
+    background: rgba(244,63,94,0.1);
+    color: #f43f5e;
+    border-bottom: 1px solid rgba(244,63,94,0.15);
+  }
+  .mock-label.after {
+    background: rgba(16,185,129,0.1);
+    color: #10b981;
+    border-bottom: 1px solid rgba(16,185,129,0.15);
+  }
+
+  .mock-content {
+    padding: 32px;
+    min-height: 300px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    position: relative;
+  }
+
+  /* Mock UI Elements */
+  .mock-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    background: rgba(255,255,255,0.03);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    font-size: 12px;
+  }
+
+  .mock-nav-logo {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+  }
+
+  .mock-nav-logo span { color: #f43f5e; }
+
+  .mock-nav-links {
+    display: flex;
+    gap: 16px;
+    color: #737373;
+    font-size: 12px;
+  }
+
+  .mock-nav-links .active { color: #e5e5e5; text-decoration: underline; text-underline-offset: 4px; }
+
+  /* Error State Styles */
+  .error-icon {
+    font-size: 32px;
+    margin-bottom: 12px;
+    opacity: 0.6;
+  }
+
+  .error-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .error-message {
+    color: #737373;
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+
+  .error-detail {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 11px;
+    color: #525252;
+    background: rgba(255,255,255,0.03);
+    padding: 6px 12px;
+    border-radius: 6px;
+    margin: 12px 0;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+
+  .btn {
+    padding: 8px 20px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .btn-ghost {
+    background: rgba(255,255,255,0.06);
+    color: #a3a3a3;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .btn-accent {
+    background: #f43f5e;
+    color: white;
+  }
+
+  .btn-success {
+    background: rgba(16,185,129,0.15);
+    color: #10b981;
+    border: 1px solid rgba(16,185,129,0.2);
+  }
+
+  .btn-group {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  /* New: Contextual Error Card */
+  .error-card {
+    background: rgba(244,63,94,0.04);
+    border: 1px solid rgba(244,63,94,0.12);
+    border-radius: 14px;
+    padding: 28px 32px;
+    max-width: 440px;
+    text-align: left;
+  }
+
+  .error-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .error-card-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: rgba(244,63,94,0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+
+  .error-card-title {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .error-card-subtitle {
+    font-size: 12px;
+    color: #737373;
+  }
+
+  .error-card-body {
+    font-size: 13px;
+    color: #a3a3a3;
+    margin-bottom: 16px;
+    line-height: 1.6;
+  }
+
+  .error-card-suggestion {
+    font-size: 12px;
+    color: #10b981;
+    background: rgba(16,185,129,0.06);
+    padding: 8px 12px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .error-card-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  /* Retry progress */
+  .retry-bar {
+    width: 100%;
+    height: 3px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 2px;
+    margin-top: 12px;
+    overflow: hidden;
+  }
+
+  .retry-bar-fill {
+    height: 100%;
+    width: 65%;
+    background: linear-gradient(90deg, #f43f5e, #f59e0b);
+    border-radius: 2px;
+    animation: retryPulse 2s ease-in-out infinite;
+  }
+
+  @keyframes retryPulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+  }
+
+  .retry-text {
+    font-size: 11px;
+    color: #525252;
+    margin-top: 6px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* Loading skeleton */
+  .skeleton {
+    background: linear-gradient(90deg, #1a1a1e 25%, #252528 50%, #1a1a1e 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+    border-radius: 8px;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* Settings mock */
+  .settings-section {
+    text-align: left;
+    width: 100%;
+    padding: 0 20px;
+  }
+
+  .settings-heading {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #525252;
+    margin-bottom: 12px;
+  }
+
+  .settings-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .settings-card-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .adapter-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+
+  .dot-green { background: #10b981; }
+  .dot-yellow { background: #f59e0b; }
+  .dot-red { background: #f43f5e; }
+
+  .settings-card-name {
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .settings-card-meta {
+    font-size: 11px;
+    color: #525252;
+  }
+
+  /* Feed empty state */
+  .feed-mock {
+    width: 100%;
+    background: #0a0a0c;
+    min-height: 280px;
+    position: relative;
+  }
+
+  .feed-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px;
+  }
+
+  .feed-pill {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 999px;
+    padding: 6px 16px;
+    font-size: 12px;
+    display: flex;
+    gap: 12px;
+  }
+
+  .feed-pill .active { color: #e5e5e5; }
+  .feed-pill .inactive { color: #525252; }
+
+  .feed-video-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+
+  /* Timeout indicator */
+  .timeout-ring {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 3px solid rgba(255,255,255,0.06);
+    border-top-color: #f43f5e;
+    animation: spin 1.2s linear infinite;
+    margin-bottom: 16px;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .timeout-stalled {
+    border-top-color: #f59e0b;
+    animation-play-state: paused;
+  }
+
+  /* Callout boxes */
+  .callout {
+    background: rgba(59,130,246,0.06);
+    border: 1px solid rgba(59,130,246,0.15);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-top: 20px;
+    font-size: 12px;
+    color: #93c5fd;
+    line-height: 1.6;
+  }
+
+  .callout-title {
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: #60a5fa;
+  }
+
+  /* Network status bar */
+  .network-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .network-bar.offline {
+    background: rgba(244,63,94,0.08);
+    color: #f87171;
+    border-bottom: 1px solid rgba(244,63,94,0.12);
+  }
+
+  .network-bar.reconnecting {
+    background: rgba(245,158,11,0.08);
+    color: #fbbf24;
+    border-bottom: 1px solid rgba(245,158,11,0.12);
+  }
+
+  .network-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: blink 1.5s ease-in-out infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* Details disclosure */
+  .details-toggle {
+    font-size: 11px;
+    color: #525252;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 8px;
+  }
+
+  .details-toggle:hover { color: #737373; }
+
+  /* Homepage skeleton with timeout */
+  .home-mock { width: 100%; text-align: left; }
+
+  .hero-skeleton {
+    width: 100%;
+    height: 160px;
+    border-radius: 0;
+    position: relative;
+  }
+
+  .category-skeleton {
+    padding: 16px 20px;
+  }
+
+  .category-skeleton-title {
+    width: 120px;
+    height: 14px;
+    margin-bottom: 12px;
+  }
+
+  .category-skeleton-row {
+    display: flex;
+    gap: 10px;
+  }
+
+  .category-skeleton-card {
+    width: 140px;
+    height: 79px;
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Run 9: Error Resilience & Recovery UX</h1>
+  <p>April 11, 2026 | Before/After mockups for the top 5 proposed improvements</p>
+</div>
+
+<!-- 1. SETTINGS CRASH -->
+<div class="section">
+  <div class="section-title">
+    <span>1. Settings Page Crash Recovery</span>
+    <span class="badge badge-p0">P0</span>
+    <span class="badge badge-new">5th consecutive run</span>
+  </div>
+  <p class="section-desc">
+    Settings has crashed on every audit since Run 5. The error boundary catches it, but the recovery UX is generic and unhelpful. The user sees a code error message and has no idea what went wrong or what to do about it.
+  </p>
+
+  <div class="comparison">
+    <div class="mock">
+      <div class="mock-label before">Current: Generic crash screen</div>
+      <div class="mock-nav">
+        <div class="mock-nav-logo"><span>Feed</span>Deck</div>
+        <div class="mock-nav-links"><span>Home</span> <span>Feed</span> <span>Library</span> <span class="active">Settings</span></div>
+      </div>
+      <div class="mock-content" style="min-height: 340px; background: #111113;">
+        <div class="error-icon">&#9888;</div>
+        <div class="error-title">Something went wrong</div>
+        <div class="error-message">The Settings section crashed.</div>
+        <div class="error-detail">Cannot read properties of undefined (reading 'map')</div>
+        <div class="btn-group">
+          <button class="btn btn-ghost">Try Again</button>
+          <button class="btn btn-accent">Reload Page</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="mock">
+      <div class="mock-label after">Proposed: Contextual recovery card</div>
+      <div class="mock-nav">
+        <div class="mock-nav-logo"><span>Feed</span>Deck</div>
+        <div class="mock-nav-links"><span>Home</span> <span>Feed</span> <span>Library</span> <span class="active">Settings</span></div>
+      </div>
+      <div class="mock-content" style="min-height: 340px; background: #111113;">
+        <div class="error-card">
+          <div class="error-card-header">
+            <div class="error-card-icon">&#9881;</div>
+            <div>
+              <div class="error-card-title">Settings couldn't load</div>
+              <div class="error-card-subtitle">The server returned incomplete data</div>
+            </div>
+          </div>
+          <div class="error-card-body">
+            Your sources and preferences are still saved. The adapter health check returned unexpected data, which caused the page to crash.
+          </div>
+          <div class="error-card-suggestion">
+            &#10003; Quick fix: The backend may still be starting up. Wait a moment and retry.
+          </div>
+          <div class="error-card-actions">
+            <button class="btn btn-accent" style="font-size: 12px;">Retry Settings</button>
+            <button class="btn btn-ghost" style="font-size: 12px;">Load Without Health Check</button>
+          </div>
+          <div class="details-toggle">&#9654; Show technical details</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <div class="callout-title">What to notice</div>
+    1. Error card explains what happened in human language, not a stack trace<br>
+    2. Suggestion box gives a likely fix (server startup lag)<br>
+    3. "Load Without Health Check" offers partial recovery instead of all-or-nothing<br>
+    4. Technical details collapsed by default (power users can expand)
+  </div>
+</div>
+
+<!-- 2. FEED LOADING TIMEOUT -->
+<div class="section">
+  <div class="section-title">
+    <span>2. Feed Loading with Timeout Detection</span>
+    <span class="badge badge-p1">P1</span>
+  </div>
+  <p class="section-desc">
+    Feed page shows a spinner indefinitely when the API is slow or down. No timeout, no progress signal, no escape hatch. The user stares at a loading spinner with zero information about what's happening.
+  </p>
+
+  <div class="comparison">
+    <div class="mock">
+      <div class="mock-label before">Current: Infinite spinner</div>
+      <div class="mock-content" style="min-height: 300px; background: #0a0a0c;">
+        <div class="feed-mock">
+          <div class="feed-topbar">
+            <span style="font-size: 12px; color: #525252;">&#9776;</span>
+            <div class="feed-pill">
+              <span class="active">For You</span>
+              <span class="inactive">Remix</span>
+            </div>
+            <span style="font-size: 12px; color: #525252;">&#9881;</span>
+          </div>
+          <div class="feed-video-area">
+            <div class="timeout-ring"></div>
+            <div style="font-size: 13px; color: #525252;">Loading feed...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mock">
+      <div class="mock-label after">Proposed: Timeout-aware loading</div>
+      <div class="mock-content" style="min-height: 300px; background: #0a0a0c;">
+        <div class="feed-mock">
+          <div class="feed-topbar">
+            <span style="font-size: 12px; color: #525252;">&#9776;</span>
+            <div class="feed-pill">
+              <span class="active">For You</span>
+              <span class="inactive">Remix</span>
+            </div>
+            <span style="font-size: 12px; color: #525252;">&#9881;</span>
+          </div>
+          <div class="feed-video-area">
+            <div class="timeout-ring timeout-stalled"></div>
+            <div style="font-size: 14px; font-weight: 500; color: #e5e5e5; margin-bottom: 4px;">Taking longer than usual</div>
+            <div style="font-size: 12px; color: #737373; margin-bottom: 4px;">Connecting to your sources (15s elapsed)</div>
+            <div class="retry-bar"><div class="retry-bar-fill"></div></div>
+            <div class="retry-text">
+              <span>Auto-retry in 5s</span>
+              <span>Attempt 2 of 3</span>
+            </div>
+            <div class="btn-group">
+              <button class="btn btn-ghost" style="font-size: 11px;">Retry Now</button>
+              <button class="btn btn-ghost" style="font-size: 11px;">Try Offline Cache</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <div class="callout-title">What to notice</div>
+    1. Spinner pauses to signal "stalled" vs. "loading" (visual difference matters)<br>
+    2. Elapsed time shown so user knows it's not frozen<br>
+    3. Auto-retry with visible countdown (not silent)<br>
+    4. "Try Offline Cache" offers cached content as escape hatch<br>
+    5. Attempt counter builds trust that the system is actively trying
+  </div>
+</div>
+
+<!-- 3. HOMEPAGE FETCH FAILURE -->
+<div class="section">
+  <div class="section-title">
+    <span>3. Homepage: Fetch Failure with Graceful Degradation</span>
+    <span class="badge badge-p1">P1</span>
+  </div>
+  <p class="section-desc">
+    When the homepage API fails, the app falls back to placeholder data silently. The user never knows they're seeing stale/fake content. No retry, no indication, no transparency.
+  </p>
+
+  <div class="comparison">
+    <div class="mock">
+      <div class="mock-label before">Current: Silent fallback to placeholders</div>
+      <div class="mock-content" style="min-height: 280px; background: #111113; align-items: flex-start;">
+        <div class="home-mock">
+          <div class="hero-skeleton skeleton" style="margin-bottom: 4px;">
+            <div style="position: absolute; bottom: 20px; left: 20px;">
+              <div style="font-size: 16px; font-weight: 600;">Puppy Compilation #4</div>
+              <div style="font-size: 11px; color: #737373;">Placeholder content loads silently</div>
+            </div>
+          </div>
+          <div class="category-skeleton">
+            <div style="font-size: 12px; font-weight: 600; color: #525252; margin-bottom: 8px;">Trending Today</div>
+            <div class="category-skeleton-row">
+              <div class="category-skeleton-card skeleton"></div>
+              <div class="category-skeleton-card skeleton"></div>
+              <div class="category-skeleton-card skeleton"></div>
+            </div>
+          </div>
+          <div style="padding: 0 20px; font-size: 11px; color: #404040; font-style: italic;">
+            * User has no idea this is placeholder data, not their actual feed
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mock">
+      <div class="mock-label after">Proposed: Transparent degradation</div>
+      <div class="mock-content" style="min-height: 280px; background: #111113; align-items: flex-start;">
+        <div class="home-mock">
+          <div class="network-bar reconnecting">
+            <div class="network-dot"></div>
+            <span>Reconnecting to server... showing cached content</span>
+            <span style="margin-left: auto; opacity: 0.7;">Retry</span>
+          </div>
+          <div class="hero-skeleton skeleton" style="margin-bottom: 4px; opacity: 0.7;">
+            <div style="position: absolute; bottom: 20px; left: 20px;">
+              <div style="font-size: 16px; font-weight: 600;">Why Every Designer Should Learn to Code</div>
+              <div style="font-size: 11px; color: #a3a3a3;">Last updated 2h ago</div>
+            </div>
+          </div>
+          <div class="category-skeleton">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-size: 12px; font-weight: 600; color: #737373;">Trending Today</span>
+              <span style="font-size: 10px; color: #525252;">Cached</span>
+            </div>
+            <div class="category-skeleton-row">
+              <div class="category-skeleton-card skeleton" style="opacity: 0.7;"></div>
+              <div class="category-skeleton-card skeleton" style="opacity: 0.7;"></div>
+              <div class="category-skeleton-card skeleton" style="opacity: 0.7;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <div class="callout-title">What to notice</div>
+    1. Amber reconnecting bar at top (persistent, not dismissible until resolved)<br>
+    2. "showing cached content" tells the user exactly what they're seeing<br>
+    3. "Last updated 2h ago" gives staleness context<br>
+    4. Cards slightly dimmed (0.7 opacity) to signal "not live"<br>
+    5. "Cached" badge on rows reinforces the state
+  </div>
+</div>
+
+<!-- 4. QUEUE SILENT FAILURES -->
+<div class="section">
+  <div class="section-title">
+    <span>4. Queue Operations: Silent Success/Failure</span>
+    <span class="badge badge-p2">P2</span>
+  </div>
+  <p class="section-desc">
+    Adding or removing videos from the queue gives zero feedback. The optimistic update works, but if the server sync fails, the rollback happens silently. The user never knows if their action succeeded or was reversed.
+  </p>
+
+  <div class="comparison">
+    <div class="mock">
+      <div class="mock-label before">Current: No feedback on queue actions</div>
+      <div class="mock-content" style="min-height: 240px; background: #111113;">
+        <div style="width: 100%; padding: 20px; text-align: left;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+            <div style="width: 80px; height: 45px; border-radius: 6px;" class="skeleton"></div>
+            <div>
+              <div style="font-size: 12px; font-weight: 500;">Design Systems at Scale</div>
+              <div style="font-size: 11px; color: #525252;">Figma | 24:30</div>
+            </div>
+            <div style="margin-left: auto; font-size: 16px; color: #525252; cursor: pointer;">+</div>
+          </div>
+          <div style="font-size: 11px; color: #404040; text-align: center; font-style: italic; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.04);">
+            User clicks "+". Nothing visible happens.<br>
+            Card may appear in queue. Or not. No way to tell.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mock">
+      <div class="mock-label after">Proposed: Micro-confirmation toast</div>
+      <div class="mock-content" style="min-height: 240px; background: #111113;">
+        <div style="width: 100%; padding: 20px; text-align: left;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+            <div style="width: 80px; height: 45px; border-radius: 6px;" class="skeleton"></div>
+            <div>
+              <div style="font-size: 12px; font-weight: 500;">Design Systems at Scale</div>
+              <div style="font-size: 11px; color: #525252;">Figma | 24:30</div>
+            </div>
+            <div style="margin-left: auto; font-size: 14px; color: #10b981;">&#10003;</div>
+          </div>
+
+          <!-- Toast -->
+          <div style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(16,185,129,0.12); border: 1px solid rgba(16,185,129,0.2); border-radius: 10px; padding: 8px 16px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #10b981; white-space: nowrap;">
+            <span>&#10003;</span>
+            <span>Added to Queue</span>
+            <span style="color: #525252; font-size: 11px; margin-left: 4px;">Undo</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <div class="callout-title">What to notice</div>
+    1. "+" icon transitions to checkmark on success (instant visual feedback)<br>
+    2. Toast confirms the action with the item name<br>
+    3. "Undo" in the toast (2s window) for accidental adds<br>
+    4. If sync fails, toast turns amber: "Queued locally. Will sync when connected."
+  </div>
+</div>
+
+<!-- 5. API TIMEOUT PATTERN -->
+<div class="section">
+  <div class="section-title">
+    <span>5. Global: API Timeout & Retry Infrastructure</span>
+    <span class="badge badge-p1">P1</span>
+    <span class="badge badge-new">New pattern</span>
+  </div>
+  <p class="section-desc">
+    Zero API calls have timeouts. Zero have automatic retry (except queue polling). A single slow endpoint can freeze any page indefinitely. This is the root infrastructure gap behind most resilience issues.
+  </p>
+
+  <div class="comparison">
+    <div class="mock">
+      <div class="mock-label before">Current: Raw fetch, no timeout</div>
+      <div class="mock-content" style="min-height: 260px; background: #111113; font-family: 'SF Mono', 'Fira Code', monospace;">
+        <div style="text-align: left; padding: 20px; width: 100%; font-size: 11px; line-height: 2;">
+          <div style="color: #737373;">// homeStore.js - fetchHomepage()</div>
+          <div><span style="color: #c084fc;">const</span> res = <span style="color: #c084fc;">await</span> <span style="color: #60a5fa;">fetch</span>(<span style="color: #fbbf24;">`${API}/homepage`</span>)</div>
+          <div style="color: #737373;">// No timeout</div>
+          <div style="color: #737373;">// No retry</div>
+          <div style="color: #737373;">// No AbortController</div>
+          <div style="color: #737373;">// Waits forever</div>
+          <div style="color: #404040; margin-top: 8px;">// Same pattern in feedStore, libraryStore,</div>
+          <div style="color: #404040;">// settingsPage (6+ call sites)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mock">
+      <div class="mock-label after">Proposed: fetchWithResilience() utility</div>
+      <div class="mock-content" style="min-height: 260px; background: #111113; font-family: 'SF Mono', 'Fira Code', monospace;">
+        <div style="text-align: left; padding: 20px; width: 100%; font-size: 11px; line-height: 2;">
+          <div style="color: #737373;">// utils/resilientFetch.js</div>
+          <div><span style="color: #c084fc;">const</span> res = <span style="color: #c084fc;">await</span> <span style="color: #60a5fa;">fetchRetry</span>(<span style="color: #fbbf24;">`${API}/homepage`</span>, {</div>
+          <div>&nbsp;&nbsp;timeout: <span style="color: #f59e0b;">8000</span>,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color: #737373;">// 8s max</span></div>
+          <div>&nbsp;&nbsp;retries: <span style="color: #f59e0b;">2</span>,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="color: #737373;">// 2 retries</span></div>
+          <div>&nbsp;&nbsp;backoff: <span style="color: #fbbf24;">'exponential'</span>,</div>
+          <div>&nbsp;&nbsp;onRetry: <span style="color: #60a5fa;">({ attempt }) =></span></div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;<span style="color: #60a5fa;">set</span>({ loadHint: <span style="color: #fbbf24;">`Retry ${attempt}/2...`</span> }),</div>
+          <div>})</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <div class="callout-title">What to notice</div>
+    1. Single utility replaces 6+ raw fetch() calls across the app<br>
+    2. 8s timeout prevents indefinite hangs<br>
+    3. Exponential backoff (1s, 2s, 4s) for server recovery time<br>
+    4. onRetry callback lets UI show "Retry 1/2..." in real time<br>
+    5. ~30 lines of code for the utility. 15 min to wire into all stores.
+  </div>
+</div>
+
+<!-- Summary -->
+<div class="section" style="border-bottom: none;">
+  <div class="section-title">Score Impact Estimate</div>
+  <p class="section-desc" style="max-width: 100%;">
+    If all 5 proposals are implemented:
+  </p>
+  <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 20px;">
+    <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 24px; text-align: center;">
+      <div style="font-size: 11px; color: #525252; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">Useful</div>
+      <div style="font-size: 28px; font-family: 'Space Grotesk', sans-serif; font-weight: 700;">
+        <span style="color: #f43f5e;">7</span> <span style="color: #404040; font-size: 16px;">/10</span>
+      </div>
+      <div style="font-size: 11px; color: #525252; margin-top: 4px;">from 7 (no change)</div>
+    </div>
+    <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 24px; text-align: center;">
+      <div style="font-size: 11px; color: #525252; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">Usable</div>
+      <div style="font-size: 28px; font-family: 'Space Grotesk', sans-serif; font-weight: 700;">
+        <span style="color: #10b981;">7.5</span> <span style="color: #404040; font-size: 16px;">/10</span>
+      </div>
+      <div style="font-size: 11px; color: #10b981; margin-top: 4px;">from 5 (+2.5)</div>
+    </div>
+    <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 24px; text-align: center;">
+      <div style="font-size: 11px; color: #525252; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">Modern</div>
+      <div style="font-size: 28px; font-family: 'Space Grotesk', sans-serif; font-weight: 700;">
+        <span style="color: #3b82f6;">7</span> <span style="color: #404040; font-size: 16px;">/10</span>
+      </div>
+      <div style="font-size: 11px; color: #3b82f6; margin-top: 4px;">from 6.5 (+0.5)</div>
+    </div>
+  </div>
+  <div style="margin-top: 24px; font-size: 13px; color: #737373;">
+    <strong style="color: #e5e5e5;">Total estimated effort:</strong> ~8 hours |
+    <strong style="color: #e5e5e5;">Biggest single win:</strong> fetchWithResilience() utility (fixes root cause across entire app) |
+    <strong style="color: #e5e5e5;">Quickest win:</strong> Settings null guard (5 minutes, fixes a P0)
+  </div>
+</div>
+
+</body>
+</html>

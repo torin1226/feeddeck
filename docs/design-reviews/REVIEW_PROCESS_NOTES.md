@@ -1,6 +1,6 @@
 # Design Review Process Notes
 
-Last updated: 2026-04-10 (run 8)
+Last updated: 2026-04-12 (run 10)
 
 ## How This Works
 - Daily automated review via scheduled task
@@ -18,11 +18,13 @@ Last updated: 2026-04-10 (run 8)
 | 2026-04-09 | Accessibility Deep Dive | 6.5/10 | See 2026-04-09-accessibility-deep-dive.md for details. |
 | 2026-04-09 (run 7) | Micro-Interaction Audit | 6.5/10 | Animation timing tokens defined but used 0/132 times. 60+ clickable elements lack click feedback. Skeleton→content instant swap. No exit animations. Settings crashes 3rd consecutive run. Heart burst + Ken Burns + queue pulse are Netflix-tier; everything below hero feels like prototype. Sprint-ready fix list ~10 hours. |
 | 2026-04-10 (run 8) | Content Strategy & Visual Hierarchy | 5.5/10 | REGRESSION: 3/4 pages crash (dist/ has mixed build artifacts from 2 Vite builds). Settings crash is 4th consecutive run. Featured section creates ~900px dead space. Hero has zero curation context. Category rows visually identical. Personalized row titles not surfaced despite tag preference data existing. Before/after mock created. Fix dist + add curation context + personalize row titles = biggest wins. |
+| 2026-04-11 (run 9) | Error Resilience & Recovery UX | 6.5/10 | RECOVERY: Feed & Library load again (dist/ rebuilt with clean chunks). Settings STILL crashes (5th consecutive run, same .map() on undefined). Zero API calls have timeouts or retry logic. Homepage falls back to placeholder data silently. Feed spinner has no timeout awareness. Error boundary shows raw JS errors to users. Queue ops have no feedback. 6+ silent error swallows in SettingsPage. Proposed fetchWithResilience() utility as root fix. ~6 hours for full resilience upgrade. |
+| 2026-04-12 (run 10) | Mobile-First Responsive | 5.8/10 | NEW CRASH: Feed page crashes on all viewports below 1024px ("j.map is not a function" — FeedFilterSheet.jsx:34 unsafe fallback to raw API object). Settings crash 6th consecutive run. 15+ hardcoded px-10 instances eat 20% mobile viewport. No mobile bottom nav (FeedBottomNav exists but trapped in FeedPage). Library tabs wrap instead of scroll. Search dropdown overflows 390px. No safe-area top inset. TV mode still absent. Desktop=7/10, mobile="not designed yet." 8-10hr sprint to reach functional mobile. Before/after mocks created. |
 
 ## Known Limitations
 - **Screenshots: SOLVED (run 5).** Use `@sparticuz/chromium` npm package (installs via npm registry, no external CDN needed) + `puppeteer-core`. Must patch `_hydrated:!1` to `_hydrated:!0` in the main bundle via request interception because Zustand persist middleware never fires `onRehydrateStorage` in headless shell mode. Must block fonts.googleapis.com (403 in sandbox). Mock server at port 8765 serves dist/ + mock API JSON. Scripts saved to `docs/design-reviews/take-screenshots.js` and `mock-server.js`.
 - **Screenshot recipe:** `npm install @sparticuz/chromium puppeteer-core` → start mock-server.js → run take-screenshots.js → images land in docs/design-reviews/screenshots/
-- **IMPORTANT (run 8 discovery):** dist/ has chunks from 2 different builds. HTML references `index-CVz1Ci54.js` but its chunk imports point to missing files. The mock-server.js now patches HTML to use `index-CeqlfrPt.js` + `index-CfTDLE5_.css` which have matching chunks. Screenshot script patches `_hydrated` in the correct bundle. If dist/ is rebuilt, update these filenames in both scripts.
+- **IMPORTANT (run 10 update):** dist/ bundles are now `index-C_5eDOcU.js` + `index-BGsU5R9c.css`. Screenshot script auto-detects main JS bundle by scanning `dist/assets/` for `index-*.js`. The `.cjs` extension is required because package.json has `"type": "module"`. Script must run from the project directory (not /tmp) to resolve node_modules. Run 10 added multi-viewport support: desktop (1440x900), tablet (768x1024), mobile (390x844), TV (1920x1080). Updated scripts saved to project root as `take-screenshots.cjs`.
 - **Server not running in sandbox:** The mounted filesystem is read-only for node_modules/.vite cache. Can't run vite dev server. Dist build is intact but zustand hydration blocks rendering in headless preview. HOWEVER: a simple Node mock server serving dist/ + mock API JSON works fine on port 8765.
 
 ## What to Check Each Run
@@ -41,9 +43,9 @@ Last updated: 2026-04-10 (run 8)
 6. **Accessibility Deep Dive** (run 6, 2026-04-09) -- DONE
 7. **Micro-interaction Audit** (run 7, 2026-04-09) -- DONE
 8. **Content Strategy & Visual Hierarchy** (run 8, 2026-04-10) -- DONE
-9. **Error Resilience & Recovery UX** (NEXT) -- error states, loading states, empty states, recovery flows, graceful degradation. Especially relevant now that 3/4 pages crash.
-10. **Mobile-First Responsive** -- touch targets, viewport behavior, responsive breakpoints, gesture tuning, bottom nav placement
-11. **Animation & Motion System** -- audit all 132 transition declarations, enforce timing tokens, add exit animations, test reduced-motion
+9. **Error Resilience & Recovery UX** (run 9, 2026-04-11) -- DONE
+10. **Mobile-First Responsive** (run 10, 2026-04-12) -- DONE
+11. **Animation & Motion System** (NEXT) -- audit all 132 transition declarations, enforce timing tokens, add exit animations, test reduced-motion
 12. **Content Freshness & Rotation** -- how content ages, TTL signals, staleness indicators, "seen it all" states
 
 ## Active Design Debt (Track Across Sessions)
@@ -87,7 +89,7 @@ Last updated: 2026-04-10 (run 8)
 - [ ] 0 focus traps in modals (AddVideoModal, FeedFilterSheet, ContextMenu)
 - [ ] Touch targets below 44px (VideoPlayer buttons, timeline, filter toggles)
 - [ ] P0: 38+ source files truncated on disk -- need recovery from git
-- [ ] P0 (run 8): dist/ has mixed build artifacts — 3/4 pages crash. Clean dist/ and rebuild.
+- [x] P0 (run 8): dist/ has mixed build artifacts — 3/4 pages crash. Clean dist/ and rebuild. (FIXED by run 9 -- dist/ rebuilt with clean chunks)
 - [ ] P1 (run 8): Featured Section 300vh scroll zone creates ~900px dead space between hero and content
 - [ ] P1 (run 8): Hero has no curation context (no "Trending in Design", no "Because you watch X")
 - [ ] P1 (run 8): Category rows visually identical — no row type variety (trending vs editorial vs short-form)
@@ -96,10 +98,28 @@ Last updated: 2026-04-10 (run 8)
 - [ ] P2 (run 8): Card info hierarchy flat — channel name same visual weight as view count
 - [ ] LibraryPage has no loading spinner during server fetch
 - [ ] Demo data seeds silently with no disclosure
-- [ ] Settings page CRASHES with "Cannot read properties of undefined (reading 'map')" — likely missing null guard on categories/sources array (P0 BUG found in run 5 screenshots)
+- [ ] P0 (run 5-9): Settings page CRASHES -- SettingsPage.jsx line 536: `adapterHealth.adapters.map()` on undefined. 5 consecutive runs. Fix: `(adapterHealth?.adapters || []).map()`
 - [ ] Settings actions have no success/error feedback
+- [ ] P1 (run 9): Zero API calls have timeouts -- no AbortController, no timeout wrapper anywhere
+- [ ] P1 (run 9): Homepage falls back to placeholder data silently -- no "cached" indicator, no retry
+- [ ] P1 (run 9): Feed loading has no timeout awareness -- spinner forever, no elapsed time, no escape hatch
+- [ ] P1 (run 9): Error boundary shows raw JS errors to users (needs human-readable message mapping)
+- [ ] P2 (run 9): Queue add/remove has zero feedback (no toast, no icon transition)
+- [ ] P2 (run 9): 6+ silent error swallows in SettingsPage (lines 56, 69, 178, 188, 195)
+- [ ] P2 (run 9): No global network state detection (navigator.onLine not used)
+- [ ] P2 (run 9): Feed retry resets entire buffer (loses scroll progress)
+- [ ] P3 (run 9): Loading state transitions are hard cuts (no crossfade)
+- [ ] P3 (run 9): Error recovery buttons have no loading state
+- [ ] P3 (run 9): Toast queue is last-one-wins (overwritten if 2 fire quickly)
 - [ ] watchedIds not persisted from server on feed init (causes re-watches)
 - [ ] Empty states use emoji instead of branded SVG illustrations
+- [ ] P0 (run 10): Feed page crashes on mobile/tablet — FeedFilterSheet.jsx:34 unsafe `data.sources || data || []` fallback. Fix: `Array.isArray(data?.sources) ? data.sources : []`
+- [ ] P1 (run 10): 15+ hardcoded `px-10` across 8 files — eats 20% of 390px mobile viewport. Fix: global `px-10` → `px-4 md:px-10`
+- [ ] P1 (run 10): No mobile bottom navigation on Homepage/Library/Settings — FeedBottomNav trapped inside FeedPage. Promote to AppShell, render below 1024px
+- [ ] P1 (run 10): Library tab bar wraps on mobile — needs `overflow-x-auto flex-nowrap` + shortened labels
+- [ ] P1 (run 10): Search dropdown `w-[400px]` overflows 390px mobile viewport — needs responsive width
+- [ ] P2 (run 10): Missing `viewport-fit=cover` and `env(safe-area-inset-top)` on header for notched devices
+- [ ] P2 (run 10): TV viewport (1920px) has no 10-foot UI optimization — tiny cards, no D-pad focus states
 
 ## Long-Horizon Backlog (Prioritized — Updated Apr 8)
 
