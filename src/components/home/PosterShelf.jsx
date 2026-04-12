@@ -53,6 +53,7 @@ export default function PosterShelf() {
   // Refs
   const trackWrapRef = useRef(null)
   const cardRefs = useRef({})
+  const focusedCardRef = useRef(null)
   const goToTimer = useRef(null)
   const wheelAccum = useRef(0)
   const wheelCooldown = useRef(false)
@@ -355,6 +356,13 @@ export default function PosterShelf() {
   }, [hydrateCategory, categories])
 
   // -------------------------------------------------------
+  // Sync focused card ref for PosterInfoPanel
+  // -------------------------------------------------------
+  useEffect(() => {
+    focusedCardRef.current = cardRefs.current[activeIndex] || null
+  }, [activeIndex, pool])
+
+  // -------------------------------------------------------
   // Render
   // -------------------------------------------------------
   if (!categories || categories.length === 0 || pool.length === 0) return null
@@ -521,7 +529,7 @@ export default function PosterShelf() {
         {/* Info panel */}
         <PosterInfoPanel
           item={focusedItem}
-          cardRef={{ current: cardRefs.current[activeIndex] || null }}
+          cardRef={focusedCardRef}
           trackWrapRef={trackWrapRef}
         />
       </div>

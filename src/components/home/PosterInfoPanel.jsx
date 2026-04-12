@@ -63,10 +63,8 @@ export default function PosterInfoPanel({ item, cardRef, trackWrapRef }) {
     debounceRef.current = setTimeout(() => {
       recalc()
       setVisible(true)
-      // Trigger entrance animation on next tick so CSS transition fires
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => setEntering(true))
-      })
+      // Short delay so browser paints the initial state before entering kicks in
+      setTimeout(() => setEntering(true), 20)
     }, NAV_DEBOUNCE_MS)
 
     return () => clearTimeout(debounceRef.current)

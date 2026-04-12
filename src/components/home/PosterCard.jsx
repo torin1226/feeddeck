@@ -47,9 +47,9 @@ const PosterCard = memo(
       overflow: 'hidden',
       cursor: 'pointer',
       border: '2px solid',
-      borderColor: isFocused ? 'var(--color-accent)' : 'transparent',
+      borderColor: isFocused ? '#f43f5e' : 'transparent',
       boxShadow: isFocused
-        ? '0 0 0 1px var(--color-accent), 0 0 48px rgba(244,63,94,0.18), 0 20px 60px rgba(0,0,0,0.5)'
+        ? '0 0 0 1px #f43f5e, 0 0 48px rgba(244,63,94,0.18), 0 20px 60px rgba(0,0,0,0.5)'
         : '0 4px 24px rgba(0,0,0,0.35)',
       zIndex: isFocused ? 10 : 1,
       opacity: finalOpacity,
