@@ -6,3 +6,4 @@ cookies/
 .env
 .DS_Store
 vite.config.js.timestamp-*
+tools/screenshot/chromium
