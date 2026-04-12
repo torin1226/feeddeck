@@ -240,6 +240,50 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_feed_cache_mode ON feed_cache(mode, watched, expires_at);
     CREATE INDEX IF NOT EXISTS idx_feed_cache_url ON feed_cache(url);
     CREATE INDEX IF NOT EXISTS idx_sources_mode ON sources(mode, active);
+
+    -- Creator lists for multi-platform feed (Reddit subs, TikTok/Insta/Twitter creators)
+    CREATE TABLE IF NOT EXISTS creators (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      platform TEXT NOT NULL,
+      handle TEXT NOT NULL,
+      url TEXT NOT NULL,
+      label TEXT,
+      active INTEGER DEFAULT 1,
+      last_fetched DATETIME,
+      fetch_failures INTEGER DEFAULT 0,
+      added_at DATETIME DEFAULT (datetime('now')),
+      UNIQUE(platform, handle)
+    );
+    CREATE INDEX IF NOT EXISTS idx_creators_platform ON creators(platform, active);
+
+    -- Subscription channel cache (channels seen from authenticated feed loads)
+    -- Used as fallback when YouTube cookies expire: search for recent uploads
+    -- from these channels instead of returning nothing.
+    CREATE TABLE IF NOT EXISTS sub_channels (
+      channel_id TEXT PRIMARY KEY,
+      channel_name TEXT NOT NULL,
+      channel_url TEXT NOT NULL,
+      last_seen DATETIME DEFAULT (datetime('now')),
+      video_count INTEGER DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_sub_channels_seen ON sub_channels(last_seen DESC);
+
+    -- Subscription backups: archive of "who I follow" across all platforms
+    -- Separate from creators (which drives content fetching) — this is a read-only backup
+    CREATE TABLE IF NOT EXISTS subscription_backups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      platform TEXT NOT NULL,
+      handle TEXT NOT NULL,
+      display_name TEXT,
+      profile_url TEXT,
+      platform_id TEXT,
+      backed_up_at DATETIME DEFAULT (datetime('now')),
+      source TEXT DEFAULT 'api',
+      UNIQUE(platform, handle)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sub_backups_platform ON subscription_backups(platform);
+    CREATE INDEX IF NOT EXISTS idx_sub_backups_handle ON subscription_backups(handle);
+    CREATE INDEX IF NOT EXISTS idx_sub_backups_display_name ON subscription_backups(display_name);
   `)
 
   // Seed default categories if empty
@@ -264,8 +308,8 @@ export function initDatabase() {
     const insertSrc = db.prepare('INSERT INTO sources (domain, mode, label, query, weight) VALUES (?, ?, ?, ?, ?)')
     const defaultSources = [
       ['youtube.com',   'social', 'YouTube',   'trending videos',    1.0],
-      ['tiktok.com',    'social', 'TikTok',    'tiktok viral trending',            0.9],
-      ['reddit.com',    'social', 'Reddit',    'reddit videos best of',      0.7],
+      ['tiktok.com',    'social', 'TikTok',    '__creators__',       1.0],
+      ['reddit.com',    'social', 'Reddit',    '__creators__',       0.9],
       ['pornhub.com',   'nsfw',   'PornHub',   'https://www.pornhub.com/video?o=tr',       1.0],
       ['xvideos.com',   'nsfw',   'XVideos',   'https://www.xvideos.com/best',             0.8],
       ['spankbang.com', 'nsfw',   'SpankBang', 'https://spankbang.com/trending',           0.7],
@@ -296,8 +340,15 @@ export function initDatabase() {
   // Migrate: fix social source queries from feed URLs (need auth) to search queries
   try {
     db.prepare("UPDATE sources SET query = 'trending videos' WHERE domain = 'youtube.com' AND query LIKE '%youtube.com/feed/%'").run()
-    db.prepare("UPDATE sources SET query = 'tiktok viral trending' WHERE domain = 'tiktok.com' AND query LIKE '%tiktok.com/%'").run()
-    db.prepare("UPDATE sources SET query = 'reddit videos best of' WHERE domain = 'reddit.com' AND query LIKE '%reddit.com/%'").run()
+  } catch {}
+
+  // Migrate: switch TikTok/Reddit to __creators__ mode and add Instagram/Twitter sources
+  try {
+    db.prepare("UPDATE sources SET query = '__creators__', weight = 1.0 WHERE domain = 'tiktok.com' AND query != '__creators__'").run()
+    db.prepare("UPDATE sources SET query = '__creators__', weight = 0.9 WHERE domain = 'reddit.com' AND query != '__creators__'").run()
+    const insertSrc = db.prepare('INSERT OR IGNORE INTO sources (domain, mode, label, query, weight, active) VALUES (?, ?, ?, ?, ?, ?)')
+    insertSrc.run('instagram.com', 'social', 'Instagram', '__creators__', 0.8, 0)
+    insertSrc.run('twitter.com', 'social', 'Twitter/X', '__creators__', 0.7, 0)
   } catch {}
 
   // Migrate: add fetch_interval and last_fetched to sources if missing

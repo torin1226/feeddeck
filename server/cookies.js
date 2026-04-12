@@ -5,7 +5,7 @@
 // cookie source to prevent cross-contamination between modes.
 // ============================================================
 
-import { existsSync, copyFileSync, mkdirSync, unlinkSync, readdirSync } from 'fs'
+import { existsSync, copyFileSync, mkdirSync, unlinkSync, readdirSync, readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { randomBytes } from 'crypto'
@@ -16,7 +16,9 @@ const COOKIES_DIR = join(__dirname, '..', 'cookies')
 const DATA_DIR = join(__dirname, '..', 'data')
 // Use /tmp in Docker (avoids permission issues with mounted volumes), fallback to data dir locally
 const COOKIES_TMP = process.env.COOKIE_TMP_DIR || join(DATA_DIR, '.cookie-tmp')
-const TEMP_COOKIE_TTL_MS = 180_000 // 3 min — yt-dlp search can take up to 2min
+// Temp files are cleaned up on server startup (see below), not on a timer.
+// Timer-based cleanup caused PermissionError on Windows when yt-dlp tried to
+// save cookies back to a file that was deleted while still open.
 
 // Mode-based cookie files (fallback when per-domain file is missing)
 const MODE_COOKIE_FILES = {
@@ -41,7 +43,10 @@ const COOKIE_MAP = {
   'youtube.com':    { file: 'youtube.txt', mode: 'social' },
   'youtu.be':       { file: 'youtube.txt', mode: 'social' },
   'tiktok.com':     { file: 'tiktok.txt', mode: 'social' },
-  'instagram.com':  { mode: 'social' },
+  'instagram.com':  { file: 'instagram.txt', mode: 'social' },
+
+  'twitter.com':    { file: 'twitter.txt', mode: 'social' },
+  'x.com':          { file: 'twitter.txt', mode: 'social' },
 
   // NSFW — explicit cookie files
   'pornhub.com':    { file: 'pornhub.txt', mode: 'nsfw' },
@@ -128,13 +133,45 @@ function _tempCopyArgs(cookiePath) {
     const tmpName = `${randomBytes(4).toString('hex')}-cookies.txt`
     const tmpPath = join(COOKIES_TMP, tmpName)
     copyFileSync(cookiePath, tmpPath)
-    setTimeout(() => {
-      try { unlinkSync(tmpPath) } catch {}
-    }, TEMP_COOKIE_TTL_MS)
+    // No timer-based cleanup — files are cleaned up on next server startup.
+    // Deleting while yt-dlp is still running causes PermissionError on Windows.
     return ['--cookies', tmpPath]
   } catch (err) {
     logger.warn(`Cookie temp copy failed: ${err.message}`)
     return ['--cookies', cookiePath]
+  }
+}
+
+/**
+ * Parse a Netscape cookie file and return { name: value } pairs for a given domain.
+ * Uses the same resolution logic as getCookieArgs (per-domain → mode → legacy).
+ * @param {string} domain - e.g. 'x.com', 'youtube.com'
+ * @returns {{ cookies: Record<string, string>, cookiePath: string|null }}
+ */
+export function parseCookieFile(domain) {
+  const config = COOKIE_MAP[domain]
+  const cookiePath = _resolveCookiePath(config)
+  if (!cookiePath) return { cookies: {}, cookiePath: null }
+
+  try {
+    const text = readFileSync(cookiePath, 'utf-8')
+    const cookies = {}
+    for (const line of text.split('\n')) {
+      if (!line || line.startsWith('#') || line.startsWith(' ')) continue
+      const parts = line.split('\t')
+      if (parts.length < 7) continue
+      const [cookieDomain, , , , , name, rawValue] = parts
+      const value = rawValue?.trim() // strip \r from Windows line endings
+      // Match exact domain or parent domain (e.g. .x.com matches x.com)
+      const clean = cookieDomain.trim().replace(/^\./, '')
+      if (clean === domain || domain.endsWith('.' + clean) || clean.endsWith('.' + domain)) {
+        cookies[name.trim()] = value
+      }
+    }
+    return { cookies, cookiePath }
+  } catch (err) {
+    logger.warn(`parseCookieFile(${domain}): ${err.message}`)
+    return { cookies: {}, cookiePath }
   }
 }
 

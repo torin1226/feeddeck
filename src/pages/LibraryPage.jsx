@@ -6,6 +6,7 @@ import HomeHeader from '../components/home/HomeHeader'
 import VideoCard from '../components/VideoCard'
 import VideoPlayer from '../components/VideoPlayer'
 import DebugPanel from '../components/DebugPanel'
+import { SkeletonLibrary } from '../components/Skeletons'
 
 // ============================================================
 // LibraryPage
@@ -25,7 +26,7 @@ const TABS = [
 export default function LibraryPage() {
   const navigate = useNavigate()
   const isSFW = useModeStore((s) => s.isSFW)
-  const { videos, loadFromServer, seedDemoData } = useLibraryStore()
+  const { videos, loading, loadFromServer, seedDemoData } = useLibraryStore()
   const [activeTab, setActiveTab] = useState('all')
   const [activeVideo, setActiveVideo] = useState(null)
   const [debugOpen, setDebugOpen] = useState(false)
@@ -104,75 +105,79 @@ export default function LibraryPage() {
       )}
 
       {/* Page content — below fixed header */}
-      <div className="pt-14">
-        {/* Page title area */}
-        <div className="px-10 pt-8 pb-2">
-          <h1 className="font-display text-headline font-bold tracking-[-0.5px] mb-1">
-            Your Library
-          </h1>
-          <p className="text-sm text-text-muted">
-            {videos.length} {videos.length === 1 ? 'video' : 'videos'} saved
-          </p>
-        </div>
+      {loading ? (
+        <SkeletonLibrary />
+      ) : (
+        <div className="pt-14 animate-[fadeIn_300ms_ease-out]">
+          {/* Page title area */}
+          <div className="px-10 pt-8 pb-2">
+            <h1 className="font-display text-headline font-bold tracking-[-0.5px] mb-1">
+              Your Library
+            </h1>
+            <p className="text-sm text-text-muted">
+              {videos.length} {videos.length === 1 ? 'video' : 'videos'} saved
+            </p>
+          </div>
 
-        {/* Tab bar */}
-        <div className="px-10 pt-3 pb-1 border-b border-surface-border">
-          <div className="flex gap-1">
-            {TABS.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`px-4 py-2 rounded-full text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  activeTab === tab.key
-                    ? 'bg-accent/15 text-accent border border-accent/30'
-                    : 'text-text-secondary hover:text-text-primary hover:bg-surface-overlay'
-                }`}
-              >
-                {tab.label}
-                {counts[tab.key] > 0 && (
-                  <span className={`text-micro font-medium px-1.5 py-0.5 rounded-full ${
+          {/* Tab bar */}
+          <div className="px-10 pt-3 pb-1 border-b border-surface-border">
+            <div className="flex gap-1">
+              {TABS.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`px-4 py-2 rounded-full text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                     activeTab === tab.key
-                      ? 'bg-accent/20 text-accent'
-                      : 'bg-surface-overlay text-text-muted'
-                  }`}>
-                    {counts[tab.key]}
+                      ? 'bg-accent/15 text-accent border border-accent/30'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-surface-overlay'
+                  }`}
+                >
+                  {tab.label}
+                  {counts[tab.key] > 0 && (
+                    <span className={`text-micro font-medium px-1.5 py-0.5 rounded-full ${
+                      activeTab === tab.key
+                        ? 'bg-accent/20 text-accent'
+                        : 'bg-surface-overlay text-text-muted'
+                    }`}>
+                      {counts[tab.key]}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Continue Watching row — only show on All tab when there are items */}
+          {activeTab === 'all' && continueWatching.length > 0 && (
+            <ContinueWatchingRow items={continueWatching} onPlay={setActiveVideo} />
+          )}
+
+          {/* Main grid */}
+          <div className="px-10 py-6">
+            {filtered.length === 0 ? (
+              <LibraryEmptyState tab={activeTab} onNavigate={navigate} />
+            ) : (
+              <>
+                {/* Section header */}
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-subhead font-semibold tracking-wider uppercase text-text-secondary">
+                    {TABS.find((t) => t.key === activeTab)?.label}
+                  </h2>
+                  <span className="text-caption text-text-muted">
+                    {filtered.length} {filtered.length === 1 ? 'video' : 'videos'}
                   </span>
-                )}
-              </button>
-            ))}
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                  {filtered.map((video) => (
+                    <VideoCard key={video.id} video={video} onClick={setActiveVideo} />
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </div>
-
-        {/* Continue Watching row — only show on All tab when there are items */}
-        {activeTab === 'all' && continueWatching.length > 0 && (
-          <ContinueWatchingRow items={continueWatching} onPlay={setActiveVideo} />
-        )}
-
-        {/* Main grid */}
-        <div className="px-10 py-6">
-          {filtered.length === 0 ? (
-            <LibraryEmptyState tab={activeTab} onNavigate={navigate} />
-          ) : (
-            <>
-              {/* Section header */}
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-subhead font-semibold tracking-wider uppercase text-text-secondary">
-                  {TABS.find((t) => t.key === activeTab)?.label}
-                </h2>
-                <span className="text-caption text-text-muted">
-                  {filtered.length} {filtered.length === 1 ? 'video' : 'videos'}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {filtered.map((video) => (
-                  <VideoCard key={video.id} video={video} onClick={setActiveVideo} />
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
+      )}
 
       {isSFW && (
         <div

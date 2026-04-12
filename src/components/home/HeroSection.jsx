@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import useHomeStore from '../../stores/homeStore'
 import usePlayerStore from '../../stores/playerStore'
 import useQueueStore from '../../stores/queueStore'
+import useHeroAutoplay from '../../hooks/useHeroAutoplay'
 import HeroCarousel from './HeroCarousel'
 
 // ============================================================
@@ -20,14 +21,20 @@ export default function HeroSection() {
     _activeVideo, setActiveVideo, isPlaying, setPlaying,
     currentTime, setCurrentTime, duration, setDuration,
     streamUrl, streamLoading, streamError, resolveStream, handleStreamError,
+    prewarmStream, getPrewarmedUrl,
   } = usePlayerStore()
+
+  const {
+    autoplayVideoRef, autoplayReady, autoplayUrl,
+    muted: autoplayMuted, toggleMute: toggleAutoplayMute, reducedMotion,
+  } = useHeroAutoplay(heroItem, theatreMode)
 
   const [previewing, setPreviewing] = useState(false)
   const [showBadge, setShowBadge] = useState(false)
   const badgeTimer = useRef(null)
   const videoRef = useRef(null)
 
-  // Start Ken Burns animation when hero item changes
+  // Start Ken Burns animation and pre-warm stream URL when hero item changes
   useEffect(() => {
     setPreviewing(false)
     requestAnimationFrame(() => {
@@ -36,23 +43,37 @@ export default function HeroSection() {
       clearTimeout(badgeTimer.current)
       badgeTimer.current = setTimeout(() => setShowBadge(false), 3000)
     })
+    // Pre-warm the stream URL so Play is instant (covers reduced motion / HLS cases
+    // where useHeroAutoplay doesn't resolve a URL)
+    if (heroItem?.url) prewarmStream(heroItem.url)
     return () => clearTimeout(badgeTimer.current)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [heroItem?.id])
 
-  // When theatre mode activates, set active video and resolve stream
+  // When theatre mode activates, set active video and resolve stream.
+  // Priority: autoplay URL > prewarmed URL > fresh resolve
   useEffect(() => {
     if (theatreMode && heroItem) {
       setActiveVideo(heroItem)
-      // Only resolve if the item has a real URL (not placeholder data)
-      if (heroItem.url) {
-        resolveStream(heroItem.url)
+      if (autoplayUrl) {
+        // Reuse the pre-resolved stream URL from autoplay — instant transition
+        usePlayerStore.setState({ streamUrl: autoplayUrl, streamLoading: false, streamError: null })
+      } else if (heroItem.url) {
+        const prewarmed = getPrewarmedUrl(heroItem.url)
+        if (prewarmed) {
+          // Use pre-warmed URL (covers reduced motion / HLS cases)
+          usePlayerStore.setState({ streamUrl: prewarmed, streamLoading: false, streamError: null })
+        } else {
+          // Fallback: resolve fresh
+          resolveStream(heroItem.url)
+        }
       }
       setPlaying(true)
     } else if (!theatreMode) {
       setPlaying(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- heroItem?.id avoids re-runs when object ref changes; store fns are stable
-  }, [theatreMode, heroItem?.id, resolveStream, setActiveVideo, setPlaying])
+  }, [theatreMode, heroItem?.id, autoplayUrl, resolveStream, setActiveVideo, setPlaying])
 
   // Sync video element with playerStore state
   useEffect(() => {
@@ -161,7 +182,7 @@ export default function HeroSection() {
       }`}
       style={theatreMode ? {} : { height: '85vh', minHeight: '540px' }}
     >
-      {/* Background image with Ken Burns */}
+      {/* Background image with Ken Burns + autoplay video overlay */}
       {/* Hero thumbnail — uses object-contain to avoid cropping + blurred fill behind for letterbox */}
       <div className="absolute inset-0">
         {/* Blurred scaled-up copy as background fill */}
@@ -170,14 +191,26 @@ export default function HeroSection() {
           alt=""
           className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-40"
         />
-        {/* Sharp centered image */}
+        {/* Sharp centered image — fades out when autoplay video is ready */}
         <img
           src={heroItem.thumbnail}
           alt=""
-          className={`absolute inset-0 w-full h-full object-contain transition-[src] duration-500 ${
-            previewing ? 'animate-kenburns' : ''
-          }`}
+          className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-1000 ${
+            previewing && !autoplayReady ? 'animate-kenburns' : ''
+          } ${autoplayReady ? 'opacity-0' : ''}`}
         />
+        {/* Autoplay muted video — replaces Ken Burns when stream is resolved */}
+        {!theatreMode && autoplayUrl && (
+          <video
+            ref={autoplayVideoRef}
+            className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-1000 ${
+              autoplayReady ? 'opacity-100' : 'opacity-0'
+            }`}
+            muted
+            playsInline
+            loop
+          />
+        )}
         {/* Vignette overlay to blend edges into background */}
         <div className="absolute inset-0" style={{
           background: `radial-gradient(ellipse at center, transparent 50%, var(--color-surface) 100%)`
@@ -263,6 +296,36 @@ export default function HeroSection() {
         Preview
       </div>
 
+      {/* Mute/unmute toggle for hero autoplay video */}
+      {autoplayReady && !theatreMode && (
+        <button
+          onClick={toggleAutoplayMute}
+          className="absolute bottom-[240px] right-10 z-10
+            w-10 h-10 rounded-full bg-black/50 border border-white/[0.12]
+            backdrop-blur-lg flex items-center justify-center
+            text-text-secondary hover:text-text-primary hover:bg-black/70
+            transition-all duration-200"
+          title={autoplayMuted ? 'Unmute' : 'Mute'}
+          aria-label={autoplayMuted ? 'Unmute hero video' : 'Mute hero video'}
+        >
+          {autoplayMuted ? (
+            // Muted icon (speaker with X)
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+              <line x1="23" y1="9" x2="17" y2="15" />
+              <line x1="17" y1="9" x2="23" y2="15" />
+            </svg>
+          ) : (
+            // Unmuted icon (speaker with waves)
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+            </svg>
+          )}
+        </button>
+      )}
+
       {/* Hero content — fades out in theatre mode */}
       <div
         className={`absolute left-10 max-w-[520px] z-10 transition-all duration-500 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] ${
@@ -272,7 +335,7 @@ export default function HeroSection() {
         {/* Tags */}
         <div className="flex gap-1.5 mb-3 flex-wrap">
           <span className="text-[11px] font-semibold text-text-muted">
-            {2020 + Math.floor(Math.random() * 6)}
+            {heroItem.uploadYear || new Date(heroItem.addedAt || Date.now()).getFullYear()}
           </span>
           <span className="px-2.5 py-0.5 rounded text-[11px] font-semibold bg-white/10 text-text-secondary tracking-wide">
             {heroItem.genre}

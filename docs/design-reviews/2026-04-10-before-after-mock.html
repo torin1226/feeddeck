@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FeedDeck Design Review — Run 8: Before/After</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #0a0a0c; color: #e5e5e5; }
+
+  .toggle-bar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: center; gap: 16px;
+    padding: 12px 24px; background: rgba(17,17,19,0.95); backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .toggle-bar h1 { font-size: 13px; font-weight: 500; color: #a1a1a6; letter-spacing: 0.5px; text-transform: uppercase; }
+  .toggle-btn {
+    padding: 6px 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);
+    background: transparent; color: #a1a1a6; font-size: 13px; cursor: pointer; transition: all 0.2s;
+  }
+  .toggle-btn.active { background: #f43f5e; border-color: #f43f5e; color: white; font-weight: 600; }
+  .toggle-btn:hover:not(.active) { border-color: rgba(255,255,255,0.2); color: #e5e5e5; }
+
+  .callout-legend {
+    position: fixed; top: 52px; left: 0; right: 0; z-index: 99;
+    display: flex; align-items: center; justify-content: center; gap: 20px;
+    padding: 8px 24px; background: rgba(17,17,19,0.9); border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 11px; color: #8a8a90;
+  }
+  .callout-legend span { display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot.red { background: #f43f5e; }
+  .dot.amber { background: #f59e0b; }
+  .dot.green { background: #10b981; }
+
+  .view { display: none; padding-top: 88px; }
+  .view.active { display: block; }
+
+  /* BEFORE VIEW */
+  .before-mock {
+    max-width: 1200px; margin: 0 auto; padding: 24px;
+  }
+
+  .mock-section {
+    margin-bottom: 48px;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .mock-section-header {
+    padding: 16px 20px;
+    background: rgba(255,255,255,0.03);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .mock-section-header h2 { font-size: 15px; font-weight: 600; }
+  .mock-section-header .tag {
+    font-size: 10px; padding: 3px 8px; border-radius: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .tag.critical { background: rgba(244,63,94,0.15); color: #f43f5e; }
+  .tag.high { background: rgba(245,158,11,0.15); color: #f59e0b; }
+  .tag.medium { background: rgba(16,185,129,0.15); color: #10b981; }
+
+  .mock-content { padding: 20px; }
+
+  /* HOMEPAGE MOCK */
+  .homepage-mock {
+    background: #111113;
+    border-radius: 12px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Hero area */
+  .hero-mock {
+    height: 420px;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    position: relative;
+    display: flex; align-items: flex-end;
+    padding: 40px;
+  }
+  .hero-mock::after {
+    content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 200px;
+    background: linear-gradient(transparent, #111113);
+  }
+  .hero-meta { position: relative; z-index: 1; }
+  .hero-meta .badge { font-size: 10px; color: #a1a1a6; margin-bottom: 8px; }
+  .hero-meta h2 { font-size: 36px; font-weight: 700; line-height: 1.1; margin-bottom: 12px; max-width: 500px; }
+  .hero-meta .sub { font-size: 13px; color: #a1a1a6; margin-bottom: 16px; }
+  .hero-btns { display: flex; gap: 10px; }
+  .hero-btns .btn {
+    padding: 10px 24px; border-radius: 8px; font-size: 13px; font-weight: 600; border: none; cursor: pointer;
+  }
+  .btn.primary { background: #f43f5e; color: white; }
+  .btn.secondary { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.15); }
+
+  /* Dead space indicator */
+  .dead-space {
+    height: 300px;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px dashed rgba(244,63,94,0.3);
+    margin: 20px;
+    border-radius: 12px;
+    position: relative;
+  }
+  .dead-space .label {
+    color: #f43f5e; font-size: 13px; font-weight: 500;
+    background: rgba(244,63,94,0.1); padding: 6px 14px; border-radius: 6px;
+  }
+  .annotation {
+    position: absolute; font-size: 11px; color: #f43f5e; max-width: 200px; line-height: 1.4;
+    background: rgba(244,63,94,0.08); padding: 8px 12px; border-radius: 8px;
+    border: 1px solid rgba(244,63,94,0.15);
+  }
+  .annotation.top-right { top: -8px; right: 20px; }
+  .annotation.bottom-left { bottom: -8px; left: 20px; }
+
+  /* Category rows */
+  .cat-row { padding: 20px; }
+  .cat-row h3 { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+  .cat-cards { display: flex; gap: 12px; overflow: hidden; }
+  .cat-card {
+    flex-shrink: 0; width: 200px;
+    border-radius: 8px; overflow: hidden;
+    background: #1a1a1e;
+  }
+  .cat-card .thumb {
+    width: 100%; height: 112px;
+    background: linear-gradient(135deg, #2a2a30, #1e1e24);
+    position: relative;
+  }
+  .cat-card .thumb .dur {
+    position: absolute; bottom: 6px; right: 6px;
+    font-size: 10px; background: rgba(0,0,0,0.8); padding: 2px 5px; border-radius: 3px;
+  }
+  .cat-card .info { padding: 10px; }
+  .cat-card .info .title { font-size: 13px; font-weight: 500; line-height: 1.3; margin-bottom: 4px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .cat-card .info .meta { font-size: 11px; color: #8a8a90; }
+
+  /* Issue callouts */
+  .issue-callout {
+    margin: 16px 20px; padding: 12px 16px;
+    background: rgba(244,63,94,0.06);
+    border: 1px solid rgba(244,63,94,0.12);
+    border-radius: 10px;
+    font-size: 12px; line-height: 1.5; color: #e5a0a0;
+  }
+  .issue-callout strong { color: #f43f5e; }
+  .issue-callout.amber {
+    background: rgba(245,158,11,0.06);
+    border-color: rgba(245,158,11,0.12);
+    color: #d4a76a;
+  }
+  .issue-callout.amber strong { color: #f59e0b; }
+
+  /* AFTER VIEW */
+  .after-mock { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+  /* Upgraded hero */
+  .hero-upgraded {
+    height: 460px;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    position: relative;
+    display: flex; align-items: flex-end;
+    padding: 40px;
+    border-radius: 12px 12px 0 0;
+    overflow: hidden;
+  }
+  .hero-upgraded::after {
+    content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 240px;
+    background: linear-gradient(transparent, #111113);
+  }
+  .hero-upgraded .context-badge {
+    position: absolute; top: 20px; left: 40px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px;
+    color: #f43f5e; background: rgba(244,63,94,0.12); padding: 4px 10px; border-radius: 4px;
+  }
+  .hero-upgraded .meta-row {
+    position: relative; z-index: 1; max-width: 560px;
+  }
+  .hero-upgraded h2 { font-size: 40px; font-weight: 700; line-height: 1.05; margin-bottom: 10px; letter-spacing: -0.5px; }
+  .hero-upgraded .why-text {
+    font-size: 12px; color: #10b981; font-weight: 500; margin-bottom: 8px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .hero-upgraded .why-text::before { content: ''; width: 6px; height: 6px; background: #10b981; border-radius: 50%; }
+  .hero-upgraded .desc { font-size: 14px; color: #a1a1a6; line-height: 1.5; margin-bottom: 16px; }
+  .hero-upgraded .pills { display: flex; gap: 8px; margin-bottom: 16px; }
+  .hero-upgraded .pill {
+    font-size: 10px; padding: 3px 10px; border-radius: 12px;
+    background: rgba(255,255,255,0.06); color: #a1a1a6; border: 1px solid rgba(255,255,255,0.08);
+  }
+
+  /* Continue Watching upgrade */
+  .cw-section {
+    padding: 20px;
+    background: linear-gradient(180deg, rgba(244,63,94,0.03) 0%, transparent 100%);
+    border-top: 1px solid rgba(244,63,94,0.08);
+  }
+  .cw-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .cw-header h3 { font-size: 16px; font-weight: 600; }
+  .cw-header .count { font-size: 11px; color: #8a8a90; background: rgba(255,255,255,0.06); padding: 2px 8px; border-radius: 10px; }
+  .cw-cards { display: flex; gap: 14px; overflow: hidden; }
+  .cw-card {
+    flex-shrink: 0; width: 240px;
+    border-radius: 10px; overflow: hidden;
+    background: #1a1a1e;
+    border: 1px solid rgba(255,255,255,0.04);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .cw-card:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,0.4); }
+  .cw-card .thumb {
+    width: 100%; height: 135px;
+    background: linear-gradient(135deg, #2a2a30, #1e1e24);
+    position: relative;
+  }
+  .cw-card .progress-bar {
+    position: absolute; bottom: 0; left: 0; height: 3px;
+    background: #f43f5e; border-radius: 0 2px 0 0;
+  }
+  .cw-card .resume-badge {
+    position: absolute; top: 8px; right: 8px;
+    font-size: 9px; font-weight: 600; text-transform: uppercase;
+    background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+    padding: 3px 7px; border-radius: 4px; color: #a1a1a6;
+  }
+  .cw-card .info { padding: 10px 12px; }
+  .cw-card .info .title { font-size: 13px; font-weight: 500; line-height: 1.3; margin-bottom: 3px; }
+  .cw-card .info .meta { font-size: 11px; color: #8a8a90; }
+  .cw-card .info .time-ago { font-size: 10px; color: #6a6a70; margin-top: 3px; }
+
+  /* Upgraded category with hierarchy */
+  .cat-upgraded { padding: 20px; }
+  .cat-upgraded-header {
+    display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px;
+  }
+  .cat-upgraded-header h3 { font-size: 17px; font-weight: 600; }
+  .cat-upgraded-header .see-all {
+    font-size: 12px; color: #f43f5e; font-weight: 500; cursor: pointer;
+    text-decoration: none;
+  }
+  .cat-upgraded-header .reason {
+    font-size: 11px; color: #8a8a90; margin-left: 10px; font-weight: 400;
+  }
+  .cat-upgraded-cards { display: flex; gap: 14px; overflow: hidden; }
+  .cat-upgraded-card {
+    flex-shrink: 0; width: 220px;
+    border-radius: 10px; overflow: hidden;
+    background: #1a1a1e;
+    border: 1px solid rgba(255,255,255,0.04);
+    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s;
+  }
+  .cat-upgraded-card:hover { transform: scale(1.04) translateY(-4px); box-shadow: 0 16px 40px rgba(0,0,0,0.5); }
+  .cat-upgraded-card .thumb {
+    width: 100%; height: 124px;
+    background: linear-gradient(135deg, #2a2a30, #1e1e24);
+    position: relative;
+  }
+  .cat-upgraded-card .thumb .dur {
+    position: absolute; bottom: 6px; right: 6px;
+    font-size: 10px; background: rgba(0,0,0,0.8); padding: 2px 6px; border-radius: 3px;
+  }
+  .cat-upgraded-card .thumb .source-badge {
+    position: absolute; top: 6px; left: 6px;
+    font-size: 9px; font-weight: 600;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+    padding: 2px 6px; border-radius: 3px; color: #e5e5e5;
+  }
+  .cat-upgraded-card .info { padding: 10px 12px; }
+  .cat-upgraded-card .info .title { font-size: 13px; font-weight: 500; line-height: 1.3; margin-bottom: 4px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .cat-upgraded-card .info .channel { font-size: 11px; color: #a1a1a6; margin-bottom: 2px; }
+  .cat-upgraded-card .info .meta-bottom { font-size: 10px; color: #6a6a70; display: flex; gap: 6px; }
+
+  /* Improvement callouts */
+  .improvement {
+    margin: 16px 20px; padding: 12px 16px;
+    background: rgba(16,185,129,0.06);
+    border: 1px solid rgba(16,185,129,0.12);
+    border-radius: 10px;
+    font-size: 12px; line-height: 1.5; color: #7dd3ab;
+  }
+  .improvement strong { color: #10b981; }
+
+  /* Crash page mock */
+  .crash-mock {
+    height: 300px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: #111113; border-radius: 12px; gap: 12px;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .crash-mock .icon { font-size: 32px; opacity: 0.6; }
+  .crash-mock h3 { font-size: 18px; font-weight: 600; }
+  .crash-mock p { font-size: 13px; color: #8a8a90; max-width: 400px; text-align: center; }
+  .crash-mock code { font-size: 11px; color: #6a6a70; background: rgba(255,255,255,0.04); padding: 6px 12px; border-radius: 6px; }
+
+  /* Diff callout */
+  .diff-section {
+    margin: 32px 0; padding: 24px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px;
+  }
+  .diff-section h3 { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: #e5e5e5; }
+  .diff-item {
+    display: flex; gap: 12px; margin-bottom: 12px; align-items: flex-start;
+  }
+  .diff-item .num {
+    flex-shrink: 0; width: 24px; height: 24px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700;
+  }
+  .diff-item .num.red { background: rgba(244,63,94,0.15); color: #f43f5e; }
+  .diff-item .num.green { background: rgba(16,185,129,0.15); color: #10b981; }
+  .diff-item .text { font-size: 13px; line-height: 1.5; color: #a1a1a6; }
+  .diff-item .text strong { color: #e5e5e5; }
+</style>
+</head>
+<body>
+  <div class="toggle-bar">
+    <h1>Run 8 — Content Strategy & Visual Hierarchy</h1>
+    <button class="toggle-btn active" onclick="show('before')">Before (Current)</button>
+    <button class="toggle-btn" onclick="show('after')">After (Proposed)</button>
+    <button class="toggle-btn" onclick="show('diff')">Key Changes</button>
+  </div>
+
+  <div class="callout-legend">
+    <span><span class="dot red"></span> Critical issue</span>
+    <span><span class="dot amber"></span> High priority</span>
+    <span><span class="dot green"></span> Proposed improvement</span>
+  </div>
+
+  <!-- BEFORE VIEW -->
+  <div class="view active" id="before">
+    <div class="before-mock">
+
+      <div class="mock-section">
+        <div class="mock-section-header">
+          <h2>Homepage — Current State</h2>
+          <span class="tag high">Only Working Page</span>
+        </div>
+        <div class="mock-content">
+          <div class="homepage-mock">
+            <div class="hero-mock">
+              <div class="hero-meta">
+                <div class="badge">8.5 &middot; 340K views &middot; DesignCourse &middot; 2d ago</div>
+                <h2>Why Every Designer Should Learn to Code</h2>
+                <div class="sub">Why Every Designer Should Learn to Code</div>
+                <div class="hero-btns">
+                  <button class="btn primary">&#9654; Play</button>
+                  <button class="btn secondary">Theatre</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="issue-callout">
+              <strong>Issue:</strong> Hero description duplicates the title verbatim. No unique value proposition or editorial context (e.g., "Trending in Design" or "Because you watch CSS tutorials").
+            </div>
+
+            <!-- Featured carousel area = dead space in screenshot -->
+            <div class="dead-space" style="position: relative;">
+              <div class="label">~300px dead space (Featured Section scroll zone)</div>
+              <div class="annotation top-right">Scroll-driven animation requires 300vh wrapper. In static view, this is just empty black space between hero and content rows.</div>
+            </div>
+
+            <div class="issue-callout">
+              <strong>Issue:</strong> FeaturedSection uses 300vh scroll zone for a 4-phase animation. When not actively scrolling, this creates a massive content desert. Users must scroll past ~900px of near-empty space to reach category rows.
+            </div>
+
+            <div class="cat-row">
+              <h3>Trending Today</h3>
+              <div class="cat-cards">
+                <div class="cat-card"><div class="thumb"><span class="dur">12:08</span></div><div class="info"><div class="title">Why Every Designer Should Learn to Code</div><div class="meta">DesignCourse &middot; 340K</div></div></div>
+                <div class="cat-card"><div class="thumb"><span class="dur">15:22</span></div><div class="info"><div class="title">Neomorphism is Dead</div><div class="meta">Flux Academy &middot; 89K</div></div></div>
+                <div class="cat-card"><div class="thumb"><span class="dur">32:10</span></div><div class="info"><div class="title">I Rebuilt Netflix in 48 Hours</div><div class="meta">Fireship &middot; 1.8M</div></div></div>
+                <div class="cat-card"><div class="thumb"><span class="dur">20:45</span></div><div class="info"><div class="title">The State of CSS in 2026</div><div class="meta">Kevin Powell &middot; 210K</div></div></div>
+                <div class="cat-card"><div class="thumb"><span class="dur">28:30</span></div><div class="info"><div class="title">Design Leadership Lessons</div><div class="meta">High Resolution &middot; 67K</div></div></div>
+              </div>
+            </div>
+
+            <div class="issue-callout amber">
+              <strong>Issue:</strong> All category rows look identical. No visual differentiation between "Trending" (social proof row) vs "Design Deep Dives" (editorial row) vs "TikTok Picks" (short-form). Every row uses the same 200px card, same layout, same information density.
+            </div>
+
+            <div class="cat-row">
+              <h3>Design Deep Dives</h3>
+              <div class="cat-cards">
+                <div class="cat-card"><div class="thumb"><span class="dur">24:30</span></div><div class="info"><div class="title">Building Design Systems at Scale</div><div class="meta">Figma &middot; 142K</div></div></div>
+                <div class="cat-card"><div class="thumb"><span class="dur">18:45</span></div><div class="info"><div class="title">The Future of Creative Tools</div><div class="meta">MKBHD &middot; 2.1M</div></div></div>
+                <div class="cat-card"><div class="thumb"><span class="dur">22:15</span></div><div class="info"><div class="title">Designing for Vision Pro</div><div class="meta">WWDC Labs &middot; 156K</div></div></div>
+                <div class="cat-card"><div class="thumb"><span class="dur">14:30</span></div><div class="info"><div class="title">Motion Design Principles</div><div class="meta">The Futur &middot; 78K</div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CRASHED PAGES -->
+      <div class="mock-section">
+        <div class="mock-section-header">
+          <h2>Feed Page — Crashed</h2>
+          <span class="tag critical">P0 Regression</span>
+        </div>
+        <div class="mock-content">
+          <div class="crash-mock">
+            <div class="icon">&#9888;</div>
+            <h3>The Feed section crashed.</h3>
+            <code>The requested module './useFocusTrap-DgEnTKbm.js' does not provide an export named 'default'</code>
+            <p>This is a build artifact mismatch. The dist/ folder contains chunks from two different builds. Feed and Library both crash because they import useFocusTrap from the wrong build generation.</p>
+          </div>
+          <div class="issue-callout">
+            <strong>P0 — Build Integrity:</strong> The dist/ folder contains chunks from at least 2 different Vite builds (index-CVz1Ci54.js references one set of hashes, index-CeqlfrPt.js another). Only Homepage renders because its chunk happens to be compatible. Feed, Library, and Settings all crash. A clean <code>npm run build</code> would fix this, but it reveals a deployment hygiene problem: the dist/ folder was never cleaned between builds.
+          </div>
+        </div>
+      </div>
+
+      <div class="mock-section">
+        <div class="mock-section-header">
+          <h2>Library Page — Crashed</h2>
+          <span class="tag critical">P0 Regression</span>
+        </div>
+        <div class="mock-content">
+          <div class="crash-mock">
+            <div class="icon">&#9888;</div>
+            <h3>The Library section crashed.</h3>
+            <code>The requested module './useFocusTrap-DgEnTKbm.js' does not provide an export named 'default'</code>
+            <p>Same root cause as Feed. Both pages lazy-load chunks that reference the wrong build's useFocusTrap module.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="mock-section">
+        <div class="mock-section-header">
+          <h2>Settings Page — Crashed</h2>
+          <span class="tag critical">P0 — 4th Consecutive Run</span>
+        </div>
+        <div class="mock-content">
+          <div class="crash-mock">
+            <div class="icon">&#9888;</div>
+            <h3>The Settings section crashed.</h3>
+            <code>Cannot read properties of undefined (reading 'map')</code>
+            <p>This has been broken for 4 consecutive audit runs. The component assumes categories/sources arrays exist in API response, but they're undefined. Needs a null guard.</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- AFTER VIEW -->
+  <div class="view" id="after">
+    <div class="after-mock">
+
+      <div class="mock-section">
+        <div class="mock-section-header">
+          <h2>Homepage — Proposed</h2>
+          <span class="tag medium">Content Strategy Upgrade</span>
+        </div>
+        <div class="mock-content">
+          <div class="homepage-mock">
+
+            <!-- Upgraded hero with context -->
+            <div class="hero-upgraded">
+              <div class="context-badge">Trending in Design</div>
+              <div class="meta-row">
+                <div class="why-text">Popular with creators you follow</div>
+                <h2>Why Every Designer Should Learn to Code</h2>
+                <div class="pills">
+                  <span class="pill">Design</span>
+                  <span class="pill">Code</span>
+                  <span class="pill">12:08</span>
+                  <span class="pill">340K views</span>
+                </div>
+                <div class="desc">DesignCourse breaks down why understanding code fundamentals makes you a better designer, with real examples from production projects.</div>
+                <div class="hero-btns">
+                  <button class="btn primary">&#9654; Play</button>
+                  <button class="btn secondary">Theatre</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="improvement">
+              <strong>Change 1 — Hero Context:</strong> Added "Trending in Design" badge and "Popular with creators you follow" context line. The hero now explains <em>why</em> this video is featured, not just <em>what</em> it is. Tag pills replace the dense metadata string, improving scannability.
+            </div>
+
+            <!-- Trending first — social proof hooks before personal history -->
+            <div class="cat-upgraded">
+              <div class="cat-upgraded-header">
+                <div>
+                  <h3>Trending Today</h3>
+                  <span class="reason">Based on what's hot across your sources</span>
+                </div>
+                <a class="see-all" href="#">See all &rarr;</a>
+              </div>
+              <div class="cat-upgraded-cards">
+                <div class="cat-upgraded-card"><div class="thumb"><span class="dur">32:10</span><span class="source-badge">YouTube</span></div><div class="info"><div class="title">I Rebuilt Netflix in 48 Hours</div><div class="channel">Fireship</div><div class="meta-bottom"><span>1.8M views</span><span>2d ago</span></div></div></div>
+                <div class="cat-upgraded-card"><div class="thumb"><span class="dur">19:40</span><span class="source-badge">YouTube</span></div><div class="info"><div class="title">Building with AI in 2026</div><div class="channel">Two Minute Papers</div><div class="meta-bottom"><span>520K views</span><span>1d ago</span></div></div></div>
+                <div class="cat-upgraded-card"><div class="thumb"><span class="dur">20:45</span><span class="source-badge">YouTube</span></div><div class="info"><div class="title">The State of CSS in 2026</div><div class="channel">Kevin Powell</div><div class="meta-bottom"><span>210K views</span><span>3d ago</span></div></div></div>
+                <div class="cat-upgraded-card"><div class="thumb"><span class="dur">14:00</span><span class="source-badge">YouTube</span></div><div class="info"><div class="title">The Figma Config Recap</div><div class="channel">Figma</div><div class="meta-bottom"><span>145K views</span><span>5d ago</span></div></div></div>
+                <div class="cat-upgraded-card"><div class="thumb"><span class="dur">15:22</span><span class="source-badge">YouTube</span></div><div class="info"><div class="title">Neomorphism is Dead</div><div class="channel">Flux Academy</div><div class="meta-bottom"><span>89K views</span><span>4d ago</span></div></div></div>
+              </div>
+            </div>
+
+            <div class="improvement">
+              <strong>Change 2 — Trending First:</strong> Social proof row immediately after hero (no Featured scroll zone gap). Added subtitle explaining curation ("Based on what's hot"), source badges on thumbnails, "See all" link, and separated channel name from stats. Cards are 220px (from 200px) with better breathing room.
+            </div>
+
+            <!-- Continue Watching after trending -->
+            <div class="cw-section">
+              <div class="cw-header">
+                <h3>Continue Watching</h3>
+                <span class="count">3 in progress</span>
+              </div>
+              <div class="cw-cards">
+                <div class="cw-card">
+                  <div class="thumb">
+                    <div class="progress-bar" style="width: 65%;"></div>
+                    <div class="resume-badge">35 min left</div>
+                  </div>
+                  <div class="info">
+                    <div class="title">Building Design Systems at Scale</div>
+                    <div class="meta">Figma &middot; 65% watched</div>
+                    <div class="time-ago">Watched 2 days ago</div>
+                  </div>
+                </div>
+                <div class="cw-card">
+                  <div class="thumb">
+                    <div class="progress-bar" style="width: 30%;"></div>
+                    <div class="resume-badge">42 min left</div>
+                  </div>
+                  <div class="info">
+                    <div class="title">React Server Components Explained</div>
+                    <div class="meta">Theo &middot; 30% watched</div>
+                    <div class="time-ago">Watched yesterday</div>
+                  </div>
+                </div>
+                <div class="cw-card">
+                  <div class="thumb">
+                    <div class="progress-bar" style="width: 88%;"></div>
+                    <div class="resume-badge">4 min left</div>
+                  </div>
+                  <div class="info">
+                    <div class="title">CSS Grid Masterclass</div>
+                    <div class="meta">Kevin Powell &middot; 88% watched</div>
+                    <div class="time-ago">Watched 5 days ago</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="improvement">
+              <strong>Change 3 — Continue Watching Enhanced:</strong> Now sits after Trending (social proof first, personal history second). Added "time remaining" badge, "watched X ago" timestamp, and visible progress bar. The subtle pink gradient background separates personal content from editorial rows.
+            </div>
+
+            <div class="cat-upgraded">
+              <div class="cat-upgraded-header">
+                <div>
+                  <h3>Because You Like Design</h3>
+                  <span class="reason">Matched to your saved tags</span>
+                </div>
+                <a class="see-all" href="#">See all &rarr;</a>
+              </div>
+              <div class="cat-upgraded-cards">
+                <div class="cat-upgraded-card"><div class="thumb"><span class="dur">24:30</span><span class="source-badge">YouTube</span></div><div class="info"><div class="title">Building Design Systems at Scale</div><div class="channel">Figma</div><div class="meta-bottom"><span>142K views</span><span>1w ago</span></div></div></div>
+                <div class="cat-upgraded-card"><div class="thumb"><span class="dur">18:45</span><span class="source-badge">YouTube</span></div><div class="info"><div class="title">The Future of Creative Tools</div><div class="channel">MKBHD</div><div class="meta-bottom"><span>2.1M views</span><span>3d ago</span></div></div></div>
+                <div class="cat-upgraded-card"><div class="thumb"><span class="dur">22:15</span><span class="source-badge">YouTube</span></div><div class="info"><div class="title">Designing for Vision Pro: Year 1</div><div class="channel">WWDC Labs</div><div class="meta-bottom"><span>156K views</span><span>6d ago</span></div></div></div>
+                <div class="cat-upgraded-card"><div class="thumb"><span class="dur">16:00</span><span class="source-badge">YouTube</span></div><div class="info"><div class="title">Typography That Speaks</div><div class="channel">Layout Land</div><div class="meta-bottom"><span>55K views</span><span>2w ago</span></div></div></div>
+              </div>
+            </div>
+
+            <div class="improvement">
+              <strong>Change 4 — Personalized Row Titles:</strong> "Design Deep Dives" becomes "Because You Like Design" — tells the user the row exists FOR THEM. Netflix does this everywhere. It's the difference between a catalog and a recommendation engine.
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DIFF VIEW -->
+  <div class="view" id="diff">
+    <div class="after-mock">
+      <div class="diff-section">
+        <h3>What Changed & What to Look For</h3>
+
+        <div class="diff-item">
+          <div class="num red">1</div>
+          <div class="text"><strong>3 of 4 pages crash (P0)</strong> — Feed and Library both fail on useFocusTrap module mismatch. Settings still crashes on .map(). The dist/ folder has chunks from 2 different builds. Fix: clean dist/, rebuild. This is the single highest priority item.</div>
+        </div>
+
+        <div class="diff-item">
+          <div class="num red">2</div>
+          <div class="text"><strong>Featured Section creates ~900px dead space</strong> — The scroll-driven 4-phase animation requires a 300vh wrapper. In practice, users scroll through a black void to reach content. Proposal: Replace with a simpler horizontal carousel (like Netflix's "More Like This") or move to a dedicated page. The animation is cool in demos but hostile in daily use.</div>
+        </div>
+
+        <div class="diff-item">
+          <div class="num green">3</div>
+          <div class="text"><strong>Hero now explains WHY</strong> — Added "Trending in Design" context badge and "Popular with creators you follow" personalization signal. The hero title + description were duplicated; now the description is unique editorial copy. Tag pills replace the dense metadata string.</div>
+        </div>
+
+        <div class="diff-item">
+          <div class="num green">4</div>
+          <div class="text"><strong>Trending first, Continue Watching second</strong> — Trending row immediately after hero (social proof hooks you). Continue Watching follows (personal history). Both eliminate the Featured scroll gap. Continue Watching gets "time remaining" badge, "watched X ago" timestamp, and a subtle pink gradient to differentiate personal from editorial.</div>
+        </div>
+
+        <div class="diff-item">
+          <div class="num green">5</div>
+          <div class="text"><strong>Category rows gain intelligence</strong> — Each row now has a subtitle explaining its curation logic ("Based on what's hot across your sources"), source badges on thumbnails, and "See all" navigation. Cards are 10% wider with better info hierarchy: channel name is separated from stats on its own line.</div>
+        </div>
+
+        <div class="diff-item">
+          <div class="num green">6</div>
+          <div class="text"><strong>Personalized row titles</strong> — "Design Deep Dives" → "Because You Like Design". This is the single biggest content strategy gap vs Netflix/HBO. The tag preference system already exists in homeStore.js — it just needs to surface in the UI. Row titles should reflect user data, not static editorial labels.</div>
+        </div>
+
+        <div class="diff-item">
+          <div class="num red">7</div>
+          <div class="text"><strong>Animation timing tokens still unused</strong> — tailwind.config.js defines duration-fast/normal/slow and ease-spring/cinematic/smooth, but 0 out of 132 transition declarations use them. This was flagged in Run 7 and remains unfixed. Every animation timing is a hardcoded arbitrary value.</div>
+        </div>
+      </div>
+
+      <div class="diff-section">
+        <h3>Impact Assessment — What These Changes Buy You</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 12px;">
+          <div style="padding: 16px; background: rgba(255,255,255,0.02); border-radius: 12px; border: 1px solid rgba(255,255,255,0.06);">
+            <div style="font-size: 11px; color: #8a8a90; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Useful</div>
+            <div style="font-size: 24px; font-weight: 700; color: #f59e0b;">6.5 → 7.5</div>
+            <div style="font-size: 12px; color: #a1a1a6; margin-top: 6px;">Continue Watching promotion + "why featured" context turns a catalog into a recommendation engine.</div>
+          </div>
+          <div style="padding: 16px; background: rgba(255,255,255,0.02); border-radius: 12px; border: 1px solid rgba(255,255,255,0.06);">
+            <div style="font-size: 11px; color: #8a8a90; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Usable</div>
+            <div style="font-size: 24px; font-weight: 700; color: #f43f5e;">5.0 → 6.5</div>
+            <div style="font-size: 12px; color: #a1a1a6; margin-top: 6px;">3/4 pages crashing is the worst usability regression yet. Fix the build, then the dead space. Score can't improve until pages load.</div>
+          </div>
+          <div style="padding: 16px; background: rgba(255,255,255,0.02); border-radius: 12px; border: 1px solid rgba(255,255,255,0.06);">
+            <div style="font-size: 11px; color: #8a8a90; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Modern</div>
+            <div style="font-size: 24px; font-weight: 700; color: #10b981;">6.5 → 7.5</div>
+            <div style="font-size: 12px; color: #a1a1a6; margin-top: 6px;">Personalized row titles + context badges + subtle gradients make it feel like a premium service, not a catalog.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function show(view) {
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById(view).classList.add('active');
+      event.target.classList.add('active');
+    }
+  </script>
+</body>
+</html>
