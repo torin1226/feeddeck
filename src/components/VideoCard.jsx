@@ -57,7 +57,7 @@ export default function VideoCard({ video, onClick }) {
   return (
     <div
       className="group cursor-pointer"
-      onClick={(e) => {
+      onClick={(_e) => {
         if (longPressTriggered.current) { longPressTriggered.current = false; return }
         onClick?.(video)
       }}

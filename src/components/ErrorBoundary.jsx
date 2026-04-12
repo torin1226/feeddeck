@@ -8,7 +8,7 @@ import { Component } from 'react'
 // kill the whole app.
 // ============================================================
 
-export class ErrorBoundary extends Component {
+class ErrorBoundary extends Component {
   constructor(props) {
     super(props)
     this.state = { hasError: false, error: null }
@@ -77,55 +77,40 @@ export class ErrorBoundary extends Component {
           <div className="h-screen w-full flex flex-col items-center justify-center bg-surface text-text-primary px-6">
             <div className="max-w-md text-center space-y-4">
               <div className="text-4xl">📡</div>
-              <h2 className="text-xl font-display font-bold">Connection lost</h2>
-              <p className="text-text-secondary text-sm">
-                Check your network and try again.
-              </p>
-              <div className="flex gap-3 justify-center pt-2">
-                <button
-                  onClick={this.handleReset}
-                  className="px-4 py-2 rounded-lg bg-accent text-white font-medium text-sm
-                    hover:bg-accent/90 transition-colors active:scale-95"
-                >
-                  Retry
-                </button>
-              </div>
+              <h2 className="text-xl font-display font-bold">Connection error</h2>
+              <p className="text-text-secondary text-sm">Check your internet connection</p>
+              <button
+                onClick={this.handleReload}
+                className="mt-4 px-4 py-2 bg-primary text-white rounded-md text-sm font-medium"
+              >
+                Retry
+              </button>
             </div>
           </div>
         )
       }
 
-      // Default — unknown error
+      // Generic error — show error details and recovery options
       return (
         <div className="h-screen w-full flex flex-col items-center justify-center bg-surface text-text-primary px-6">
           <div className="max-w-md text-center space-y-4">
-            <div className="text-4xl">⚠</div>
+            <div className="text-4xl">⚠️</div>
             <h2 className="text-xl font-display font-bold">Something went wrong</h2>
             <p className="text-text-secondary text-sm">
-              {this.props.name
-                ? `The ${this.props.name} section crashed.`
-                : 'An unexpected error occurred.'}
+              {error?.message || 'An unexpected error occurred'}
             </p>
-            {error?.message && (
-              <pre className="text-xs text-text-muted bg-surface-overlay rounded-lg p-3 mt-2 text-left overflow-auto max-h-32">
-                {error.message}
-              </pre>
-            )}
-            <div className="flex gap-3 justify-center pt-2">
+            <div className="flex gap-2 justify-center">
               <button
                 onClick={this.handleReset}
-                className="px-4 py-2 rounded-lg bg-surface-overlay border border-surface-border
-                  text-text-secondary hover:text-text-primary transition-colors text-sm
-                  active:scale-95"
+                className="px-4 py-2 bg-primary text-white rounded-md text-sm font-medium"
               >
-                Try Again
+                Try again
               </button>
               <button
                 onClick={this.handleReload}
-                className="px-4 py-2 rounded-lg bg-accent text-white font-medium text-sm
-                  hover:bg-accent/90 transition-colors active:scale-95"
+                className="px-4 py-2 bg-bg-secondary text-text-primary rounded-md text-sm font-medium"
               >
-                Reload Page
+                Reload
               </button>
             </div>
           </div>

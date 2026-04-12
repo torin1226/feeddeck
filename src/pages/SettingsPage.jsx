@@ -129,12 +129,28 @@ export default function SettingsPage() {
   const addSource = async (e) => {
     e.preventDefault()
     setAddError('')
+
+    // Client-side validation
+    const domain = newSource.domain.trim()
+    if (!domain) { setAddError('Domain is required'); return }
+    if (!/^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/.test(domain)) {
+      setAddError('Invalid domain format (e.g. example.com)')
+      return
+    }
+    if (!newSource.label.trim()) { setAddError('Label is required'); return }
+    if (!newSource.query.trim()) { setAddError('Search query is required'); return }
+
     setAddLoading(true)
     try {
       const res = await fetch(`${API}/sources`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newSource),
+        body: JSON.stringify({
+          ...newSource,
+          domain: newSource.domain.trim(),
+          label: newSource.label.trim(),
+          query: newSource.query.trim(),
+        }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -588,7 +604,7 @@ function StorageSection({ showToast }) {
   const pct = Math.min(100, (usage / QUOTA) * 100)
 
   const pruneOldData = () => {
-    const keys = ['fd-lib', 'fd-queue', 'fd-mode', 'fd-theme']
+    const _keys = ['fd-lib', 'fd-queue', 'fd-mode', 'fd-theme']
     // Only prune library — it's typically the largest store
     try {
       const raw = localStorage.getItem('fd-lib')
@@ -605,7 +621,7 @@ function StorageSection({ showToast }) {
       }
       setUsage(getStorageUsage())
       showToast('Storage pruned', 'success')
-    } catch (err) {
+    } catch (_err) {
       showToast('Failed to prune storage', 'error')
     }
   }

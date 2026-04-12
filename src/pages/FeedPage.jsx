@@ -14,6 +14,7 @@ import { useNavigate } from 'react-router-dom'
 import FeedBottomNav from '../components/feed/FeedBottomNav'
 import { SkeletonCard } from '../components/Skeletons'
 import FeedFilterSheet from '../components/feed/FeedFilterSheet'
+import CookieFallbackBanner from '../components/feed/CookieFallbackBanner'
 // QueueSwipeAnimation removed — swipe-to-queue gesture replaced by explicit button
 
 // ============================================================
@@ -454,6 +455,9 @@ export default function FeedPage() {
         )}
       </div>
 
+      {/* Cookie fallback warning */}
+      <CookieFallbackBanner />
+
       {/* Filter button (top-left) */}
       {(!immersive || overlayVisible) && !theatreMode && (
         <button
@@ -530,55 +534,32 @@ export default function FeedPage() {
 
       {/* Pull-to-refresh indicator */}
       {refreshing && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-toast px-4 py-2 rounded-full
-          bg-white/15 backdrop-blur-lg border border-white/20 text-white text-sm">
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            Refreshing...
-          </div>
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-toast px-4 py-2 rounded-full bg-black/40 backdrop-blur-lg border border-white/20 text-white text-xs font-medium">
+          Refreshing...
         </div>
       )}
 
       {/* Toast notifications */}
       {toast && (
-        <FeedToast
-          key={toast.id}
-          message={toast.message}
-          onDone={() => setToast(null)}
-        />
+        <FeedToast message={toast} onDismiss={() => setToast(null)} />
       )}
 
-      {/* Heart burst animations */}
-      {hearts.map(h => (
-        <HeartBurst
-          key={h.id}
-          x={h.x}
-          y={h.y}
-          onDone={() => setHearts(prev => prev.filter(p => p.id !== h.id))}
-        />
-      ))}
+      {/* Heart burst animation */}
+      {hearts.length > 0 && (
+        <HeartBurst hearts={hearts} onComplete={() => setHearts([])} />
+      )}
 
       {/* Bottom navigation */}
-      <FeedBottomNav hidden={navHidden || (immersive && !overlayVisible) || theatreMode} onFilterOpen={() => setFilterOpen(true)} />
-
-      {/* Source control sheet (long-press) */}
-      {sourceSheet && (
-        <SourceControlSheet
-          video={sourceSheet}
-          onClose={(action) => {
-            if (action === 'hide') {
-              setToast({ id: Date.now(), message: 'Source hidden' })
-            } else if (action === 'boost') {
-              setToast({ id: Date.now(), message: 'Showing more from this source' })
-            }
-            setSourceSheet(null)
-          }}
-        />
+      {(!immersive || overlayVisible) && !theatreMode && (
+        <FeedBottomNav navHidden={navHidden} />
       )}
 
       {/* Filter sheet */}
-      {filterOpen && (
-        <FeedFilterSheet onClose={() => setFilterOpen(false)} />
+      <FeedFilterSheet open={filterOpen} onOpenChange={setFilterOpen} />
+
+      {/* Source control sheet */}
+      {sourceSheet && (
+        <SourceControlSheet video={sourceSheet} onClose={() => setSourceSheet(null)} />
       )}
     </>
   )

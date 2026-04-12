@@ -105,7 +105,7 @@ function loadSource(vid, url) {
   })
 }
 
-export default function FeedVideo({ video, index, isActive, setRef, onSourceControl }) {
+export default function FeedVideo({ video, index, isActive, setRef, _onSourceControl }) {
   const videoEl = useRef(null) // points to shared video when active
   const containerEl = useRef(null)
   const [streamUrl, setStreamUrl] = useState(video.streamUrl || null)
@@ -120,7 +120,7 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
   const letterbox = useFeedStore(s => s.letterbox)
   const immersive = useFeedStore(s => s.immersive)
   const overlayVisible = useFeedStore(s => s.overlayVisible)
-  const hideOverlay = immersive && !overlayVisible
+  const _hideOverlay = immersive && !overlayVisible
   const currentIndex = useFeedStore(s => s.currentIndex)
 
   const shouldLoad = Math.abs(index - currentIndex) <= _getPreloadWindow()
@@ -136,14 +136,13 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
     if (!video.url) return
     if (video.streamUrl) { setStreamUrl(video.streamUrl); return }
 
-    let cancelled = false
+    const controller = new AbortController()
     setStreamLoading(true)
     setDebugMsg('fetching stream...')
 
-    fetch(`/api/stream-url?url=${encodeURIComponent(video.url)}`)
+    fetch(`/api/stream-url?url=${encodeURIComponent(video.url)}`, { signal: controller.signal })
       .then(r => r.json())
       .then(data => {
-        if (cancelled) return
         if (data.streamUrl) {
           setStreamUrl(data.streamUrl)
           setDebugMsg('got stream url')
@@ -154,15 +153,15 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
         setStreamLoading(false)
       })
       .catch((err) => {
-        if (!cancelled) {
-          setStreamLoading(false)
-          setDebugMsg('fetch error: ' + err.message)
-          setVideoError(true)
-        }
+        if (err.name === 'AbortError') return // cleanup cancelled this fetch
+        setStreamLoading(false)
+        setDebugMsg('fetch error: ' + err.message)
+        setVideoError(true)
       })
 
-    return () => { cancelled = true }
-  }, [shouldLoad, video.url, video.streamUrl, streamUrl, streamLoading, videoError])
+    return () => { controller.abort() }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- streamLoading intentionally omitted to prevent re-trigger loop
+  }, [shouldLoad, video.url, video.streamUrl, streamUrl, videoError])
 
   // Claim the shared video element when this slot becomes active
   useEffect(() => {
@@ -186,7 +185,6 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
 
     // Move the shared element into this container
     containerEl.current.appendChild(vid)
-    vid.style.objectFit = isLandscape ? 'contain' : (letterbox ? 'contain' : 'cover')
 
     // Always start muted for autoplay policy compliance
     vid.muted = true
@@ -271,7 +269,14 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
       if (_sharedHls) { _sharedHls.destroy(); _sharedHls = null }
       videoEl.current = null
     }
-  }, [isActive, streamUrl, letterbox, isLandscape])
+  }, [isActive, streamUrl])
+
+  // Update object-fit when landscape/letterbox changes (without reloading the video)
+  useEffect(() => {
+    const vid = videoEl.current
+    if (!vid) return
+    vid.style.objectFit = isLandscape ? 'contain' : (letterbox ? 'contain' : 'cover')
+  }, [isLandscape, letterbox])
 
   // Handle pause/unpause while active
   useEffect(() => {
@@ -389,80 +394,6 @@ export default function FeedVideo({ video, index, isActive, setRef, onSourceCont
           {'\n'}url={streamUrl ? streamUrl.substring(0, 60) + '...' : 'none'}
         </div>
       )}
-
-      {/* Video info overlay — bottom left (hidden in immersive mode unless flashed) */}
-      <div className={`absolute bottom-6 left-4 right-16 z-10 pointer-events-none transition-opacity duration-300
-        ${hideOverlay ? 'opacity-0' : 'opacity-100'}`}>
-        <div className="text-white text-sm font-semibold leading-tight line-clamp-2 drop-shadow-lg">
-          {video.title}
-        </div>
-        {video.uploader && (
-          <div className="text-white/70 text-xs mt-1 drop-shadow-md">
-            {video.uploader}
-          </div>
-        )}
-        {video.source && (
-          <div className="text-white/50 text-[10px] mt-0.5 uppercase tracking-wider drop-shadow-md">
-            {video.source}
-          </div>
-        )}
-      </div>
-
-      {/* Source control button — right side, tap-friendly alternative to long-press */}
-      {isActive && (
-        <div className={`absolute bottom-20 right-3 z-10 flex flex-col items-center gap-4
-          transition-opacity duration-300 ${hideOverlay ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-          <button
-            onClick={(e) => { e.stopPropagation(); onSourceControl?.(video) }}
-            className="w-10 h-10 rounded-full bg-black/40 backdrop-blur flex items-center justify-center
-              text-white/80 active:scale-95 transition-transform"
-            aria-label="Source controls"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-              <circle cx="12" cy="5" r="2" />
-              <circle cx="12" cy="12" r="2" />
-              <circle cx="12" cy="19" r="2" />
-            </svg>
-          </button>
-        </div>
-      )}
-
-      {/* Timeline bar — thin progress at very bottom */}
-      {isActive && streamUrl && (
-        <FeedTimeline videoRef={videoEl} />
-      )}
-    </div>
-  )
-}
-
-// -------------------------------------------------------
-// Thin timeline bar at bottom of video
-// -------------------------------------------------------
-function FeedTimeline({ videoRef }) {
-  const barRef = useRef(null)
-
-  useEffect(() => {
-    const vid = videoRef.current || getSharedVideo()
-    if (!vid) return
-
-    const update = () => {
-      if (barRef.current && vid.duration) {
-        const pct = (vid.currentTime / vid.duration) * 100
-        barRef.current.style.width = `${pct}%`
-      }
-    }
-
-    vid.addEventListener('timeupdate', update)
-    return () => vid.removeEventListener('timeupdate', update)
-  }, [videoRef])
-
-  return (
-    <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/10 z-20">
-      <div
-        ref={barRef}
-        className="h-full bg-white/70 rounded-r-sm"
-        style={{ width: '0%', transition: 'width 0.25s linear' }}
-      />
     </div>
   )
 }
