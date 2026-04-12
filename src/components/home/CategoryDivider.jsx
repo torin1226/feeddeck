@@ -42,7 +42,7 @@ export default function CategoryDivider({ label }) {
           textTransform: 'uppercase',
           color: 'var(--color-text-muted)',
           opacity: 0.3,
-          fontFamily: 'var(--font-display)',
+          fontFamily: 'var(--font-display, "Space Grotesk", system-ui, sans-serif)',
           position: 'relative',
           whiteSpace: 'nowrap',
         }}

@@ -54,6 +54,8 @@ export default function PosterShelf() {
   const trackWrapRef = useRef(null)
   const cardRefs = useRef({})
   const focusedCardRef = useRef(null)
+  const poolRef = useRef(pool)
+  poolRef.current = pool
   const goToTimer = useRef(null)
   const wheelAccum = useRef(0)
   const wheelCooldown = useRef(false)
@@ -180,46 +182,47 @@ export default function PosterShelf() {
   const goTo = useCallback((index) => {
     clearTimeout(goToTimer.current)
     goToTimer.current = setTimeout(() => {
-      setActiveIndex((prev) => {
-        const target = Math.max(0, Math.min(index, pool.length - 1))
-        // Skip dividers — find nearest real card
-        if (pool[target]?._divider) {
-          // Try forward first, then backward
-          for (let d = 1; d < pool.length; d++) {
-            if (target + d < pool.length && !pool[target + d]?._divider) return target + d
-            if (target - d >= 0 && !pool[target - d]?._divider) return target - d
-          }
+      const p = poolRef.current
+      const target = Math.max(0, Math.min(index, p.length - 1))
+      // Skip dividers — find nearest real card
+      if (p[target]?._divider) {
+        for (let d = 1; d < p.length; d++) {
+          if (target + d < p.length && !p[target + d]?._divider) { setActiveIndex(target + d); return }
+          if (target - d >= 0 && !p[target - d]?._divider) { setActiveIndex(target - d); return }
         }
-        return target
-      })
+      }
+      setActiveIndex(target)
     }, DEBOUNCE_MS)
-  }, [pool])
+  }, [])
 
   // Immediate setter (no debounce) for click
   const goToImmediate = useCallback((index) => {
     clearTimeout(goToTimer.current)
-    const target = Math.max(0, Math.min(index, pool.length - 1))
-    if (!pool[target]?._divider) {
+    const p = poolRef.current
+    const target = Math.max(0, Math.min(index, p.length - 1))
+    if (!p[target]?._divider) {
       setActiveIndex(target)
     }
-  }, [pool])
+  }, [])
 
   // -------------------------------------------------------
   // Find next/prev real card (skip dividers)
   // -------------------------------------------------------
   const findNext = useCallback((from) => {
-    for (let i = from + 1; i < pool.length; i++) {
-      if (!pool[i]._divider) return i
+    const p = poolRef.current
+    for (let i = from + 1; i < p.length; i++) {
+      if (!p[i]._divider) return i
     }
     return from // stay
-  }, [pool])
+  }, [])
 
   const findPrev = useCallback((from) => {
+    const p = poolRef.current
     for (let i = from - 1; i >= 0; i--) {
-      if (!pool[i]._divider) return i
+      if (!p[i]._divider) return i
     }
     return from // stay
-  }, [pool])
+  }, [])
 
   // -------------------------------------------------------
   // Keyboard navigation — goes through goTo()
@@ -336,22 +339,18 @@ export default function PosterShelf() {
     hydrateCategory(nextCatIdx)
     // Jump to the first card of the newly hydrated category after pool state settles
     setTimeout(() => {
-      setPool((currentPool) => {
-        const wrappedIdx = nextCatIdx % categories.length
-        // Walk backwards to find the batch of items from this category
-        for (let i = currentPool.length - 1; i >= 0; i--) {
-          if (currentPool[i]._cat === wrappedIdx && !currentPool[i]._divider) {
-            // Found an item; walk back to the first one in this batch
-            let first = i
-            while (first > 0 && currentPool[first - 1]._cat === wrappedIdx && !currentPool[first - 1]._divider) {
-              first--
-            }
-            setActiveIndex(first)
-            break
+      const currentPool = poolRef.current
+      const wrappedIdx = nextCatIdx % categories.length
+      for (let i = currentPool.length - 1; i >= 0; i--) {
+        if (currentPool[i]._cat === wrappedIdx && !currentPool[i]._divider) {
+          let first = i
+          while (first > 0 && currentPool[first - 1]._cat === wrappedIdx && !currentPool[first - 1]._divider) {
+            first--
           }
+          setActiveIndex(first)
+          break
         }
-        return currentPool // read-only, no mutation
-      })
+      }
     }, 50)
   }, [hydrateCategory, categories])
 
