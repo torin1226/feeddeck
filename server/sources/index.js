@@ -20,14 +20,20 @@ import { registry } from './registry.js'
 import { YtDlpAdapter } from './ytdlp.js'
 import { ScraperAdapter } from './scraper.js'
 import { CobaltAdapter } from './cobalt.js'
+import { CreatorAdapter } from './creator.js'
 
 // Create adapter instances
 const ytdlp = new YtDlpAdapter()
 const scraper = new ScraperAdapter()
 const cobalt = new CobaltAdapter()
+const creator = new CreatorAdapter()
 
 // Register adapters
 // Order matters: first registered with a capability becomes primary for fallback chains
+
+// Creator adapter handles Reddit/TikTok/Instagram/Twitter discovery
+// Registered first so it claims these domains before yt-dlp's universal fallback
+registry.register(creator, { primary: true })
 
 // Scraper is primary for NSFW discovery (search, categories, trending)
 registry.register(scraper, { primary: true })

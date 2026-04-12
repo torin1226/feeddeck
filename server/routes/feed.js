@@ -64,7 +64,7 @@ router.get('/api/feed/next', (req, res) => {
     const videos = []
     const used = new Set()
     // First pass: round-robin
-    for (const [src, vids] of Object.entries(bySource)) {
+    for (const [_src, vids] of Object.entries(bySource)) {
       for (const v of vids.slice(0, perSourceLimit)) {
         if (videos.length >= count) break
         videos.push(v)
@@ -75,7 +75,7 @@ router.get('/api/feed/next', (req, res) => {
     if (videos.length < count) {
       const remaining = allUnwatched.filter(v => !used.has(v.id))
       // Weighted shuffle: items with higher weight are more likely to appear first
-      remaining.sort((a, b) => (Math.random() ** (1 / b.weight)) - (Math.random() ** (1 / a.weight)))
+      remaining.sort((a, b) => (Math.random() ** (1 / (b.weight || 1))) - (Math.random() ** (1 / (a.weight || 1))))
       for (const v of remaining) {
         if (videos.length >= count) break
         videos.push(v)

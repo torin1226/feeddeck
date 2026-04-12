@@ -3,6 +3,8 @@ import express from 'express'
 import { existsSync, writeFileSync, unlinkSync, statSync, readFileSync } from 'fs'
 import { db } from '../database.js'
 import { MODE_COOKIE_FILES, LEGACY_COOKIE_FILE } from '../cookies.js'
+import { checkCookieHealth } from '../cookie-health.js'
+import { getCachedChannelCount } from '../sub-channel-cache.js'
 import { logger } from '../logger.js'
 import { getMode, formatDuration } from '../utils.js'
 
@@ -185,6 +187,29 @@ router.get('/api/cookies/status', (req, res) => {
     })
   } catch (err) {
     res.json({ installed: false, error: err.message })
+  }
+})
+
+// GET /api/cookies/health — probe cookie validity for key domains
+// Returns health status per domain + subscription fallback info
+router.get('/api/cookies/health', async (req, res) => {
+  try {
+    const health = await checkCookieHealth()
+    const cachedChannels = getCachedChannelCount()
+
+    // Add subscription fallback info to YouTube health
+    if (health.youtube) {
+      health.youtube.subscriptionFallback = {
+        available: cachedChannels > 0,
+        cachedChannels,
+        active: health.youtube.status === 'expired' && cachedChannels > 0,
+      }
+    }
+
+    res.json(health)
+  } catch (err) {
+    logger.error('Cookie health check error', { error: err.message })
+    res.status(500).json({ error: 'Health check failed' })
   }
 })
 

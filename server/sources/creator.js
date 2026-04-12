@@ -13,7 +13,7 @@ import { SourceAdapter } from './base.js'
 import { ytdlpExec, YTDLP_TIMEOUT } from './ytdlp.js'
 import { logger } from '../logger.js'
 import { db } from '../database.js'
-import { randomUUID } from 'crypto'
+// randomUUID removed — not currently used
 
 // How many creators to fetch per refill cycle, per platform
 const CREATORS_PER_CYCLE = {

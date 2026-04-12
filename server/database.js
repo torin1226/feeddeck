@@ -48,7 +48,7 @@ function _seedCategories(database) {
     ['nsfw_fikfap_trend',   'FikFap Trending',      'https://fikfap.com/trending',                                                 'nsfw', 24],
     // Social categories (19)
     ['social_trending',      'Trending',            'https://www.youtube.com/feed/trending',                                       'social', 0],
-    ['social_subscriptions', 'Your Subscriptions',  'https://www.youtube.com/feed/subscriptions',                                  'social', 1],
+    ['social_subscriptions', 'My Subscriptions',    'https://www.youtube.com/feed/subscriptions',                                  'social', 1],
     ['social_shorts',        'Shorts',              'https://www.youtube.com/shorts',                                              'social', 2],
     ['social_viral',         'Viral This Week',     'ytsearch10:viral videos this week',                                           'social', 3],
     ['social_tech',          'Tech & Gadgets',      'ytsearch10:best new tech gadgets',                                            'social', 4],
@@ -326,7 +326,7 @@ export function initDatabase() {
     const insertSrc = db.prepare('INSERT OR IGNORE INTO sources (domain, mode, label, query, weight) VALUES (?, ?, ?, ?, ?)')
     const newSources = [
       ['reddit.com',     'social', 'Reddit',            'reddit videos best of',                0.7],
-      ['subscriptions',  'social', 'Your Subscriptions', 'https://www.youtube.com/feed/subscriptions', 2.0],
+      ['subscriptions',  'social', 'My Subscriptions',   'https://www.youtube.com/feed/subscriptions', 2.0],
       ['xvideos.com',    'nsfw',   'XVideos',           'https://www.xvideos.com/best',         0.8],
       ['spankbang.com',  'nsfw',   'SpankBang',         'https://spankbang.com/trending',       0.7],
       ['redgifs.com',    'nsfw',   'RedGifs',           'https://www.redgifs.com/trending',     0.9],
@@ -392,6 +392,12 @@ export function initDatabase() {
     if (!cols.some(c => c.name === 'tags')) {
       db.exec("ALTER TABLE feed_cache ADD COLUMN tags TEXT DEFAULT '[]'")
     }
+  } catch {}
+
+  // Migrate: fix 'Your Subscriptions' label to 'My Subscriptions' to match BrowseSection TARGET_LABELS
+  try {
+    db.exec("UPDATE categories SET label = 'My Subscriptions' WHERE key = 'social_subscriptions' AND label = 'Your Subscriptions'")
+    db.exec("UPDATE sources SET label = 'My Subscriptions' WHERE domain = 'subscriptions' AND label = 'Your Subscriptions'")
   } catch {}
 
   logger.info('Database initialized', { path: DB_PATH })

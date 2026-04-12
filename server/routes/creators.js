@@ -41,7 +41,10 @@ router.post('/api/creators', (req, res) => {
     return res.status(400).json({ error: 'handle is required' })
   }
 
-  const cleanHandle = handle.trim().replace(/^[@\/r\/]+/, '')
+  const cleanHandle = handle.trim().replace(/^[@/r/]+/, '')
+  if (!cleanHandle) {
+    return res.status(400).json({ error: 'handle is empty after normalization' })
+  }
   const urlGen = URL_GENERATORS[platform]
   const url = urlGen(cleanHandle)
 
@@ -87,7 +90,7 @@ router.post('/api/creators/import', (req, res) => {
 
   let added = 0
   for (const raw of handles) {
-    const h = String(raw).trim().replace(/^[@\/r\/]+/, '')
+    const h = String(raw).trim().replace(/^[@/r/]+/, '')
     if (!h) continue
     const result = insert.run(platform, h, urlGen(h), h)
     if (result.changes > 0) added++
@@ -123,7 +126,7 @@ router.put('/api/creators/:id', (req, res) => {
   }
 
   if (handle && typeof handle === 'string') {
-    const cleanHandle = handle.trim().replace(/^[@\/r\/]+/, '')
+    const cleanHandle = handle.trim().replace(/^[@/r/]+/, '')
     const urlGen = URL_GENERATORS[existing.platform]
     db.prepare('UPDATE creators SET handle = ?, url = ?, label = ? WHERE id = ?')
       .run(cleanHandle, urlGen(cleanHandle), cleanHandle, req.params.id)
