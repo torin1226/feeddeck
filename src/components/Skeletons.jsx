@@ -57,6 +57,46 @@ export function SkeletonHero() {
   )
 }
 
+export function SkeletonPosterShelf() {
+  return (
+    <div className="h-screen flex flex-col items-center overflow-hidden px-48 py-0">
+      {/* Shelf label skeleton */}
+      <div className="w-24 h-3 rounded bg-surface-raised animate-shimmer mb-5" />
+
+      {/* Cards skeleton */}
+      <div className="flex gap-5 items-center h-[calc(100vh-200px)] flex-shrink-0">
+        {[
+          { width: 320, opacity: 0.4 },
+          { width: 420, opacity: 0.6 },
+          { width: 600, opacity: 1 },
+          { width: 420, opacity: 0.6 },
+          { width: 320, opacity: 0.4 },
+        ].map((card, i) => (
+          <div
+            key={i}
+            className="rounded-card-lg bg-surface-raised animate-shimmer h-full flex-shrink-0"
+            style={{ width: `${card.width}px`, opacity: card.opacity }}
+          />
+        ))}
+      </div>
+
+      {/* Dots skeleton */}
+      <div className="flex justify-center gap-1.5 pt-4">
+        {Array.from({ length: 7 }, (_, i) => (
+          <div
+            key={i}
+            className="rounded-full bg-surface-raised animate-shimmer"
+            style={{
+              width: i === 3 ? '24px' : '6px',
+              height: i === 3 ? '6px' : '6px',
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function SkeletonLibrary() {
   return (
     <div className="pt-14">
