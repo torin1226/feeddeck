@@ -218,9 +218,9 @@ function startScheduledTrendingRefresh() {
       let added = 0
       for (const v of videos) {
         try {
-          insert.run(v.id, 'nsfw_trending', v.url, v.title, v.thumbnail, v.duration, v.source || site, v.uploader, v.view_count, JSON.stringify(v.tags || []))
-          added++
-        } catch { /* skip duplicates */ }
+          const result = insert.run(v.id, 'nsfw_trending', v.url, v.title, v.thumbnail, v.duration, v.source || site, v.uploader, v.view_count, JSON.stringify(v.tags || []))
+          if (result.changes > 0) added++
+        } catch { /* skip on schema error */ }
       }
       logger.info(`  ✅ Trending refresh: added ${added} videos from ${site}`)
     } catch (err) {

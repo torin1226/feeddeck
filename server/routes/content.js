@@ -524,9 +524,11 @@ async function refillCategory(categoryKey) {
     let added = 0
     for (const v of videos) {
       try {
-        insert.run(v.id, categoryKey, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, JSON.stringify(v.tags || []))
-        added++
-      } catch { /* skip duplicates */ }
+        const result = insert.run(v.id, categoryKey, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, JSON.stringify(v.tags || []))
+        if (result.changes > 0) added++
+      } catch (err) {
+        logger.warn(`  ⚠️ Insert failed for ${v.id} in ${categoryKey}:`, { error: err.message })
+      }
     }
 
     logger.info(`  ✅ Added ${added} videos to ${categoryKey}`)
