@@ -49,7 +49,7 @@ const SITE_CONFIGS = {
     trendingUrl: 'https://www.pornhub.com/video?o=tr',
     selectors: {
       videoCard: '.pcVideoListItem, li.videoBox',
-      title: '.title a, a[title]',
+      title: 'span.title a',
       thumbnail: 'img.thumb, img[data-thumb_url]',
       duration: '.duration, var.duration',
       views: '.views, span.views',
@@ -67,12 +67,12 @@ const SITE_CONFIGS = {
     trendingUrl: 'https://www.xvideos.com/best',
     selectors: {
       videoCard: '.thumb-block',
-      title: '.thumb-under p a, p.title a',
-      thumbnail: 'img.thumb',
-      duration: '.duration, span.duration',
-      views: '.metadata .bg span',
-      uploader: '.metadata .name a',
-      link: '.thumb-under p a, a',
+      title: '.title a',
+      thumbnail: '.thumb-link img',
+      duration: 'span.duration',
+      views: 'span.views-count',
+      uploader: 'a.name',
+      link: '.title a, .thumb-link',
     },
     thumbnailAttr: ['data-src', 'src'],
     baseUrl: 'https://www.xvideos.com',
@@ -99,16 +99,17 @@ const SITE_CONFIGS = {
     searchUrl: (q) => `https://www.redtube.com/?search=${encodeURIComponent(q)}`,
     categoryUrl: (cat) => `https://www.redtube.com/category/${encodeURIComponent(cat)}`,
     trendingUrl: 'https://www.redtube.com/mostviewed?period=today',
+    ageGate: true,
     selectors: {
-      videoCard: '.video-box, li.videoBox',
-      title: '.video-title a, a[title]',
-      thumbnail: 'img.video-thumb, img[data-thumb_url]',
-      duration: '.duration, span.duration',
-      views: '.video-views, span.views',
-      uploader: '.video-uploader a, .uploader a',
-      link: '.video-title a, a.video-thumb-link',
+      videoCard: 'li.thumbnail-card[data-video-id]',
+      title: 'a.tm_video_title',
+      thumbnail: 'picture.video_thumb_image img',
+      duration: 'span.tm_video_duration',
+      views: 'span.info-views',
+      uploader: 'a.author-title-text',
+      link: 'a.video_link',
     },
-    thumbnailAttr: ['data-thumb_url', 'data-src', 'src'],
+    thumbnailAttr: ['data-src', 'src'],
     baseUrl: 'https://www.redtube.com',
   },
 
@@ -116,16 +117,17 @@ const SITE_CONFIGS = {
     searchUrl: (q) => `https://www.youporn.com/search/?query=${encodeURIComponent(q)}`,
     categoryUrl: (cat) => `https://www.youporn.com/category/${encodeURIComponent(cat)}/`,
     trendingUrl: 'https://www.youporn.com/most_viewed/?t=t',
+    ageGate: true,
     selectors: {
-      videoCard: '.video-box, .video-listing .video-box',
-      title: '.video-box-title a, a[title]',
-      thumbnail: 'img.video-thumb, img[data-thumbnail]',
-      duration: '.video-duration, span.duration',
-      views: '.video-views, span.views',
-      uploader: '.video-uploader a',
-      link: '.video-box-title a, a.video-thumb-link',
+      videoCard: 'article.video-box[data-video-id]',
+      title: 'a.video-title-text',
+      thumbnail: 'img.thumb-image',
+      duration: '.video-duration span',
+      views: 'span.info-views',
+      uploader: 'a.author-title-text',
+      link: 'a.tm_video_link[href*="/watch/"]',
     },
-    thumbnailAttr: ['data-thumbnail', 'data-src', 'src'],
+    thumbnailAttr: ['data-src', 'src'],
     baseUrl: 'https://www.youporn.com',
   },
 
@@ -151,7 +153,7 @@ export class ScraperAdapter extends SourceAdapter {
   constructor() {
     super({
       name: 'scraper',
-      supportedDomains: [...Object.keys(SITE_CONFIGS), 'redgifs.com'],
+      supportedDomains: [...Object.keys(SITE_CONFIGS), 'redgifs.com', 'fikfap.com'],
       capabilities: {
         search: true,
         categories: true,
@@ -253,6 +255,37 @@ export class ScraperAdapter extends SourceAdapter {
             logger.info(`Scraper: Cloudflare challenge resolved for ${siteKey} (title: "${pageTitle}")`)
             break
           }
+        }
+      }
+
+      // Age gate dismissal: some sites (RedTube, YouPorn) show an age verification
+      // overlay before content is visible. Click through it automatically.
+      if (config.ageGate) {
+        const dismissed = await page.evaluate(() => {
+          // Try common age gate button patterns
+          const selectors = [
+            '#js_enterForm button[type="submit"]',
+            'button[data-testid="age-verification-enter"]',
+          ]
+          for (const sel of selectors) {
+            const btn = document.querySelector(sel)
+            if (btn) { btn.click(); return sel }
+          }
+          // Fallback: find button/link with "I am 18" or "Enter" text
+          for (const btn of document.querySelectorAll('button, a')) {
+            const text = btn.textContent?.trim()?.toLowerCase() || ''
+            if ((text.includes('i am 18') || text.includes('enter')) && !text.includes('sign') && !text.includes('cookie')) {
+              btn.click()
+              return `text:"${btn.textContent.trim().slice(0, 40)}"`
+            }
+          }
+          return null
+        }).catch(() => null)
+
+        if (dismissed) {
+          logger.info(`Scraper: dismissed age gate for ${siteKey} (${dismissed})`)
+          await new Promise(r => setTimeout(r, 2000))
+          await page.waitForNetworkIdle({ timeout: 8000 }).catch(() => {})
         }
       }
 
@@ -387,12 +420,14 @@ export class ScraperAdapter extends SourceAdapter {
     const clean = siteOrDomain.replace(/^www\./, '')
     if (SITE_CONFIGS[clean]) return clean
     if (clean === 'redgifs.com') return 'redgifs.com'
+    if (clean === 'fikfap.com') return 'fikfap.com'
 
     // Try partial match
     for (const key of Object.keys(SITE_CONFIGS)) {
       if (clean.includes(key) || key.includes(clean)) return key
     }
     if (clean.includes('redgifs') || 'redgifs.com'.includes(clean)) return 'redgifs.com'
+    if (clean.includes('fikfap') || 'fikfap.com'.includes(clean)) return 'fikfap.com'
     return null
   }
 
@@ -415,9 +450,33 @@ export class ScraperAdapter extends SourceAdapter {
   async searchRedGifs(query, options = {}) {
     const { limit = 20 } = options
     const token = await this._getRedGifsToken()
-    const url = `https://api.redgifs.com/v2/gifs/search?search_text=${encodeURIComponent(query)}&count=${limit}`
 
-    const res = await fetch(url, {
+    // HYDRATION: Parse RedGifs URLs to extract the actual search query or detect trending.
+    // refillCategory passes URLs like "https://www.redgifs.com/search?query=amateur&order=trending"
+    // which must not be encoded wholesale as search_text.
+    let apiUrl
+    if (query.includes('redgifs.com')) {
+      try {
+        const parsed = new URL(query)
+        if (parsed.pathname.includes('/trending')) {
+          const type = parsed.searchParams.get('type') || ''
+          apiUrl = `https://api.redgifs.com/v2/gifs/trending?count=${limit}${type ? `&type=${type}` : ''}`
+        } else if (parsed.searchParams.has('query')) {
+          const searchText = parsed.searchParams.get('query')
+          apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=${encodeURIComponent(searchText)}&count=${limit}`
+        } else {
+          // Fall back to using the path segment as search text
+          const pathSearch = parsed.pathname.split('/').filter(Boolean).pop() || query
+          apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=${encodeURIComponent(pathSearch)}&count=${limit}`
+        }
+      } catch {
+        apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=${encodeURIComponent(query)}&count=${limit}`
+      }
+    } else {
+      apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=${encodeURIComponent(query)}&count=${limit}`
+    }
+
+    const res = await fetch(apiUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
         'Accept': 'application/json',
@@ -441,14 +500,72 @@ export class ScraperAdapter extends SourceAdapter {
     }))
   }
 
+  // FikFap uses a JSON API with anonymous UUID auth.
+  // No token exchange needed — any random UUID works as authorization-anonymous header.
+  async searchFikFap(query, options = {}) {
+    const { limit = 20 } = options
+
+    // Map FikFap URL patterns or search queries to API params.
+    // FikFap supports sort: new, trending, top, random (not "hot" or "best").
+    // The /trending route no longer exists on fikfap.com — use sort=trending instead.
+    let sort = 'trending'
+    if (query.includes('fikfap.com/new') || query.includes('sort=new')) sort = 'new'
+    else if (query.includes('fikfap.com/top') || query.includes('sort=top')) sort = 'top'
+    else if (query.includes('fikfap.com/random') || query.includes('sort=random')) sort = 'random'
+    else if (query.includes('fikfap.com/trending') || query.includes('fikfap.com')) sort = 'trending'
+
+    // Generate a random anonymous token (FikFap accepts any UUID)
+    const anonToken = crypto.randomUUID()
+    const url = `https://api.fikfap.com/posts?amount=${limit}&sort=${sort}&useDistinctUserIds=true&minimumScore=-20`
+
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        'Origin': 'https://fikfap.com',
+        'Referer': 'https://fikfap.com/',
+        'authorization-anonymous': anonToken,
+        'isloggedin': 'false',
+        'ispwa': 'false',
+      },
+    })
+    if (!res.ok) throw new Error(`FikFap API error: ${res.status}`)
+
+    const posts = await res.json()
+    if (!Array.isArray(posts)) throw new Error('FikFap API returned unexpected format')
+
+    return posts.slice(0, limit).map(p => {
+      // Build a canonical URL from the postId
+      const webUrl = `https://fikfap.com/post/${p.postId}`
+
+      // Title: use label (description), fall back to hashtags or postId
+      const hashtagStr = p.hashtags?.map(h => `#${h.label}`).join(' ') || ''
+      const title = p.label?.trim() || hashtagStr || `FikFap #${p.postId}`
+
+      return this.normalizeVideo({
+        id: `fikfap_${p.postId}`,
+        webpage_url: webUrl,
+        title,
+        thumbnail: p.thumbnailStreamUrl || '',
+        duration: Math.round(p.duration || 0),
+        view_count: p.viewsCount || 0,
+        uploader: p.author?.username || '',
+        source: 'fikfap.com',
+      })
+    })
+  }
+
   async search(query, options = {}) {
     const { site = 'pornhub.com', limit = 20 } = options
     const siteKey = this._getSiteKey(site)
     if (!siteKey) throw new Error(`Scraper doesn't support ${site}`)
 
-    // RedGifs uses a JSON API, not Puppeteer scraping
+    // RedGifs and FikFap use JSON APIs, not Puppeteer scraping
     if (siteKey === 'redgifs.com') {
       return this.searchRedGifs(query, { limit })
+    }
+    if (siteKey === 'fikfap.com') {
+      return this.searchFikFap(query, { limit })
     }
 
     // If the query is already a URL (e.g. category page passed from refillCategory),
@@ -465,6 +582,16 @@ export class ScraperAdapter extends SourceAdapter {
 
   async fetchCategory(categoryUrl, options = {}) {
     const { limit = 20 } = options
+
+    // FikFap uses its own JSON API
+    if (categoryUrl.includes('fikfap.com')) {
+      return this.searchFikFap(categoryUrl, { limit })
+    }
+
+    // RedGifs uses its own JSON API
+    if (categoryUrl.includes('redgifs.com')) {
+      return this.searchRedGifs(categoryUrl, { limit })
+    }
 
     // Figure out which site from the URL
     let siteKey = null
@@ -517,4 +644,4 @@ export class ScraperAdapter extends SourceAdapter {
 }
 
 // Export supported sites for use in UI/config
-export const SUPPORTED_SITES = [...Object.keys(SITE_CONFIGS), 'redgifs.com']
+export const SUPPORTED_SITES = [...Object.keys(SITE_CONFIGS), 'redgifs.com', 'fikfap.com']

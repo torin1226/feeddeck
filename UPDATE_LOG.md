@@ -1,5 +1,48 @@
 # FeedDeck Update Log
 
+## 2026-04-15 - NSFW Source Blitz (8/9 Sources Working)
+
+### Completed
+- XVideos selectors fixed: title, thumbnail, views, uploader all updated to match current DOM
+- RedTube selectors fully rewritten + age gate auto-dismiss added
+- YouPorn selectors fully rewritten + age gate auto-dismiss added
+- xHamster confirmed working (no changes needed)
+- FikFap JSON API adapter implemented (`searchFikFap()` in scraper.js). Uses anonymous UUID auth, no Puppeteer
+- PornHub confirmed working: yt-dlp v2026.03.17 uses `--js-runtimes node` (no PhantomJS). Title selector fixed (`span.title a`)
+- Cobalt investigated: public API permanently dead (Nov 2024). Self-host via Docker is the path forward
+- Age gate auto-dismiss system added to `_scrapeVideoList()` for sites with `ageGate: true` config flag
+- 5 diagnostic/test scripts created in `server/scripts/`
+
+### Decisions Made
+- FikFap uses JSON API pattern (like RedGifs), not Puppeteer DOM scraping. Site is a React SPA with no server-rendered cards
+- Age gate handling is config-driven per site, uses button text matching ("I am 18")
+- PornHub title selector narrowed from `.title a, a[title]` to `span.title a` to avoid duration text bleeding into titles
+
+### Key Files Changed
+- `server/sources/scraper.js` -- XVideos/RedTube/YouPorn selectors, PornHub title fix, FikFap API adapter, age gate logic
+- `server/sources/cobalt.js` -- header comment updated with current API status
+- `_memory/errors/feeddeck-known-issues.md` -- comprehensive update for all 9 sources
+
+### NSFW Source Scorecard
+| Source | Status | Notes |
+|--------|--------|-------|
+| SpankBang | Working | Fixed 2026-04-14 |
+| RedGifs | Working | JSON API adapter |
+| XVideos | Fixed | Selector update |
+| RedTube | Fixed | Selector rewrite + age gate |
+| xHamster | Working | Original selectors correct |
+| YouPorn | Fixed | Selector rewrite + age gate |
+| PornHub | Fixed | yt-dlp works, title selector fixed |
+| FikFap | Fixed | New JSON API adapter |
+| Cobalt | Dead | Public API shut down, self-host needed |
+
+### Next Session Should
+1. Test end-to-end: run `npm run dev`, switch to NSFW mode, verify categories refill from newly-fixed sources
+2. Check FikFap BunnyCDN video URLs for expiry/HLS issues
+3. Update `database.js` FikFap category URLs if needed (adapter handles `/trending` but it 404s on the site)
+
+---
+
 ## 2026-04-12 - Video Quality & Homepage Row Fixes
 
 ### Completed
