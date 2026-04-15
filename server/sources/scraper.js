@@ -71,13 +71,13 @@ const SITE_CONFIGS = {
     categoryUrl: (cat) => `https://spankbang.com/t/${encodeURIComponent(cat)}/`,
     trendingUrl: 'https://spankbang.com/trending_videos/',
     selectors: {
-      videoCard: '[data-testid="video-item"]',
-      title: '[data-testid="video-info-with-badge"] a[href*="/video/"][title]',
-      thumbnail: 'picture img',
+      videoCard: '.js-video-item, [data-testid="video-item"]',
+      title: '.line-clamp-2 a[title], [data-testid="video-info-with-badge"] a[href*="/video/"][title]',
+      thumbnail: 'img[x-ref="thumbnail"], picture img',
       duration: '[data-testid="video-item-length"]',
       views: '[data-testid="views"]',
       uploader: 'a[data-testid="title"]',
-      link: 'a[href*="/video/"]',
+      link: 'a[href*="/video/"], a[href*="/video"]',
     },
     thumbnailAttr: ['src', 'data-src'],
     baseUrl: 'https://spankbang.com',
@@ -139,7 +139,7 @@ export class ScraperAdapter extends SourceAdapter {
   constructor() {
     super({
       name: 'scraper',
-      supportedDomains: Object.keys(SITE_CONFIGS),
+      supportedDomains: [...Object.keys(SITE_CONFIGS), 'redgifs.com'],
       capabilities: {
         search: true,
         categories: true,
@@ -150,6 +150,7 @@ export class ScraperAdapter extends SourceAdapter {
     })
     this.browser = null
     this._consecutiveFailures = 0
+    this._idleTimer = null
   }
 
   async _getBrowser() {
@@ -178,6 +179,16 @@ export class ScraperAdapter extends SourceAdapter {
   async _newPage() {
     const browser = await this._getBrowser()
     const page = await browser.newPage()
+
+    // Reset idle timeout — close browser after 10 min of no scraping activity
+    clearTimeout(this._idleTimer)
+    this._idleTimer = setTimeout(async () => {
+      if (this.browser) {
+        logger.info('Closing idle Puppeteer browser (10 min timeout)')
+        await this.browser.close().catch(() => {})
+        this.browser = null
+      }
+    }, 10 * 60 * 1000)
 
     try {
       // Stealth basics: realistic user agent + viewport
@@ -345,18 +356,70 @@ export class ScraperAdapter extends SourceAdapter {
     // Normalize "www.pornhub.com" -> "pornhub.com"
     const clean = siteOrDomain.replace(/^www\./, '')
     if (SITE_CONFIGS[clean]) return clean
+    if (clean === 'redgifs.com') return 'redgifs.com'
 
     // Try partial match
     for (const key of Object.keys(SITE_CONFIGS)) {
       if (clean.includes(key) || key.includes(clean)) return key
     }
+    if (clean.includes('redgifs') || 'redgifs.com'.includes(clean)) return 'redgifs.com'
     return null
+  }
+
+  // RedGifs uses a JSON API with temporary bearer tokens
+  async _getRedGifsToken() {
+    // Cache token for 1 hour (they last ~24h but we play it safe)
+    if (this._redGifsToken && Date.now() < this._redGifsTokenExpiry) {
+      return this._redGifsToken
+    }
+    const res = await fetch('https://api.redgifs.com/v2/auth/temporary', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36' },
+    })
+    if (!res.ok) throw new Error(`RedGifs auth error: ${res.status}`)
+    const data = await res.json()
+    this._redGifsToken = data.token
+    this._redGifsTokenExpiry = Date.now() + 60 * 60 * 1000
+    return this._redGifsToken
+  }
+
+  async searchRedGifs(query, options = {}) {
+    const { limit = 20 } = options
+    const token = await this._getRedGifsToken()
+    const url = `https://api.redgifs.com/v2/gifs/search?search_text=${encodeURIComponent(query)}&count=${limit}`
+
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    })
+    if (!res.ok) throw new Error(`RedGifs API error: ${res.status}`)
+
+    const data = await res.json()
+    const gifs = data.gifs || []
+
+    return gifs.slice(0, limit).map(g => this.normalizeVideo({
+      id: g.id,
+      webpage_url: `https://www.redgifs.com/watch/${g.id}`,
+      title: g.description || g.tags?.join(', ') || g.id,
+      thumbnail: g.urls?.poster || g.urls?.thumbnail || '',
+      duration: Math.round(g.duration || 0),
+      view_count: g.views || 0,
+      uploader: g.userName || '',
+      source: 'redgifs.com',
+    }))
   }
 
   async search(query, options = {}) {
     const { site = 'pornhub.com', limit = 20 } = options
     const siteKey = this._getSiteKey(site)
     if (!siteKey) throw new Error(`Scraper doesn't support ${site}`)
+
+    // RedGifs uses a JSON API, not Puppeteer scraping
+    if (siteKey === 'redgifs.com') {
+      return this.searchRedGifs(query, { limit })
+    }
 
     const config = SITE_CONFIGS[siteKey]
     const url = config.searchUrl(query)
@@ -385,10 +448,10 @@ export class ScraperAdapter extends SourceAdapter {
     return this._scrapeVideoList(config.trendingUrl, siteKey, { limit })
   }
 
-  // Multi-site search: hit all configured sites in parallel
+  // Multi-site search: hit all configured sites + RedGifs in parallel
   async searchAll(query, options = {}) {
     const { limit = 10 } = options
-    const sites = Object.keys(SITE_CONFIGS)
+    const sites = [...Object.keys(SITE_CONFIGS), 'redgifs.com']
 
     const results = await Promise.allSettled(
       sites.map(site => this.search(query, { site, limit }))
@@ -408,6 +471,7 @@ export class ScraperAdapter extends SourceAdapter {
 
   // Cleanup: close the browser when shutting down
   async close() {
+    clearTimeout(this._idleTimer)
     if (this.browser) {
       await this.browser.close()
       this.browser = null
@@ -416,4 +480,4 @@ export class ScraperAdapter extends SourceAdapter {
 }
 
 // Export supported sites for use in UI/config
-export const SUPPORTED_SITES = Object.keys(SITE_CONFIGS)
+export const SUPPORTED_SITES = [...Object.keys(SITE_CONFIGS), 'redgifs.com']
