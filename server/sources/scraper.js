@@ -488,15 +488,19 @@ export class ScraperAdapter extends SourceAdapter {
     const data = await res.json()
     const gifs = data.gifs || []
 
-    return gifs.slice(0, limit).map(g => this.normalizeVideo({
-      id: g.id,
-      webpage_url: `https://www.redgifs.com/watch/${g.id}`,
-      title: g.description || g.tags?.join(', ') || g.id,
-      thumbnail: g.urls?.poster || g.urls?.thumbnail || '',
-      duration: Math.round(g.duration || 0),
-      view_count: g.views || 0,
-      uploader: g.userName || '',
-      source: 'redgifs.com',
+    return gifs.slice(0, limit).map(g => ({
+      ...this.normalizeVideo({
+        id: g.id,
+        webpage_url: `https://www.redgifs.com/watch/${g.id}`,
+        title: g.description || g.tags?.join(', ') || g.id,
+        thumbnail: g.urls?.poster || g.urls?.thumbnail || '',
+        duration: Math.round(g.duration || 0),
+        view_count: g.views || 0,
+        uploader: g.userName || '',
+        source: 'redgifs.com',
+      }),
+      // RedGifs API returns direct CDN stream URLs -- bypass yt-dlp for faster playback.
+      stream_url: g.urls?.hd || g.urls?.sd || null,
     }))
   }
 
@@ -542,16 +546,21 @@ export class ScraperAdapter extends SourceAdapter {
       const hashtagStr = p.hashtags?.map(h => `#${h.label}`).join(' ') || ''
       const title = p.label?.trim() || hashtagStr || `FikFap #${p.postId}`
 
-      return this.normalizeVideo({
-        id: `fikfap_${p.postId}`,
-        webpage_url: webUrl,
-        title,
-        thumbnail: p.thumbnailStreamUrl || '',
-        duration: Math.round(p.duration || 0),
-        view_count: p.viewsCount || 0,
-        uploader: p.author?.username || '',
-        source: 'fikfap.com',
-      })
+      return {
+        ...this.normalizeVideo({
+          id: `fikfap_${p.postId}`,
+          webpage_url: webUrl,
+          title,
+          thumbnail: p.thumbnailStreamUrl || '',
+          duration: Math.round(p.duration || 0),
+          view_count: p.viewsCount || 0,
+          uploader: p.author?.username || '',
+          source: 'fikfap.com',
+        }),
+        // FikFap API returns a direct BunnyCDN HLS URL at scrape time.
+        // Store it now so playback works without yt-dlp (which may not support fikfap.com).
+        stream_url: p.videoStreamUrl || null,
+      }
     })
   }
 

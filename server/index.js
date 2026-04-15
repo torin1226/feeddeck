@@ -101,8 +101,8 @@ async function _refillFeedCacheImpl(mode) {
       const videos = await registry.search(query, { site: src.domain, limit: 20 })
 
       const insert = db.prepare(`
-        INSERT OR IGNORE INTO feed_cache (id, source_domain, mode, url, title, creator, thumbnail, duration, orientation, tags, fetched_at, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+6 hours'))
+        INSERT OR IGNORE INTO feed_cache (id, source_domain, mode, url, stream_url, title, creator, thumbnail, duration, orientation, tags, fetched_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+6 hours'))
       `)
 
       let added = 0
@@ -115,6 +115,7 @@ async function _refillFeedCacheImpl(mode) {
             src.domain,
             mode,
             v.url,
+            v.stream_url || null,
             v.title,
             v.uploader,
             v.thumbnail,
@@ -124,7 +125,8 @@ async function _refillFeedCacheImpl(mode) {
           )
           if (result.changes > 0) {
             added++
-            if (v.url) newVideoUrls.push(v.url)
+            // Skip yt-dlp pre-resolution for videos that already have a direct stream URL
+            if (v.url && !v.stream_url) newVideoUrls.push(v.url)
           }
         } catch { /* skip duplicates */ }
       }
@@ -320,6 +322,16 @@ app.listen(PORT, '0.0.0.0', () => {
     }
   } catch (err) {
     logger.warn('Stream URL flush failed:', { error: err.message })
+  }
+
+  // Purge orphaned homepage_cache rows from old 'nsfw-trending' key typo (fixed 2026-04-15)
+  try {
+    const purged = db.prepare("DELETE FROM homepage_cache WHERE category_key = 'nsfw-trending'").run()
+    if (purged.changes) {
+      logger.info(`  🧹 Purged ${purged.changes} orphaned homepage_cache rows (old nsfw-trending key)`)
+    }
+  } catch (err) {
+    logger.warn('Orphaned row cleanup failed:', { error: err.message })
   }
 
   _intervalIds.push(startScheduledFeedRefill())
