@@ -314,9 +314,16 @@ app.listen(PORT, '0.0.0.0', () => {
 
   logger.info(`     Health check: http://localhost:${PORT}/api/health\n`)
 
-  // Flush stale stream URLs from previous session
+  // Flush stale stream URLs from previous session.
+  // Exempt sources whose CDN URLs are long-lived (FikFap ~1yr TTL, RedGifs direct MP4s).
+  // yt-dlp resolved URLs (googlevideo, CDN-signed with short TTL) must be cleared on restart.
+  const LONG_LIVED_STREAM_DOMAINS = ['fikfap.com', 'redgifs.com']
+  const flushExclusions = LONG_LIVED_STREAM_DOMAINS.map(() => '?').join(', ')
   try {
-    const flushedFeed = db.prepare("UPDATE feed_cache SET stream_url = NULL, expires_at = NULL WHERE stream_url IS NOT NULL").run()
+    const flushedFeed = db.prepare(
+      `UPDATE feed_cache SET stream_url = NULL, expires_at = NULL
+       WHERE stream_url IS NOT NULL AND source_domain NOT IN (${flushExclusions})`
+    ).run(...LONG_LIVED_STREAM_DOMAINS)
     if (flushedFeed.changes) {
       logger.info(`  🧹 Flushed ${flushedFeed.changes} stale stream URLs from feed_cache`)
     }
