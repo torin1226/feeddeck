@@ -15,6 +15,7 @@ export const ALLOWED_CDN_DOMAINS = [
   'spankbang.com',
   'redgifs.com',
   'thumbs2.redgifs.com',
+  'b-cdn.net',         // BunnyCDN (FikFap video streams)
 ]
 
 export function isAllowedCdnUrl(url) {
@@ -58,6 +59,18 @@ export function formatDuration(seconds) {
   const m = Math.floor(seconds / 60)
   const s = String(Math.floor(seconds % 60)).padStart(2, '0')
   return `${m}:${s}`
+}
+
+/**
+ * Returns the Referer header value to use when proxying a CDN URL.
+ * Prevents 403s from CDNs that check the Referer against the originating site.
+ */
+export function getRefererForUrl(url) {
+  if (url.includes('pornhub') || url.includes('phncdn')) return 'https://www.pornhub.com/'
+  if (url.includes('tiktok')) return 'https://www.tiktok.com/'
+  if (url.includes('googlevideo') || url.includes('youtube')) return 'https://www.youtube.com/'
+  if (url.includes('redgifs') || url.includes('b-cdn.net')) return 'https://www.redgifs.com/'
+  return 'https://www.youtube.com/'
 }
 
 export function safeParse(str, fallback = null) {

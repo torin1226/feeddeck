@@ -1,9 +1,14 @@
 import { Router } from 'express'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
+import { Readable } from 'stream'
 import { db } from '../database.js'
 import { getCookieArgs } from '../cookies.js'
 import { registry, ytdlp as ytdlpAdapter } from '../sources/index.js'
 import { logger } from '../logger.js'
-import { isAllowedCdnUrl, inferMode, safeParse } from '../utils.js'
+import { isAllowedCdnUrl, inferMode, safeParse, getRefererForUrl } from '../utils.js'
+
+const execFileAsync = promisify(execFile)
 
 const router = Router()
 
@@ -135,10 +140,6 @@ router.get('/api/stream-formats', async (req, res) => {
   if (!url) return res.status(400).json({ error: 'URL required' })
 
   try {
-    const { execFile } = await import('child_process')
-    const { promisify } = await import('util')
-    const execFileAsync = promisify(execFile)
-
     const { stdout } = await execFileAsync('yt-dlp', [
       ...getCookieArgs(url), '-j', '--no-warnings', '--no-playlist', url
     ], { timeout: 30000 })
@@ -176,10 +177,7 @@ router.get('/api/proxy-stream', async (req, res) => {
   if (!isAllowedCdnUrl(url)) return res.status(403).send('Domain not allowed')
 
   try {
-    let referer = 'https://www.youtube.com/'
-    if (url.includes('pornhub') || url.includes('phncdn')) referer = 'https://www.pornhub.com/'
-    else if (url.includes('tiktok')) referer = 'https://www.tiktok.com/'
-    else if (url.includes('googlevideo')) referer = 'https://www.youtube.com/'
+    const referer = getRefererForUrl(url)
 
     const headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
@@ -204,7 +202,6 @@ router.get('/api/proxy-stream', async (req, res) => {
     }
 
     // Pipe the body using Node streams (more robust than manual reader pump)
-    const { Readable } = await import('stream')
     const nodeStream = Readable.fromWeb(upstream.body)
 
     // Per-chunk timeout: if no data arrives for 30s, abort the stalled stream
@@ -244,9 +241,7 @@ router.get('/api/hls-proxy', async (req, res) => {
   if (!isAllowedCdnUrl(url)) return res.status(403).send('Domain not allowed')
 
   try {
-    let referer = 'https://www.youtube.com/'
-    if (url.includes('pornhub') || url.includes('phncdn')) referer = 'https://www.pornhub.com/'
-    else if (url.includes('tiktok')) referer = 'https://www.tiktok.com/'
+    const referer = getRefererForUrl(url)
 
     const headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -276,7 +271,6 @@ router.get('/api/hls-proxy', async (req, res) => {
       if (cl) res.setHeader('Content-Length', cl)
       res.setHeader('Access-Control-Allow-Origin', '*')
 
-      const { Readable } = await import('stream')
       const nodeStream = Readable.fromWeb(upstream.body)
       nodeStream.pipe(res)
       nodeStream.on('error', () => { if (!res.writableEnded) res.end() })
