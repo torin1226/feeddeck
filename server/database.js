@@ -141,7 +141,7 @@ export function initDatabase() {
       view_count INTEGER DEFAULT 0,
       tags TEXT DEFAULT '[]',
       fetched_at DATETIME DEFAULT (datetime('now')),
-      expires_at DATETIME DEFAULT (datetime('now', '+24 hours')),
+      expires_at DATETIME DEFAULT (datetime('now', '+7 days')),
       viewed INTEGER DEFAULT 0,
       FOREIGN KEY (category_key) REFERENCES categories(key)
     );
