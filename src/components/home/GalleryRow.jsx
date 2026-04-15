@@ -1,7 +1,6 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
 import useHomeStore from '../../stores/homeStore'
 import PosterCard from './PosterCard'
-import useHoverPreview from '../../hooks/useHoverPreview'
 
 // ============================================================
 // GalleryRow
@@ -43,7 +42,6 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
   const endFired = useRef(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const activeIndexRef = useRef(0)
-  const { startPreview, cancelPreview } = useHoverPreview()
 
   // Keep ref in sync
   useEffect(() => { activeIndexRef.current = activeIndex }, [activeIndex])
@@ -106,21 +104,6 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
   }, [updateParallax, items])
-
-  // Trigger hover preview on focused card
-  useEffect(() => {
-    const item = items?.[activeIndex]
-    if (!item?.url) return
-    const card = cardsRef.current[activeIndex]
-    if (!card) return
-    const video = card.querySelector('video[data-preview]')
-    if (!video) {
-      // PosterCard uses its own internal preview — just let it handle via isFocused
-      return
-    }
-    startPreview(item.url, video)
-    return () => cancelPreview()
-  }, [activeIndex, items, startPreview, cancelPreview])
 
   const handleCardClick = useCallback((index) => {
     const item = items?.[index]
