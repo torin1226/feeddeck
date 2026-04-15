@@ -36,8 +36,6 @@ export default function FeedPage() {
   const [hearts, setHearts] = useState([])
   const [sourceSheet, setSourceSheet] = useState(null)
 
-
-
   const navigate = useNavigate()
   const isDesktop = useDesktopBreakpoint()
   const feedView = useFeedStore(s => s.feedView)

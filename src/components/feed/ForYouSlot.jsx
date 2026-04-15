@@ -58,11 +58,12 @@ const ForYouSlot = memo(function ForYouSlot({ video, index, isActive, onVideoRef
       const isHls = url.includes('.m3u8')
       if (isHls) {
         if (vid.canPlayType('application/vnd.apple.mpegurl')) {
-          // Native HLS (Safari/iOS)
+          // Native HLS (Safari/iOS) — proxy-stream passes bytes directly
           vid.src = `/api/proxy-stream?url=${encodeURIComponent(url)}`
         } else if (Hls.isSupported()) {
+          // Desktop: use hls-proxy which rewrites segment URLs for same-origin
           hlsRef.current = new Hls({ enableWorker: true, lowLatencyMode: false })
-          hlsRef.current.loadSource(`/api/proxy-stream?url=${encodeURIComponent(url)}`)
+          hlsRef.current.loadSource(`/api/hls-proxy?url=${encodeURIComponent(url)}`)
           hlsRef.current.attachMedia(vid)
         }
       } else {

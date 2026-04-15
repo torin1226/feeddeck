@@ -165,7 +165,7 @@ function SkeletonCard() {
 // -----------------------------------------------------------
 // Empty state when library is empty or search has no results
 // -----------------------------------------------------------
-function EmptyState({ _isSFW, hasSearch }) {
+function EmptyState({ hasSearch }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <span className="text-5xl mb-4">{hasSearch ? '🔍' : '📂'}</span>

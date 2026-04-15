@@ -26,6 +26,7 @@ const fmtViews = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math
 let idCounter = 100
 let _fetchVersion = 0 // Guards against nuclearFlush/resetHome racing with fetchHomepage
 
+
 // Parse formatted view strings ("4.2M", "850K", "1200") back to numbers
 const parseViews = (s) => {
   if (!s) return 0

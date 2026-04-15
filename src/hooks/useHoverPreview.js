@@ -115,6 +115,7 @@ export default function useHoverPreview() {
         }
       }
     }, 300)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Cleanup on unmount to prevent orphaned video elements

@@ -18,7 +18,7 @@ export default function HeroSection() {
   const { heroItem, theatreMode, toggleTheatre } = useHomeStore()
   const { addToQueue, advance, queue } = useQueueStore()
   const {
-    _activeVideo, setActiveVideo, isPlaying, setPlaying,
+    setActiveVideo, isPlaying, setPlaying,
     currentTime, setCurrentTime, duration, setDuration,
     streamUrl, streamLoading, streamError, resolveStream, handleStreamError,
     prewarmStream, getPrewarmedUrl,
