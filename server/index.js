@@ -220,7 +220,7 @@ function startScheduledTrendingRefresh() {
       let added = 0
       for (const v of videos) {
         try {
-          insert.run(v.id, 'nsfw-trending', v.url, v.title, v.thumbnail, v.duration, v.source || site, v.uploader, v.view_count, JSON.stringify(v.tags || []))
+          insert.run(v.id, 'nsfw_trending', v.url, v.title, v.thumbnail, v.duration, v.source || site, v.uploader, v.view_count, JSON.stringify(v.tags || []))
           added++
         } catch { /* skip duplicates */ }
       }
