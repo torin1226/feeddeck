@@ -2,42 +2,40 @@ import { useRef, useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useHomeStore from '../../stores/homeStore'
 import useFeedStore from '../../stores/feedStore'
-import TheatreRow from './TheatreRow'
-import ContinueWatchingRow from './ContinueWatchingRow'
+import useLibraryStore from '../../stores/libraryStore'
+import GalleryRow from './GalleryRow'
 import Top10Row from './Top10Row'
 
 // ============================================================
 // BrowseSection
-// Three curated TheatreRow carousels (Live Music, My Subscriptions,
-// Trending) with vertical parallax between rows.
+// Curated GalleryRow carousels with vertical parallax between rows.
+// GalleryShelf renders the first 2 categories, so BrowseSection
+// shows Continue Watching, Top 10, and remaining categories.
 // When you reach the end of the last row, it seamlessly transitions
 // into the Feed. Also has an explicit CTA as a fallback.
 // ============================================================
 
 const VERTICAL_PARALLAX_FACTOR = 0.08
 
-// The 3 rows we keep (matched case-insensitively)
-const TARGET_LABELS = ['Live Music', 'My Subscriptions', 'Trending']
-
 export default function BrowseSection() {
   const { categories } = useHomeStore()
+  const videos = useLibraryStore((s) => s.videos)
   const navigate = useNavigate()
   const rowRefs = useRef([])
   const [feedTransition, setFeedTransition] = useState(false)
   const transitionTimer = useRef(null)
 
-  // Match target labels to available categories. Fallback to first 3 if no matches.
-  // Use originalLabel (pre-personalization) so dynamic renaming doesn't break matching.
-  const matchedCategories = TARGET_LABELS
-    .map((target) =>
-      categories.find((c) =>
-        (c.originalLabel || c.label).toLowerCase().includes(target.toLowerCase())
-      )
-    )
-    .filter(Boolean)
+  // GalleryShelf already renders categories.slice(0, 2), show the rest here
+  const displayCategories = categories.slice(2)
 
-  const displayCategories =
-    matchedCategories.length > 0 ? matchedCategories : categories.slice(0, 3)
+  // Continue Watching: in-progress videos sorted by most recently watched
+  const continueWatching = videos
+    .filter((v) => v.watchProgress > 0.05 && v.watchProgress < 0.95)
+    .sort((a, b) => {
+      const aTime = a.lastWatched ? new Date(a.lastWatched).getTime() : 0
+      const bTime = b.lastWatched ? new Date(b.lastWatched).getTime() : 0
+      return bTime - aTime
+    })
 
   // Vertical parallax: rows shift slightly based on their scroll position
   useEffect(() => {
@@ -70,9 +68,7 @@ export default function BrowseSection() {
   const handleLastRowEnd = useCallback(() => {
     if (feedTransition) return
     setFeedTransition(true)
-    // Ensure feed buffer is ready
     useFeedStore.getState().prefetch()
-    // Visual transition, then navigate
     transitionTimer.current = setTimeout(() => {
       navigate('/feed')
     }, 800)
@@ -88,20 +84,28 @@ export default function BrowseSection() {
     setTimeout(() => navigate('/feed'), 400)
   }
 
-  if (displayCategories.length === 0) return null
-
   return (
     <div
       className={`relative z-content pt-4 pb-0 transition-all duration-700 ease-cinematic ${
         feedTransition ? 'opacity-0 -translate-y-5 scale-[0.98]' : ''
       }`}
     >
-      {/* Continue Watching row — positioned first like Netflix (row 1-2) */}
-      <div className="px-10">
-        <ContinueWatchingRow />
-      </div>
+      {/* Continue Watching row */}
+      {continueWatching.length > 0 && (
+        <div
+          ref={(el) => (rowRefs.current[0] = el)}
+          className="will-change-transform"
+        >
+          <GalleryRow
+            items={continueWatching}
+            label="Continue Watching"
+            showProgress
+            variant="landscape"
+          />
+        </div>
+      )}
 
-      {/* Top 10 row — Netflix-style with rank numbers */}
+      {/* Top 10 row */}
       <div className="px-10">
         <Top10Row />
       </div>
@@ -109,13 +113,15 @@ export default function BrowseSection() {
       {displayCategories.map((cat, i) => (
         <div
           key={cat.label}
-          ref={(el) => (rowRefs.current[i] = el)}
+          ref={(el) => (rowRefs.current[i + (continueWatching.length > 0 ? 1 : 0)] = el)}
           className="will-change-transform"
         >
-          <TheatreRow
-            category={cat}
+          <GalleryRow
+            items={cat.items}
+            label={cat.label}
             isLast={i === displayCategories.length - 1}
             onReachEnd={i === displayCategories.length - 1 ? handleLastRowEnd : undefined}
+            variant="landscape"
           />
         </div>
       ))}

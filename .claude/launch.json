@@ -5,7 +5,7 @@
       "name": "feeddeck (client)",
       "runtimeExecutable": "npm.cmd",
       "runtimeArgs": ["run", "dev:client"],
-      "port": 3000
+      "port": 5173
     },
     {
       "name": "feeddeck (server)",

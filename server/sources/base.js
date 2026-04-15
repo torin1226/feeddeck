@@ -56,7 +56,7 @@ export class SourceAdapter {
       id: raw.id || randomUUID(),
       url: raw.webpage_url || raw.url || '',
       title: raw.title || 'Untitled',
-      thumbnail: raw.thumbnail || raw.thumbnails?.[0]?.url || '',
+      thumbnail: raw.thumbnails?.at(-1)?.url || raw.thumbnail || '',
       duration: raw.duration || 0,
       source: raw.extractor || raw.source || this.name,
       uploader: raw.uploader || raw.channel || raw.creator || '',

@@ -4,9 +4,16 @@
 // when yt-dlp fails. Cobalt supports YouTube, TikTok, Instagram,
 // Twitter, Reddit, and others.
 //
-// As of 2025, the public api.cobalt.tools requires Turnstile
-// challenge solving (JWT auth). Self-hosted instances work without
-// auth. Set COBALT_API_URL env var to point at your own instance.
+// PUBLIC API STATUS: The public api.cobalt.tools was shut down
+// on Nov 11, 2024 (GitHub discussion #860). No free tier or
+// registration exists. The web UI still works via Turnstile
+// captcha, but the programmatic API is gone.
+//
+// SELF-HOSTED: Works without auth by default. Deploy via Docker
+// (~4 steps). Set COBALT_API_URL env var to point at your
+// instance. Optionally set COBALT_API_KEY if the instance has
+// API_AUTH_REQUIRED=1.
+//
 // When no instance is configured, this adapter auto-disables.
 // ============================================================
 

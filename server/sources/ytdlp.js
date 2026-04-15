@@ -139,7 +139,7 @@ export class YtDlpAdapter extends SourceAdapter {
 
     // Use caller-specified format (from quality selector) or fall back to default preference
     const formatStr = options?.format
-      || '480p/240p/720p/best[height<=480][protocol=https][ext=mp4][vcodec!*=av01]/best[height<=480][ext=mp4]/18/best[ext=mp4]/best'
+      || '1080p/720p/480p/best[height<=1080][protocol=https][ext=mp4][vcodec!*=av01]/best[height<=1080][ext=mp4]/18/best[ext=mp4]/best'
     const stdout = await ytdlp(['-g', '-f', formatStr, url], url)
 
     let cdnUrl = stdout.trim().split('\n')[0]
@@ -147,7 +147,7 @@ export class YtDlpAdapter extends SourceAdapter {
     // If yt-dlp returned HLS and no explicit format was requested, retry with direct MP4 formats
     if (cdnUrl.includes('.m3u8') && !options?.format) {
       try {
-        const mp4Out = await ytdlp(['-g', '-f', '480p/240p/720p/18', url], url)
+        const mp4Out = await ytdlp(['-g', '-f', '1080p/720p/480p/18', url], url)
         cdnUrl = mp4Out.trim().split('\n')[0]
       } catch { /* keep original if format 18 fails */ }
     }

@@ -14,6 +14,7 @@ const HomePage = lazy(() => import('../pages/HomePage'))
 const LibraryPage = lazy(() => import('../pages/LibraryPage'))
 const FeedPage = lazy(() => import('../pages/FeedPage'))
 const SettingsPage = lazy(() => import('../pages/SettingsPage'))
+const VideoDetailPage = lazy(() => import('../pages/VideoDetailPage'))
 
 // ============================================================
 // AppShell
@@ -65,6 +66,7 @@ export default function AppShell() {
             <Route path="/library" element={<ErrorBoundary name="Library"><LibraryPage /></ErrorBoundary>} />
             <Route path="/feed" element={<ErrorBoundary name="Feed"><FeedPage /></ErrorBoundary>} />
             <Route path="/settings" element={<ErrorBoundary name="Settings"><SettingsPage /></ErrorBoundary>} />
+            <Route path="/video/:id" element={<ErrorBoundary name="Video"><VideoDetailPage /></ErrorBoundary>} />
           </Routes>
         </Suspense>
       </main>

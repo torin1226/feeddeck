@@ -604,7 +604,6 @@ function StorageSection({ showToast }) {
   const pct = Math.min(100, (usage / QUOTA) * 100)
 
   const pruneOldData = () => {
-    const _keys = ['fd-lib', 'fd-queue', 'fd-mode', 'fd-theme']
     // Only prune library — it's typically the largest store
     try {
       const raw = localStorage.getItem('fd-lib')

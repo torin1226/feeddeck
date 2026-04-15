@@ -1,21 +1,21 @@
 import { useEffect, useRef, useCallback, useState, lazy, Suspense } from 'react'
+import { useNavigate } from 'react-router-dom'
 import useFeedStore from '../stores/feedStore'
-import useDesktopBreakpoint from '../hooks/useDesktopBreakpoint'
-
-const ForYouFeed = lazy(() => import('../components/feed/ForYouFeed'))
-const RemixFeed = lazy(() => import('../components/feed/RemixFeed'))
 import useModeStore from '../stores/modeStore'
+import useDesktopBreakpoint from '../hooks/useDesktopBreakpoint'
 import useFeedGestures from '../hooks/useFeedGestures'
 import FeedVideo from '../components/feed/FeedVideo'
 import FeedToast from '../components/feed/FeedToast'
 import HeartBurst from '../components/feed/HeartBurst'
 import SourceControlSheet from '../components/feed/SourceControlSheet'
-import { useNavigate } from 'react-router-dom'
 import FeedBottomNav from '../components/feed/FeedBottomNav'
-import { SkeletonCard } from '../components/Skeletons'
 import FeedFilterSheet from '../components/feed/FeedFilterSheet'
 import CookieFallbackBanner from '../components/feed/CookieFallbackBanner'
+import { SkeletonCard } from '../components/Skeletons'
 // QueueSwipeAnimation removed — swipe-to-queue gesture replaced by explicit button
+
+const ForYouFeed = lazy(() => import('../components/feed/ForYouFeed'))
+const RemixFeed = lazy(() => import('../components/feed/RemixFeed'))
 
 // ============================================================
 // FeedPage
