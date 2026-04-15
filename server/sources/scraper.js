@@ -215,9 +215,16 @@ export class ScraperAdapter extends SourceAdapter {
       page = await this._newPage()
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 })
 
-      // Wait for video cards to appear
-      await page.waitForSelector(config.selectors.videoCard, { timeout: 10_000 })
-        .catch(() => {}) // Some pages might not have results
+      // Wait for video cards to appear. Log a warning if the selector times out
+      // so stale selectors are visible in server logs rather than silently returning 0.
+      const selectorFound = await page.waitForSelector(config.selectors.videoCard, { timeout: 10_000 })
+        .then(() => true)
+        .catch(() => false)
+
+      if (!selectorFound) {
+        const pageTitle = await page.title().catch(() => '(unknown)')
+        logger.warn(`Scraper: no cards found for "${siteKey}" at ${url} (selector: ${config.selectors.videoCard}, page title: "${pageTitle}"). Selectors may be stale or the page requires login.`)
+      }
 
       // Scroll to load lazy content
       for (let i = 0; i < scrollCount; i++) {
