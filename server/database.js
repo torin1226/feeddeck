@@ -234,11 +234,12 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_videos_source ON videos(source);
     CREATE INDEX IF NOT EXISTS idx_history_video ON history(video_id);
     CREATE INDEX IF NOT EXISTS idx_history_date ON history(watched_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_homepage_cache_category ON homepage_cache(category_key);
+    CREATE INDEX IF NOT EXISTS idx_homepage_cache_cat_viewed ON homepage_cache(category_key, viewed);
     CREATE INDEX IF NOT EXISTS idx_homepage_cache_expires ON homepage_cache(expires_at);
     CREATE INDEX IF NOT EXISTS idx_categories_mode ON categories(mode, sort_order);
     CREATE INDEX IF NOT EXISTS idx_feed_cache_mode ON feed_cache(mode, watched, expires_at);
     CREATE INDEX IF NOT EXISTS idx_feed_cache_url ON feed_cache(url);
+    CREATE INDEX IF NOT EXISTS idx_feed_cache_source ON feed_cache(source_domain);
     CREATE INDEX IF NOT EXISTS idx_sources_mode ON sources(mode, active);
 
     -- Creator lists for multi-platform feed (Reddit subs, TikTok/Insta/Twitter creators)

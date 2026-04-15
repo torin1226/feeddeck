@@ -261,6 +261,7 @@ export class ScraperAdapter extends SourceAdapter {
       // Age gate dismissal: some sites (RedTube, YouPorn) show an age verification
       // overlay before content is visible. Click through it automatically.
       if (config.ageGate) {
+        /* eslint-disable no-undef -- runs in Puppeteer browser context */
         const dismissed = await page.evaluate(() => {
           // Try common age gate button patterns
           const selectors = [
@@ -281,6 +282,7 @@ export class ScraperAdapter extends SourceAdapter {
           }
           return null
         }).catch(() => null)
+        /* eslint-enable no-undef */
 
         if (dismissed) {
           logger.info(`Scraper: dismissed age gate for ${siteKey} (${dismissed})`)
