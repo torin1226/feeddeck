@@ -100,29 +100,25 @@ async function _refillFeedCacheImpl(mode) {
       // Use registry search with fallback chain (scraper → yt-dlp)
       const videos = await registry.search(query, { site: src.domain, limit: 20 })
 
-      const insert = db.prepare(`
-        INSERT OR IGNORE INTO feed_cache (id, source_domain, mode, url, stream_url, title, creator, thumbnail, duration, orientation, tags, fetched_at, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+6 hours'))
-      `)
+      // Two INSERT variants: one for videos with a pre-set stream URL (longer cache TTL
+      // since the CDN URL is already known-good), one for videos that need yt-dlp resolution.
+      const COLS = 'id, source_domain, mode, url, stream_url, title, creator, thumbnail, duration, orientation, tags, fetched_at, expires_at'
+      const VALS = '?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime(\'now\')'
+      const insertWithStream = db.prepare(
+        `INSERT OR IGNORE INTO feed_cache (${COLS}) VALUES (${VALS}, datetime('now', '+7 days'))`
+      )
+      const insertDefault = db.prepare(
+        `INSERT OR IGNORE INTO feed_cache (${COLS}) VALUES (${VALS}, datetime('now', '+6 hours'))`
+      )
 
       let added = 0
       const newVideoUrls = []
       for (const v of videos) {
         try {
           const tags = Array.isArray(v.tags) ? JSON.stringify(v.tags) : (v.tags || '[]')
-          const result = insert.run(
-            v.id,
-            src.domain,
-            mode,
-            v.url,
-            v.stream_url || null,
-            v.title,
-            v.uploader,
-            v.thumbnail,
-            v.duration,
-            v.orientation,
-            tags
-          )
+          const params = [v.id, src.domain, mode, v.url, v.stream_url || null, v.title, v.uploader, v.thumbnail, v.duration, v.orientation, tags]
+          const stmt = v.stream_url ? insertWithStream : insertDefault
+          const result = stmt.run(...params)
           if (result.changes > 0) {
             added++
             // Skip yt-dlp pre-resolution for videos that already have a direct stream URL
