@@ -14,17 +14,29 @@
 import { SourceAdapter } from './base.js'
 import { logger } from '../logger.js'
 
-// Lazy import: puppeteer is only needed when this adapter is used
+// Lazy import: puppeteer-extra + stealth plugin for Cloudflare bypass.
+// Falls back to plain puppeteer if puppeteer-extra is not installed.
 let puppeteer = null
 async function getPuppeteer() {
   if (!puppeteer) {
     try {
-      puppeteer = await import('puppeteer')
+      const extra = await import('puppeteer-extra')
+      const stealth = await import('puppeteer-extra-plugin-stealth')
+      const pptr = extra.default || extra
+      pptr.use((stealth.default || stealth)())
+      puppeteer = pptr
+      logger.info('Puppeteer loaded with stealth plugin')
     } catch {
-      throw new Error('puppeteer not installed. Run: npm install puppeteer')
+      try {
+        const plain = await import('puppeteer')
+        puppeteer = plain.default || plain
+        logger.info('Puppeteer loaded without stealth (puppeteer-extra not available)')
+      } catch {
+        throw new Error('puppeteer not installed. Run: npm install puppeteer')
+      }
     }
   }
-  return puppeteer.default || puppeteer
+  return puppeteer
 }
 
 // Site-specific scraper configs
@@ -226,6 +238,24 @@ export class ScraperAdapter extends SourceAdapter {
       page = await this._newPage()
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 })
 
+      // Cloudflare challenge detection: if the page title indicates a challenge,
+      // wait up to 15 seconds for it to auto-solve (JS challenges resolve in 3-8s).
+      const CF_WAIT_MS = 15_000
+      const CF_CHECK_INTERVAL = 1_000
+      let pageTitle = await page.title().catch(() => '')
+      if (pageTitle.includes('Cloudflare') || pageTitle.includes('Attention Required') || pageTitle.includes('Just a moment')) {
+        logger.info(`Scraper: Cloudflare challenge detected for ${siteKey}, waiting up to ${CF_WAIT_MS / 1000}s...`)
+        const deadline = Date.now() + CF_WAIT_MS
+        while (Date.now() < deadline) {
+          await new Promise(r => setTimeout(r, CF_CHECK_INTERVAL))
+          pageTitle = await page.title().catch(() => '')
+          if (!pageTitle.includes('Cloudflare') && !pageTitle.includes('Attention Required') && !pageTitle.includes('Just a moment')) {
+            logger.info(`Scraper: Cloudflare challenge resolved for ${siteKey} (title: "${pageTitle}")`)
+            break
+          }
+        }
+      }
+
       // Wait for video cards to appear. Log a warning if the selector times out
       // so stale selectors are visible in server logs rather than silently returning 0.
       const selectorFound = await page.waitForSelector(config.selectors.videoCard, { timeout: 10_000 })
@@ -233,7 +263,7 @@ export class ScraperAdapter extends SourceAdapter {
         .catch(() => false)
 
       if (!selectorFound) {
-        const pageTitle = await page.title().catch(() => '(unknown)')
+        pageTitle = await page.title().catch(() => '(unknown)')
         logger.warn(`Scraper: no cards found for "${siteKey}" at ${url} (selector: ${config.selectors.videoCard}, page title: "${pageTitle}"). Selectors may be stale or the page requires login.`)
       }
 
@@ -419,6 +449,13 @@ export class ScraperAdapter extends SourceAdapter {
     // RedGifs uses a JSON API, not Puppeteer scraping
     if (siteKey === 'redgifs.com') {
       return this.searchRedGifs(query, { limit })
+    }
+
+    // If the query is already a URL (e.g. category page passed from refillCategory),
+    // scrape it directly instead of wrapping it in a search URL.
+    // This prevents URLs like "/s/https%3A%2F%2Fspankbang.com%2Ftrending/".
+    if (query.startsWith('http')) {
+      return this._scrapeVideoList(query, siteKey, { limit })
     }
 
     const config = SITE_CONFIGS[siteKey]

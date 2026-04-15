@@ -35,7 +35,7 @@ function _seedCategories(database) {
     ['nsfw_popular_women',  'Popular With Women',   'https://www.pornhub.com/categories/popular-with-women',                       'nsfw', 11],
     ['nsfw_new',            'Newest',               'https://www.pornhub.com/video?o=cm',                                          'nsfw', 12],
     ['nsfw_xvideos_best',   'Best of XVideos',      'https://www.xvideos.com/best',                                                'nsfw', 13],
-    ['nsfw_spankbang',      'SpankBang Trending',   'https://spankbang.com/trending',                                              'nsfw', 14],
+    ['nsfw_spankbang',      'SpankBang Trending',   'https://spankbang.com/trending_videos/',                                       'nsfw', 14],
     ['nsfw_casting',        'Casting',              'https://www.pornhub.com/video/search?search=casting&hd=1&o=tr',               'nsfw', 15],
     ['nsfw_massage',        'Massage',              'https://www.pornhub.com/video/search?search=massage&hd=1&o=tr',               'nsfw', 16],
     ['nsfw_cosplay',        'Cosplay',              'https://www.pornhub.com/video/search?search=cosplay&hd=1&o=tr',               'nsfw', 17],

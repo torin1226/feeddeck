@@ -24,6 +24,8 @@
     "hls.js": "^1.6.15",
     "puppeteer": "^24.40.0",
     "puppeteer-core": "^24.40.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.0",
