@@ -186,7 +186,12 @@ const useHomeStore = create((set, get) => ({
       })
 
       // Collect all videos from all categories for carousel/hero/featured
-      const allVideos = data.categories.flatMap(cat => cat.videos).map(mapVideo)
+      const allVideos = data.categories.flatMap(cat =>
+        cat.videos.map(v => ({
+          ...mapVideo(v),
+          _fromSubscriptions: cat.key === 'social_subscriptions',
+        }))
+      )
 
       if (allVideos.length === 0) {
         // No cached content yet — fall back to placeholders
@@ -194,16 +199,32 @@ const useHomeStore = create((set, get) => ({
         return
       }
 
-      // Hero carousel: first 24 videos (or all if fewer)
-      const carouselItems = allVideos.slice(0, 24)
-
-      // Category rows from API groupings, sorted by tag preferences
+      // Category rows from API groupings
       let categories = data.categories
         .filter(cat => cat.videos.length > 0)
         .map(cat => ({
           label: cat.label,
           items: cat.videos.map(mapVideo),
         }))
+
+      // Hero carousel: round-robin sample across categories for diversity
+      const carouselItems = []
+      const carouselIds = new Set()
+      const maxPerCat = Math.ceil(24 / (categories.length || 1))
+      for (let round = 0; round < maxPerCat && carouselItems.length < 24; round++) {
+        for (const cat of categories) {
+          if (round < cat.items.length && carouselItems.length < 24) {
+            carouselItems.push(cat.items[round])
+            carouselIds.add(cat.items[round].id)
+          }
+        }
+      }
+
+      // Remove carousel videos from category rows to avoid duplicates
+      categories = categories.map(cat => ({
+        ...cat,
+        items: cat.items.filter(v => !carouselIds.has(v.id)),
+      }))
 
       // Client-side recommendation scoring: boost categories with liked tags + personalize titles
       let likedTags = new Set()
@@ -241,9 +262,18 @@ const useHomeStore = create((set, get) => ({
         return { ...cat, originalLabel: cat.label, label }
       })
 
-      // Build Top 10 by view count
+      // Build Top 10 with personalization: tag affinity + subscription boost + view count
       const top10 = [...allVideos]
-        .sort((a, b) => parseViews(b.views) - parseViews(a.views))
+        .map(v => {
+          let score = parseViews(v.views)
+          if (likedTags.size > 0) {
+            const matchCount = (v.tags || []).filter(t => likedTags.has(t.toLowerCase())).length
+            if (matchCount > 0) score *= (1 + matchCount * 0.5)
+          }
+          if (v._fromSubscriptions) score *= 1.3
+          return { ...v, _score: score }
+        })
+        .sort((a, b) => b._score - a._score)
         .slice(0, 10)
         .map((v, i) => ({ ...v, rank: i + 1 }))
 

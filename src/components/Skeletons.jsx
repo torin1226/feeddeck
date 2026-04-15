@@ -57,7 +57,7 @@ export function SkeletonHero() {
   )
 }
 
-export function SkeletonPosterShelf() {
+export function SkeletonGalleryShelf() {
   return (
     <div className="h-screen flex flex-col items-center overflow-hidden px-48 py-0">
       {/* Shelf label skeleton */}

@@ -4,9 +4,10 @@ import useModeStore from '../stores/modeStore'
 import useFeedStore from '../stores/feedStore'
 import HomeHeader from '../components/home/HomeHeader'
 import HeroSection from '../components/home/HeroSection'
-import PosterShelf from '../components/home/PosterShelf'
+import GalleryShelf from '../components/home/GalleryShelf'
+import BrowseSection from '../components/home/BrowseSection'
 import TheatreControls from '../components/home/TheatreControls'
-import { SkeletonHero, SkeletonPosterShelf } from '../components/Skeletons'
+import { SkeletonHero, SkeletonGalleryShelf } from '../components/Skeletons'
 
 // ============================================================
 // HomePage
@@ -45,7 +46,7 @@ export default function HomePage() {
       {/* Server-unreachable banner */}
       {fetchError && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-modal px-4 py-2 rounded-full bg-amber-900/80 backdrop-blur text-amber-200 text-xs font-medium flex items-center gap-2">
-          <span>⚠</span>
+          <span>&#9888;</span>
           <span>{fetchError}</span>
           <button
             onClick={() => fetchHomepage(isSFW ? 'social' : 'nsfw')}
@@ -59,15 +60,18 @@ export default function HomePage() {
       {loading ? (
         <>
           <SkeletonHero />
-          <SkeletonPosterShelf />
+          <SkeletonGalleryShelf />
         </>
       ) : (
         <>
           <HeroSection />
           {!theatreMode && (
-            <div className="relative z-content">
-              <PosterShelf />
-            </div>
+            <>
+              <div className="relative z-content pb-24">
+                <GalleryShelf />
+                <BrowseSection />
+              </div>
+            </>
           )}
           <TheatreControls />
         </>

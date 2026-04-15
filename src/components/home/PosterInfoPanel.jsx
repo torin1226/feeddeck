@@ -5,7 +5,7 @@ import useQueueStore from '../../stores/queueStore'
 // ============================================================
 // PosterInfoPanel
 // Card-anchored glass metadata panel for the focused poster card.
-// Rendered inside PosterShelf (not inside PosterCard), positioned
+// Rendered inside GalleryShelf (not inside PosterCard), positioned
 // absolutely over the track wrapper, centered on the focused card.
 // Slides up from translateY(20px) → translateY(-24px) on focus.
 // ============================================================
@@ -24,9 +24,9 @@ export default function PosterInfoPanel({ item, cardRef, trackWrapRef }) {
   const debounceRef = useRef(null)
   const roRef = useRef(null)
 
+  const markViewed = useHomeStore((s) => s.markViewed)
   const setHeroItem = useHomeStore((s) => s.setHeroItem)
   const setTheatreMode = useHomeStore((s) => s.setTheatreMode)
-  const markViewed = useHomeStore((s) => s.markViewed)
   const addToQueue = useQueueStore((s) => s.addToQueue)
 
   // -------------------------------------------------------
@@ -130,10 +130,10 @@ export default function PosterInfoPanel({ item, cardRef, trackWrapRef }) {
   // Action handlers
   // -------------------------------------------------------
   const handlePlay = () => {
-    setHeroItem(item)
-    setTheatreMode(true)
     markViewed(item.id)
+    setHeroItem(item)
     window.scrollTo({ top: 0, behavior: 'smooth' })
+    setTheatreMode(true)
   }
 
   const handleQueue = () => {

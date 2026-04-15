@@ -2,7 +2,7 @@ import { forwardRef, memo } from 'react'
 
 // ============================================================
 // PosterCard
-// Individual poster card in the PosterShelf carousel.
+// Individual poster card used in GalleryRow and GalleryShelf carousels.
 // Supports focus expansion, mixed aspect ratios (h/v),
 // distance-based dimming, badges, and overlay gradient.
 // Width transitions use spring easing (450ms).
@@ -27,7 +27,7 @@ function distProps(dist) {
 }
 
 const PosterCard = memo(
-  forwardRef(function PosterCard({ item, dist, isFocused, onClick, loading = 'lazy' }, ref) {
+  forwardRef(function PosterCard({ item, dist, isFocused, onClick, loading = 'lazy', variant = 'poster', progressPercent }, ref) {
     const orient = item?.orient || 'h'
     const widths = WIDTH[orient] ?? WIDTH.h
     const width = isFocused ? widths.focused : widths.default
@@ -38,11 +38,14 @@ const PosterCard = memo(
     const finalBrightness = isFocused ? 1 : brightness
     const finalScale = isFocused ? 1 : scale
 
+    // Landscape rows (e.g. Continue Watching, category rows) get capped height
+    const cardHeight = variant === 'landscape' ? 'min(50vh, 360px)' : '50vh'
+
     const containerStyle = {
       position: 'relative',
       flexShrink: 0,
       width: `${width}px`,
-      height: 'calc(100vh - 200px)',
+      height: cardHeight,
       borderRadius: '12px',
       overflow: 'hidden',
       cursor: 'pointer',
@@ -194,14 +197,26 @@ const PosterCard = memo(
             {item?.views && <span style={{ flexShrink: 0 }}>{item.views}</span>}
           </div>
         </div>
+
+        {/* Watch progress bar — Continue Watching cards */}
+        {progressPercent > 0 && (
+          <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/10 z-content">
+            <div
+              className="h-full bg-accent rounded-r-sm"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+        )}
       </div>
     )
   }),
-  // Custom memo comparator — only re-render if dist, item, or isFocused changes
+  // Custom memo comparator — only re-render if dist, item, isFocused, or variant changes
   (prev, next) =>
     prev.dist === next.dist &&
     prev.isFocused === next.isFocused &&
-    prev.item === next.item
+    prev.item === next.item &&
+    prev.variant === next.variant &&
+    prev.progressPercent === next.progressPercent
 )
 
 PosterCard.displayName = 'PosterCard'

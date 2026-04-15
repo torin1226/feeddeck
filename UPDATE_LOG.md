@@ -1,5 +1,32 @@
 # FeedDeck Update Log
 
+## 2026-04-12 - Video Quality & Homepage Row Fixes
+
+### Completed
+- Video stream quality raised from 480p to 1080p cap (yt-dlp format string in `server/sources/ytdlp.js`)
+- Thumbnail quality fixed: `normalizeVideo` now picks highest-res thumbnail via `.at(-1)` instead of `[0]`
+- Homepage carousel dedup: "Up Next" built via round-robin sampling, then excluded from category rows — no more overlap with "Just Dropped"
+- Top 10 row personalized: scoring uses tag affinity + subscription boost + view count (was raw view count only)
+- Homepage row reorder: Top 10 is now the first row below the hero section
+
+### Decisions Made
+- Round-robin carousel sampling (max ~3 per category) keeps "Up Next" diverse across all content sources
+- Top 10 personalization uses multiplicative scoring: 50% boost per liked tag match, 1.3x for subscription content
+
+### Key Files Changed
+- `server/sources/ytdlp.js` — format strings updated (480p → 1080p)
+- `server/sources/base.js` — thumbnail selection (`thumbnails.at(-1)`)
+- `src/stores/homeStore.js` — carousel round-robin, category dedup, Top 10 personalization scoring
+- `src/components/home/BrowseSection.jsx` — Top10Row removed from here
+- `src/pages/HomePage.jsx` — Top10Row placed directly after HeroSection
+
+### Next Session Should
+1. Verify video playback at 1080p works smoothly through the proxy-stream endpoint
+2. Test Top 10 personalization with different tag preference profiles
+3. Consider adding a quality indicator badge on thumbnails
+
+---
+
 ## 2026-03-26 - TikTok GDPR Import Pipeline
 
 ### Completed

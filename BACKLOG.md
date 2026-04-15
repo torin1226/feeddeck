@@ -718,6 +718,11 @@ _Claude Code adds tasks here as they come up during implementation. Move to the 
 - [x] Wire tag preferences into `refillCategory()` — already done per morning sprint 2026-03-22 (duplicate of item above)
 - [x] Remaining 18 `react-hooks/exhaustive-deps` ESLint warnings — all resolved: safe deps added where possible, eslint-disable with comments for intentional omissions
 - [x] Remove debug `console.log('Queue: advancing to')` from `VideoPlayer.jsx:136` and `useKeyboard.js:41` (Cowork morning sprint 2026-03-22)
+- [x] (2026-04-12) Video quality upgrade: yt-dlp format string raised from 480p cap to 1080p in `server/sources/ytdlp.js` (default + HLS fallback)
+- [x] (2026-04-12) Thumbnail quality fix: `normalizeVideo` in `server/sources/base.js` now picks highest-res thumbnail (`thumbnails.at(-1)`) instead of lowest
+- [x] (2026-04-12) Homepage row dedup: carousel built via round-robin sampling across categories, then filtered from category rows — eliminates "Up Next" / "Just Dropped" overlap
+- [x] (2026-04-12) Top 10 personalization: scoring now factors tag affinity (50% boost per liked tag) + subscription source boost (1.3x), not just raw view count
+- [x] (2026-04-12) Homepage row reorder: Top 10 moved to first row below hero (before PosterShelf), TheatreRows follow after
 
 ---
 

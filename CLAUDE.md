@@ -31,9 +31,9 @@ React + Vite + Tailwind, Zustand stores, Express backend on port 3001, SQLite vi
 ## Modes
 SFW (social) and NSFW (adult). Clean separation. Default SFW. Escape = panic to SFW. Don't mention adult content in code comments or filenames.
 
-## Current Architecture (as of 2026-04-11)
-Homepage: `HomePage -> BrowseSection -> TheatreRow`. Hero at 100vh with Up Next carousel (infinite scroll). 3 theatre-size card rows with parallax. Feed transition at end of last row.
+## Current Architecture (as of 2026-04-12)
+Homepage: `HomePage -> GalleryShelf + BrowseSection -> GalleryRow, Top10Row`. Hero at 100vh with Up Next carousel. PosterShelf/GalleryShelf cards 50vh tall; landscape rows (BrowseSection categories, Continue Watching) capped at min(50vh, 360px). Hover previews via global singleton (`previewManager.js` + `useHoverPreview` hook). Card clicks open theatre mode (setHeroItem + setTheatreMode), NOT navigate to `/video/:id`. VideoDetailPage.jsx exists but is unused from browse UI.
 
-Dead code (not imported): FeaturedSection, useFeaturedScroll, CategoryRow, CategoryRows, ContinueWatchingRow, Top10Row.
+Dead code (deleted 2026-04-12): FeaturedSection, useFeaturedScroll, CategoryRow, CategoryRows.
 
-Build is clean as of 2026-04-11.
+Build is clean as of 2026-04-14.
