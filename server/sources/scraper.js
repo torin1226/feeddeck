@@ -454,16 +454,18 @@ export class ScraperAdapter extends SourceAdapter {
     // HYDRATION: Parse RedGifs URLs to extract the actual search query or detect trending.
     // refillCategory passes URLs like "https://www.redgifs.com/search?query=amateur&order=trending"
     // which must not be encoded wholesale as search_text.
+    // Note: /v2/gifs/trending endpoint was removed ~April 2026. Use /v2/gifs/search with order=trending instead.
     let apiUrl
     if (query.includes('redgifs.com')) {
       try {
         const parsed = new URL(query)
         if (parsed.pathname.includes('/trending')) {
           const type = parsed.searchParams.get('type') || ''
-          apiUrl = `https://api.redgifs.com/v2/gifs/trending?count=${limit}${type ? `&type=${type}` : ''}`
+          apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=&order=trending&count=${limit}${type ? `&type=${type}` : ''}`
         } else if (parsed.searchParams.has('query')) {
           const searchText = parsed.searchParams.get('query')
-          apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=${encodeURIComponent(searchText)}&count=${limit}`
+          const order = parsed.searchParams.get('order') || ''
+          apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=${encodeURIComponent(searchText)}&count=${limit}${order ? `&order=${order}` : ''}`
         } else {
           // Fall back to using the path segment as search text
           const pathSearch = parsed.pathname.split('/').filter(Boolean).pop() || query

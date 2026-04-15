@@ -478,10 +478,6 @@ router.post('/api/homepage/viewed', (req, res) => {
 // -----------------------------------------------------------
 // Async refill: fetch new videos for a category via yt-dlp
 // -----------------------------------------------------------
-// NSFW site round-robin for even distribution across sources
-const _nsfwSites = ['pornhub.com', 'xvideos.com', 'spankbang.com']
-let _nsfwSiteIdx = 0
-
 async function refillCategory(categoryKey) {
   const cat = db.prepare('SELECT query, mode FROM categories WHERE key = ?').get(categoryKey)
   if (!cat) return

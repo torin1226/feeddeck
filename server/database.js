@@ -300,7 +300,9 @@ export function initDatabase() {
       db.exec("DELETE FROM categories")
       _seedCategories(db)
     }
-  } catch {}
+  } catch (err) {
+    logger.error('Category migration failed -- DB may have stale seeds:', { error: err.message })
+  }
 
   // Seed default feed sources if empty
   const srcCount = db.prepare('SELECT COUNT(*) as n FROM sources').get()
