@@ -54,6 +54,33 @@ router.get('/api/feed/next', (req, res) => {
       LIMIT ${count * 10}
     `).all(...params.slice(0, -1)) // remove the original LIMIT param
 
+    // Tag preference scoring: adjust weight so the existing weighted-random
+    // algorithm naturally favors tag-matched content from good sources.
+    // Multiplicative so tags enhance source/subscription weight, not override it.
+    let likedTags, dislikedTags
+    try {
+      const prefs = db.prepare('SELECT tag, preference FROM tag_preferences').all()
+      likedTags = new Set(prefs.filter(p => p.preference === 'liked').map(p => p.tag))
+      dislikedTags = new Set(prefs.filter(p => p.preference === 'disliked').map(p => p.tag))
+    } catch {
+      likedTags = new Set()
+      dislikedTags = new Set()
+    }
+    if (likedTags.size > 0 || dislikedTags.size > 0) {
+      for (const v of allUnwatched) {
+        let tagMultiplier = 1.0
+        try {
+          const videoTags = JSON.parse(v.tags || '[]')
+          for (const tag of videoTags) {
+            const t = tag.toLowerCase().trim()
+            if (likedTags.has(t)) tagMultiplier += 0.3
+            if (dislikedTags.has(t)) tagMultiplier -= 1.0
+          }
+        } catch { /* malformed tags — leave multiplier at 1.0 */ }
+        v.weight = v.weight * Math.max(0.1, tagMultiplier)
+      }
+    }
+
     // Round-robin: take perSourceLimit from each source
     const bySource = {}
     for (const v of allUnwatched) {

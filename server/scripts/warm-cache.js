@@ -86,17 +86,7 @@ for (const mode of modes) {
     try {
       console.log(`    🔄 ${cat.key}...`)
       let videos
-      let query = cat.query
-
-      // Personalize with liked tags
-      if (!query.startsWith('http')) {
-        try {
-          const likedTags = db.prepare(
-            "SELECT tag FROM tag_preferences WHERE preference = 'liked' ORDER BY RANDOM() LIMIT 2"
-          ).all().map(r => r.tag)
-          if (likedTags.length > 0) query = `${query} ${likedTags.join(' ')}`
-        } catch {}
-      }
+      const query = cat.query
 
       if (cat.mode === 'nsfw' && query.startsWith('http')) {
         try {
@@ -139,15 +129,7 @@ for (const mode of modes) {
   for (const src of sources) {
     try {
       console.log(`    🔄 ${src.label}...`)
-      let query = src.query
-
-      // Personalize
-      try {
-        const likedTags = db.prepare(
-          "SELECT tag FROM tag_preferences WHERE preference = 'liked' ORDER BY RANDOM() LIMIT 2"
-        ).all().map(r => r.tag)
-        if (likedTags.length > 0) query = `${query} ${likedTags.join(' ')}`
-      } catch {}
+      const query = src.query
 
       const videos = await registry.search(query, { site: src.domain, limit: 20 })
 

@@ -77,26 +77,11 @@ async function _refillFeedCacheImpl(mode) {
 
   if (sources.length === 0) return
 
-  // Get liked tags for personalization
-  let likedTags = []
-  try {
-    likedTags = db.prepare(
-      "SELECT tag FROM tag_preferences WHERE preference = 'liked'"
-    ).all().map(r => r.tag)
-  } catch { /* tag_preferences may not exist yet */ }
-
   for (const src of sources) {
     logger.info(`  🔄 Refilling feed: ${src.label} (${mode})`)
 
     try {
-      // Personalize query by mixing in random liked tags
-      // Skip personalization for __creators__ sentinel — CreatorAdapter needs the exact string
-      let query = src.query
-      if (likedTags.length > 0 && !src.query.startsWith('__')) {
-        const picked = likedTags.sort(() => Math.random() - 0.5).slice(0, 2)
-        query = `${src.query} ${picked.join(' ')}`
-        logger.info(`  🎯 Personalized feed query: "${query}"`)
-      }
+      const query = src.query
       // Use registry search with fallback chain (scraper → yt-dlp)
       const videos = await registry.search(query, { site: src.domain, limit: 20 })
 

@@ -482,20 +482,7 @@ async function refillCategory(categoryKey) {
   const cat = db.prepare('SELECT query, mode FROM categories WHERE key = ?').get(categoryKey)
   if (!cat) return
 
-  let query = cat.query
-
-  // For yt-dlp search strings (not URLs), append personalization tags
-  if (!query.startsWith('http')) {
-    try {
-      const likedTags = db.prepare(
-        "SELECT tag FROM tag_preferences WHERE preference = 'liked' ORDER BY RANDOM() LIMIT 2"
-      ).all().map(r => r.tag)
-      if (likedTags.length > 0) {
-        query = `${query} ${likedTags.join(' ')}`
-        logger.info(`  🎯 Personalized query for ${categoryKey}: "${query}" (tags: ${likedTags.join(', ')})`)
-      }
-    } catch { /* tag_preferences may not exist yet — use base query */ }
-  }
+  const query = cat.query
 
   logger.info(`  🔄 Refilling category: ${categoryKey} (query: "${query}")`)
 
