@@ -170,6 +170,7 @@ const PosterCard = memo(
             alt={item.title || ''}
             loading={loading}
             draggable={false}
+            data-parallax-img
             style={imgStyle}
           />
         ) : (

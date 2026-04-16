@@ -13,7 +13,7 @@ import { create } from 'zustand'
 //   After pause: all rating toasts suppressed for 60min
 // ============================================================
 
-const useToastStore = create((set, get) => ({
+const useToastStore = create((set) => ({
   toast: null,
 
   // Tier 1 — passive toast (backwards compatible)
