@@ -17,6 +17,7 @@ import feedRoutes, { setRefillFeedCache } from './routes/feed.js'
 import tiktokRoutes from './routes/tiktok.js'
 import creatorsRoutes from './routes/creators.js'
 import subscriptionBackupRoutes from './routes/subscription-backup.js'
+import ratingsRoutes from './routes/ratings.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -47,6 +48,7 @@ app.use(feedRoutes)
 app.use(tiktokRoutes)
 app.use(creatorsRoutes)
 app.use(subscriptionBackupRoutes)
+app.use(ratingsRoutes)
 
 // SPA catch-all: serve index.html for non-API routes (client-side routing)
 if (existsSync(distPath)) {

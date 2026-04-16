@@ -1,4 +1,5 @@
-import { forwardRef, memo } from 'react'
+import { forwardRef, memo, useState } from 'react'
+import ThumbsRating from '../ThumbsRating'
 
 // ============================================================
 // PosterCard
@@ -27,7 +28,8 @@ function distProps(dist) {
 }
 
 const PosterCard = memo(
-  forwardRef(function PosterCard({ item, dist, isFocused, onClick, loading = 'lazy', variant = 'poster', progressPercent }, ref) {
+  forwardRef(function PosterCard({ item, dist, isFocused, onClick, loading = 'lazy', variant = 'poster', progressPercent, surfaceKey, onRated }, ref) {
+    const [showThumbs, setShowThumbs] = useState(false)
     const orient = item?.orient || 'h'
     const widths = WIDTH[orient] ?? WIDTH.h
     const width = isFocused ? widths.focused : widths.default
@@ -157,7 +159,9 @@ const PosterCard = memo(
 
     return (
       <div ref={ref} style={containerStyle} onClick={onClick} role="button" tabIndex={0}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.() } }}>
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.() } }}
+        onMouseEnter={() => isFocused && setShowThumbs(true)}
+        onMouseLeave={() => setShowThumbs(false)}>
 
         {/* Thumbnail */}
         {item?.thumbnail ? (
@@ -207,16 +211,33 @@ const PosterCard = memo(
             />
           </div>
         )}
+
+        {/* Thumbs rating overlay — focused card on hover only */}
+        {isFocused && item?.url && (
+          <ThumbsRating
+            videoUrl={item.url}
+            surfaceType="home_row"
+            surfaceKey={surfaceKey}
+            tags={item.tags || []}
+            creator={item.uploader || ''}
+            title={item.title || ''}
+            thumbnail={item.thumbnail || ''}
+            source={item.genre || ''}
+            visible={showThumbs}
+            onRated={onRated}
+          />
+        )}
       </div>
     )
   }),
-  // Custom memo comparator — only re-render if dist, item, isFocused, or variant changes
+  // Custom memo comparator — only re-render if dist, item, isFocused, variant, or surfaceKey changes
   (prev, next) =>
     prev.dist === next.dist &&
     prev.isFocused === next.isFocused &&
     prev.item === next.item &&
     prev.variant === next.variant &&
-    prev.progressPercent === next.progressPercent
+    prev.progressPercent === next.progressPercent &&
+    prev.surfaceKey === next.surfaceKey
 )
 
 PosterCard.displayName = 'PosterCard'

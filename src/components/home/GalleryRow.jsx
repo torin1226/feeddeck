@@ -34,7 +34,7 @@ function getCardWidth(item, variant) {
   return baseH * ar
 }
 
-export default function GalleryRow({ items, label, showProgress, isLast, onReachEnd, variant = 'poster' }) {
+export default function GalleryRow({ items, label, showProgress, isLast, onReachEnd, variant = 'poster', surfaceKey }) {
   const { setHeroItem, setTheatreMode } = useHomeStore()
   const scrollRef = useRef(null)
   const cardsRef = useRef([])
@@ -181,6 +181,7 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
                   onClick={() => handleCardClick(i)}
                   loading={dist <= 3 ? 'eager' : 'lazy'}
                   variant={variant}
+                  surfaceKey={surfaceKey || label}
                   progressPercent={showProgress && item.watchProgress != null
                     ? Math.round(item.watchProgress * 100)
                     : undefined}

@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import Hls from 'hls.js'
 import useFeedStore from '../../stores/feedStore'
+import ThumbsRating from '../ThumbsRating'
 
 // ============================================================
 // FeedVideo
@@ -383,6 +384,21 @@ export default function FeedVideo({ video, index, isActive, setRef, _onSourceCon
             <line x1="17" y1="9" x2="23" y2="15" />
           </svg>
         </div>
+      )}
+
+      {/* Thumbs rating — visible on active video */}
+      {isActive && !videoError && streamUrl && (
+        <ThumbsRating
+          videoUrl={video.url}
+          surfaceType="feed_tab"
+          surfaceKey="feed"
+          tags={[]}
+          creator={video.uploader || video.creator || ''}
+          title={video.title || ''}
+          thumbnail={video.thumbnail || ''}
+          source={video.source || ''}
+          visible={!_hideOverlay}
+        />
       )}
 
       {/* DEBUG overlay — dev only */}

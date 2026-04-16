@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useModeStore from '../stores/modeStore'
 import useLibraryStore from '../stores/libraryStore'
@@ -17,6 +17,7 @@ import { SkeletonLibrary } from '../components/Skeletons'
 
 const TABS = [
   { key: 'all', label: 'All' },
+  { key: 'liked', label: 'Liked' },
   { key: 'favorites', label: 'Favorites' },
   { key: 'history', label: 'Watch History' },
   { key: 'watchLater', label: 'Watch Later' },
@@ -30,6 +31,20 @@ export default function LibraryPage() {
   const [activeTab, setActiveTab] = useState('all')
   const [activeVideo, setActiveVideo] = useState(null)
   const [debugOpen, setDebugOpen] = useState(false)
+  const [likedVideos, setLikedVideos] = useState([])
+
+  // Fetch liked videos from ratings API
+  const fetchLiked = useCallback(async () => {
+    try {
+      const res = await fetch('/api/ratings/history?rating=up&limit=100')
+      if (res.ok) {
+        const data = await res.json()
+        setLikedVideos(data.ratings || [])
+      }
+    } catch { /* non-fatal */ }
+  }, [])
+
+  useEffect(() => { fetchLiked() }, [fetchLiked])
 
   // Ctrl+Shift+D toggles debug panel
   useEffect(() => {
@@ -65,6 +80,18 @@ export default function LibraryPage() {
   // Filtered videos based on active tab
   const filtered = useMemo(() => {
     switch (activeTab) {
+      case 'liked':
+        // Show liked videos from ratings API, mapped to card-compatible shape
+        return likedVideos.map(r => ({
+          id: r.id,
+          url: r.video_url,
+          title: r.title || (r.creator ? `Liked from ${r.creator}` : 'Liked video'),
+          thumbnail: r.thumbnail || '',
+          source: r.surface_key || 'rated',
+          tags: r.tags ? (typeof r.tags === 'string' ? JSON.parse(r.tags) : r.tags) : [],
+          favorite: true,
+          addedAt: r.rated_at,
+        }))
       case 'favorites':
         return videos.filter((v) => v.favorite)
       case 'history':
@@ -80,16 +107,17 @@ export default function LibraryPage() {
       default:
         return videos
     }
-  }, [videos, activeTab])
+  }, [videos, activeTab, likedVideos])
 
   // Tab counts for badges
   const counts = useMemo(() => ({
     all: videos.length,
+    liked: likedVideos.length,
     favorites: videos.filter((v) => v.favorite).length,
     history: videos.filter((v) => v.lastWatched).length,
     watchLater: videos.filter((v) => v.watchLater).length,
     rated: videos.filter((v) => v.rating).length,
-  }), [videos])
+  }), [videos, likedVideos])
 
   return (
     <div className="min-h-screen bg-surface text-text-primary font-sans">

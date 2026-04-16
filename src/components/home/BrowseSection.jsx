@@ -6,6 +6,32 @@ import useLibraryStore from '../../stores/libraryStore'
 import GalleryRow from './GalleryRow'
 import Top10Row from './Top10Row'
 
+// Fetch liked videos for "Your Likes" row (appears after 3+ likes)
+function useLikedRow() {
+  const [items, setItems] = useState([])
+  useEffect(() => {
+    fetch('/api/ratings/history?rating=up&limit=20')
+      .then(r => r.ok ? r.json() : { ratings: [] })
+      .then(data => {
+        const mapped = (data.ratings || []).map(r => ({
+          id: `liked-${r.id}`,
+          title: r.title || (r.creator ? `From ${r.creator}` : 'Liked'),
+          thumbnail: r.thumbnail || '',
+          url: r.video_url,
+          uploader: r.creator || '',
+          tags: typeof r.tags === 'string' ? JSON.parse(r.tags || '[]') : (r.tags || []),
+          duration: '',
+          durationSec: 0,
+          views: '',
+          orient: 'h',
+        }))
+        setItems(mapped)
+      })
+      .catch(() => {})
+  }, [])
+  return items
+}
+
 // ============================================================
 // BrowseSection
 // Curated GalleryRow carousels with vertical parallax between rows.
@@ -20,6 +46,7 @@ const VERTICAL_PARALLAX_FACTOR = 0.08
 export default function BrowseSection() {
   const { categories } = useHomeStore()
   const videos = useLibraryStore((s) => s.videos)
+  const likedItems = useLikedRow()
   const navigate = useNavigate()
   const rowRefs = useRef([])
   const [feedTransition, setFeedTransition] = useState(false)
@@ -109,6 +136,18 @@ export default function BrowseSection() {
       <div className="px-10">
         <Top10Row />
       </div>
+
+      {/* Your Likes row — appears after 3+ liked videos */}
+      {likedItems.length >= 3 && (
+        <div className="will-change-transform">
+          <GalleryRow
+            items={likedItems}
+            label="Your Likes"
+            surfaceKey="liked"
+            variant="landscape"
+          />
+        </div>
+      )}
 
       {displayCategories.map((cat, i) => (
         <div

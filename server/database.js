@@ -285,6 +285,42 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_sub_backups_platform ON subscription_backups(platform);
     CREATE INDEX IF NOT EXISTS idx_sub_backups_handle ON subscription_backups(handle);
     CREATE INDEX IF NOT EXISTS idx_sub_backups_display_name ON subscription_backups(display_name);
+
+    -- 3.12 Taste Feedback: individual video ratings (thumbs up/down)
+    CREATE TABLE IF NOT EXISTS video_ratings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      video_url TEXT NOT NULL,
+      surface_type TEXT NOT NULL DEFAULT 'home_row',
+      surface_key TEXT,
+      rating TEXT NOT NULL CHECK(rating IN ('up', 'down')),
+      tags TEXT DEFAULT '[]',
+      creator TEXT,
+      title TEXT,
+      thumbnail TEXT,
+      rated_at DATETIME DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_video_ratings_url ON video_ratings(video_url);
+    CREATE INDEX IF NOT EXISTS idx_video_ratings_rating ON video_ratings(rating, rated_at);
+
+    -- 3.12 Taste Feedback: creator-level affinity from thumbs-up
+    CREATE TABLE IF NOT EXISTS creator_boosts (
+      creator TEXT PRIMARY KEY,
+      boost_score REAL DEFAULT 0.0,
+      surface_boosts TEXT DEFAULT '{}',
+      last_updated DATETIME DEFAULT (datetime('now'))
+    );
+
+    -- 3.12 Taste Feedback: multi-signal taste profile (replaces tag_preferences as primary scoring input)
+    CREATE TABLE IF NOT EXISTS taste_profile (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      signal_type TEXT NOT NULL,
+      signal_value TEXT NOT NULL,
+      weight REAL DEFAULT 0.0,
+      surface_key TEXT,
+      updated_at DATETIME DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_taste_profile_type ON taste_profile(signal_type, signal_value);
+    CREATE INDEX IF NOT EXISTS idx_taste_profile_surface ON taste_profile(surface_key);
   `)
 
   // Seed default categories if empty
@@ -402,6 +438,35 @@ export function initDatabase() {
     db.exec("UPDATE categories SET label = 'My Subscriptions' WHERE key = 'social_subscriptions' AND label = 'Your Subscriptions'")
     db.exec("UPDATE sources SET label = 'My Subscriptions' WHERE domain = 'subscriptions' AND label = 'Your Subscriptions'")
   } catch {}
+
+  // Migrate: add title + thumbnail columns to video_ratings if missing
+  try {
+    const cols = db.prepare("PRAGMA table_info(video_ratings)").all()
+    if (cols.length > 0 && !cols.some(c => c.name === 'title')) {
+      db.exec("ALTER TABLE video_ratings ADD COLUMN title TEXT")
+      db.exec("ALTER TABLE video_ratings ADD COLUMN thumbnail TEXT")
+    }
+  } catch {}
+
+  // Migrate: seed taste_profile from existing tag_preferences (one-time)
+  try {
+    const tasteCount = db.prepare('SELECT COUNT(*) as n FROM taste_profile').get()
+    if (tasteCount.n === 0) {
+      const tagPrefs = db.prepare('SELECT tag, preference, updated_at FROM tag_preferences').all()
+      if (tagPrefs.length > 0) {
+        const insertTaste = db.prepare(
+          'INSERT INTO taste_profile (signal_type, signal_value, weight, surface_key, updated_at) VALUES (?, ?, ?, NULL, ?)'
+        )
+        for (const tp of tagPrefs) {
+          const weight = tp.preference === 'liked' ? 0.5 : -0.5
+          insertTaste.run('tag', tp.tag, weight, tp.updated_at || new Date().toISOString())
+        }
+        logger.info('Migrated tag_preferences into taste_profile', { count: tagPrefs.length })
+      }
+    }
+  } catch (err) {
+    logger.error('taste_profile migration failed:', { error: err.message })
+  }
 
   logger.info('Database initialized', { path: DB_PATH })
   return db

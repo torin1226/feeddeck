@@ -3,6 +3,7 @@ import express from 'express'
 import { db } from '../database.js'
 import { logger } from '../logger.js'
 import { formatDuration } from '../utils.js'
+import { scoreVideo, isDownvoted, invalidateProfileCache } from '../scoring.js'
 
 const router = Router()
 
@@ -41,7 +42,7 @@ router.get('/api/feed/next', (req, res) => {
     // Weight logic: base weight from sources table, then 5x boost if the
     // video's creator is in subscription_backups (user's followed accounts).
     const perSourceLimit = Math.max(2, Math.ceil(count / 5))
-    const allUnwatched = db.prepare(`
+    const rawUnwatched = db.prepare(`
       SELECT fc.id, fc.url, fc.stream_url AS streamUrl, fc.title, fc.creator AS uploader, fc.thumbnail,
              fc.duration, fc.orientation, fc.source_domain AS source, fc.tags,
              COALESCE(s.weight, 1.0) * CASE WHEN sb.id IS NOT NULL THEN 5.0 ELSE 1.0 END AS weight
@@ -54,31 +55,14 @@ router.get('/api/feed/next', (req, res) => {
       LIMIT ${count * 10}
     `).all(...params.slice(0, -1)) // remove the original LIMIT param
 
-    // Tag preference scoring: adjust weight so the existing weighted-random
-    // algorithm naturally favors tag-matched content from good sources.
-    // Multiplicative so tags enhance source/subscription weight, not override it.
-    let likedTags, dislikedTags
-    try {
-      const prefs = db.prepare('SELECT tag, preference FROM tag_preferences').all()
-      likedTags = new Set(prefs.filter(p => p.preference === 'liked').map(p => p.tag))
-      dislikedTags = new Set(prefs.filter(p => p.preference === 'disliked').map(p => p.tag))
-    } catch {
-      likedTags = new Set()
-      dislikedTags = new Set()
-    }
-    if (likedTags.size > 0 || dislikedTags.size > 0) {
-      for (const v of allUnwatched) {
-        let tagMultiplier = 1.0
-        try {
-          const videoTags = JSON.parse(v.tags || '[]')
-          for (const tag of videoTags) {
-            const t = tag.toLowerCase().trim()
-            if (likedTags.has(t)) tagMultiplier += 0.3
-            if (dislikedTags.has(t)) tagMultiplier -= 1.0
-          }
-        } catch { /* malformed tags — leave multiplier at 1.0 */ }
-        v.weight = v.weight * Math.max(0.1, tagMultiplier)
-      }
+    // Unified taste profile scoring (3.12): replaces old tag_preferences multiplier.
+    // Uses multi-signal taste_profile + creator_boosts + decay for weights.
+    // Also excludes downvoted videos from results.
+    const allUnwatched = rawUnwatched.filter(v => !isDownvoted(v.url))
+    for (const v of allUnwatched) {
+      const tasteScore = scoreVideo(v, 'feed', null)
+      // Blend taste score with existing source/subscription weight
+      v.weight = v.weight * (0.5 + tasteScore)
     }
 
     // Round-robin: take perSourceLimit from each source
