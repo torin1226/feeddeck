@@ -15,7 +15,7 @@ const useRatingsStore = create((set, get) => ({
   // Timestamp when toast pause was activated (null = not paused)
   toastPausedUntil: null,
 
-  // Set of video URLs rated this session (for UI state)
+  // Map of video URLs to rating value ('up'|'down') for UI state
   ratedUrls: {},
 
   // Record a rating and update trackers
