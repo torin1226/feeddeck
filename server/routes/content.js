@@ -283,7 +283,32 @@ router.get('/api/sources/list', (req, res) => {
     } else {
       sources = db.prepare('SELECT * FROM sources ORDER BY mode, weight DESC').all()
     }
-    res.json({ sources })
+
+    // Attach feed_cache entry counts and creator counts for each source
+    const feedCounts = db.prepare(`
+      SELECT source_domain, COUNT(*) as entry_count
+      FROM feed_cache
+      WHERE watched = 0 AND (expires_at IS NULL OR expires_at > datetime('now'))
+      GROUP BY source_domain
+    `).all()
+    const feedCountMap = Object.fromEntries(feedCounts.map(r => [r.source_domain, r.entry_count]))
+
+    const creatorCounts = db.prepare(`
+      SELECT platform || '.com' as domain, COUNT(*) as creator_count
+      FROM creators
+      WHERE active = 1
+      GROUP BY platform
+    `).all()
+    const creatorCountMap = Object.fromEntries(creatorCounts.map(r => [r.domain, r.creator_count]))
+
+    const enriched = sources.map(s => ({
+      ...s,
+      feed_entry_count: feedCountMap[s.domain] ?? 0,
+      // Only relevant for __creators__ sources
+      creator_count: s.query === '__creators__' ? (creatorCountMap[s.domain] ?? 0) : null,
+    }))
+
+    res.json({ sources: enriched })
   } catch (err) {
     logger.error('List sources error', { error: err.message })
     res.status(500).json({ error: 'Failed to list sources' })

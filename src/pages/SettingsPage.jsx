@@ -495,7 +495,7 @@ export default function SettingsPage() {
                   }`}
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-text-primary font-medium">{src.label}</span>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase ${
                         src.mode === 'nsfw'
@@ -509,15 +509,33 @@ export default function SettingsPage() {
                           PAUSED
                         </span>
                       )}
+                      {/* Feed entry count badge */}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                        src.feed_entry_count > 0
+                          ? 'bg-green-500/15 text-green-400'
+                          : 'bg-surface-overlay text-text-muted'
+                      }`}>
+                        {src.feed_entry_count} in feed
+                      </span>
+                      {/* Creator sources: show creator count or needs-setup warning */}
+                      {src.query === '__creators__' && (
+                        src.creator_count > 0
+                          ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-semibold">
+                              {src.creator_count} creators
+                            </span>
+                          : <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-semibold">
+                              Needs setup
+                            </span>
+                      )}
                     </div>
                     <div className="text-text-muted text-xs mt-0.5 truncate">
-                      {src.domain} · query: "{src.query}" · weight: {src.weight}
+                      {src.domain} · weight: {src.weight}
                     </div>
-                    {src.last_fetched && (
-                      <div className="text-text-muted text-[10px] mt-0.5">
-                        Last fetched: {new Date(src.last_fetched + 'Z').toLocaleString()}
-                      </div>
-                    )}
+                    <div className="text-text-muted text-[10px] mt-0.5">
+                      {src.last_fetched
+                        ? `Last fetched: ${new Date(src.last_fetched + 'Z').toLocaleString()}`
+                        : 'Never fetched'}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 ml-4 shrink-0">
                     <button
