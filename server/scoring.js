@@ -220,7 +220,9 @@ export function getScoreBreakdown(video, surfaceKey = null) {
   const creator = (video.creator || video.uploader || '').toLowerCase().trim()
 
   const viewCount = video.view_count || 0
-  const baseScore = Math.max(0.1, Math.log10(Math.max(1, viewCount)) / 8)
+  const baseScore = viewCount > 0
+    ? Math.max(0.1, Math.log10(viewCount) / 8)
+    : 0.5
 
   let tagScore = 0
   const matchedTags = []
