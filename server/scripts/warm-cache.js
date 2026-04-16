@@ -28,6 +28,21 @@ const modeArg = args.find(a => a.startsWith('--mode='))?.split('=')[1]
 const dryRun = args.includes('--dry-run')
 const isWindows = os.platform() === 'win32'
 const CONCURRENCY = isWindows ? 2 : 3
+const MAX_RETRIES = 2
+
+// Retry with exponential backoff for transient network failures
+async function withRetry(label, fn) {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      if (attempt === MAX_RETRIES) throw err
+      const delay = 1000 * 2 ** attempt
+      console.log(`      ⏳ ${label} failed (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying in ${delay}ms: ${err.message.substring(0, 60)}`)
+      await new Promise(r => setTimeout(r, delay))
+    }
+  }
+}
 
 console.log(`\n🔥 FeedDeck Cache Warmer`)
 console.log(`   Mode: ${modeArg}`)
@@ -89,14 +104,16 @@ for (const mode of modes) {
       const query = cat.query
 
       if (cat.mode === 'nsfw' && query.startsWith('http')) {
-        try {
-          const domain = new URL(query).hostname.replace(/^www\./, '')
-          videos = await registry.search(query, { site: domain, limit: 12 })
-        } catch {
-          videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
-        }
+        videos = await withRetry(cat.key, async () => {
+          try {
+            const domain = new URL(query).hostname.replace(/^www\./, '')
+            return await registry.search(query, { site: domain, limit: 12 })
+          } catch {
+            return await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
+          }
+        })
       } else {
-        videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
+        videos = await withRetry(cat.key, () => registry.search(query, { adapter: 'yt-dlp', limit: 12 }))
       }
 
       const insert = db.prepare(`
@@ -107,11 +124,13 @@ for (const mode of modes) {
       let added = 0
       for (const v of videos) {
         try {
-          insert.run(v.id, cat.key, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, JSON.stringify(v.tags || []))
-          added++
-        } catch {}
+          const result = insert.run(v.id, cat.key, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, JSON.stringify(v.tags || []))
+          if (result.changes > 0) added++
+        } catch (err) {
+          console.log(`      ⚠️ Insert failed for ${v.url?.substring(0, 60)}: ${err.message.substring(0, 60)}`)
+        }
       }
-      console.log(`    ✅ +${added} videos`)
+      console.log(`    ✅ +${added} new videos (${videos.length} fetched)`)
       stats.categoriesRefilled++
     } catch (err) {
       console.log(`    ❌ ${err.message.substring(0, 80)}`)
@@ -131,7 +150,7 @@ for (const mode of modes) {
       console.log(`    🔄 ${src.label}...`)
       const query = src.query
 
-      const videos = await registry.search(query, { site: src.domain, limit: 20 })
+      const videos = await withRetry(src.label, () => registry.search(query, { site: src.domain, limit: 20 }))
 
       const insert = db.prepare(`
         INSERT OR IGNORE INTO feed_cache (id, source_domain, mode, url, title, creator, thumbnail, duration, orientation, tags, fetched_at, expires_at)
@@ -144,13 +163,17 @@ for (const mode of modes) {
         try {
           const tags = Array.isArray(v.tags) ? JSON.stringify(v.tags) : (v.tags || '[]')
           const result = insert.run(v.id, src.domain, mode, v.url, v.title, v.uploader, v.thumbnail, v.duration, v.orientation, tags)
-          added++
-          if (result.changes > 0 && v.url) newUrls.push(v.url)
-        } catch {}
+          if (result.changes > 0) {
+            added++
+            if (v.url) newUrls.push(v.url)
+          }
+        } catch (err) {
+          console.log(`      ⚠️ Insert failed for ${v.url?.substring(0, 60)}: ${err.message.substring(0, 60)}`)
+        }
       }
 
       db.prepare("UPDATE sources SET last_fetched = datetime('now') WHERE domain = ?").run(src.domain)
-      console.log(`    ✅ +${added} videos`)
+      console.log(`    ✅ +${added} new videos (${videos.length} fetched)`)
       stats.feedRefilled++
     } catch (err) {
       console.log(`    ❌ ${err.message.substring(0, 80)}`)
