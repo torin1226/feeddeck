@@ -226,13 +226,14 @@ export class SourceRegistry {
   }
 
   // Convenience: get stream URL with fallback
-  async getStreamUrl(url) {
+  // options.format: optional yt-dlp format string (e.g. '137' for 1080p) from quality selector
+  async getStreamUrl(url, options) {
     const domain = new URL(url).hostname.replace(/^www\./, '')
     const specific = this.getAdapter(domain)
 
     if (specific?.capabilities.streamUrl && !this.isDisabled(specific.name, 'streamUrl')) {
       try {
-        const result = await specific.getStreamUrl(url)
+        const result = await specific.getStreamUrl(url, options)
         this.recordSuccess(specific.name, 'streamUrl')
         return result
       } catch (err) {
@@ -241,7 +242,7 @@ export class SourceRegistry {
       }
     }
 
-    return this.withFallback('streamUrl', adapter => adapter.getStreamUrl(url))
+    return this.withFallback('streamUrl', adapter => adapter.getStreamUrl(url, options))
   }
 
   // Convenience: search with a specific adapter or first available

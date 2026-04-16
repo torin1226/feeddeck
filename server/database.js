@@ -35,7 +35,7 @@ function _seedCategories(database) {
     ['nsfw_popular_women',  'Popular With Women',   'https://www.pornhub.com/categories/popular-with-women',                       'nsfw', 11],
     ['nsfw_new',            'Newest',               'https://www.pornhub.com/video?o=cm',                                          'nsfw', 12],
     ['nsfw_xvideos_best',   'Best of XVideos',      'https://www.xvideos.com/best',                                                'nsfw', 13],
-    ['nsfw_spankbang',      'SpankBang Trending',   'https://spankbang.com/trending',                                              'nsfw', 14],
+    ['nsfw_spankbang',      'SpankBang Trending',   'https://spankbang.com/trending_videos/',                                       'nsfw', 14],
     ['nsfw_casting',        'Casting',              'https://www.pornhub.com/video/search?search=casting&hd=1&o=tr',               'nsfw', 15],
     ['nsfw_massage',        'Massage',              'https://www.pornhub.com/video/search?search=massage&hd=1&o=tr',               'nsfw', 16],
     ['nsfw_cosplay',        'Cosplay',              'https://www.pornhub.com/video/search?search=cosplay&hd=1&o=tr',               'nsfw', 17],
@@ -48,7 +48,7 @@ function _seedCategories(database) {
     ['nsfw_fikfap_trend',   'FikFap Trending',      'https://fikfap.com/trending',                                                 'nsfw', 24],
     // Social categories (19)
     ['social_trending',      'Trending',            'https://www.youtube.com/feed/trending',                                       'social', 0],
-    ['social_subscriptions', 'Your Subscriptions',  'https://www.youtube.com/feed/subscriptions',                                  'social', 1],
+    ['social_subscriptions', 'My Subscriptions',    'https://www.youtube.com/feed/subscriptions',                                  'social', 1],
     ['social_shorts',        'Shorts',              'https://www.youtube.com/shorts',                                              'social', 2],
     ['social_viral',         'Viral This Week',     'ytsearch10:viral videos this week',                                           'social', 3],
     ['social_tech',          'Tech & Gadgets',      'ytsearch10:best new tech gadgets',                                            'social', 4],
@@ -141,7 +141,7 @@ export function initDatabase() {
       view_count INTEGER DEFAULT 0,
       tags TEXT DEFAULT '[]',
       fetched_at DATETIME DEFAULT (datetime('now')),
-      expires_at DATETIME DEFAULT (datetime('now', '+24 hours')),
+      expires_at DATETIME DEFAULT (datetime('now', '+7 days')),
       viewed INTEGER DEFAULT 0,
       FOREIGN KEY (category_key) REFERENCES categories(key)
     );
@@ -234,12 +234,57 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_videos_source ON videos(source);
     CREATE INDEX IF NOT EXISTS idx_history_video ON history(video_id);
     CREATE INDEX IF NOT EXISTS idx_history_date ON history(watched_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_homepage_cache_category ON homepage_cache(category_key);
+    CREATE INDEX IF NOT EXISTS idx_homepage_cache_cat_viewed ON homepage_cache(category_key, viewed);
     CREATE INDEX IF NOT EXISTS idx_homepage_cache_expires ON homepage_cache(expires_at);
     CREATE INDEX IF NOT EXISTS idx_categories_mode ON categories(mode, sort_order);
     CREATE INDEX IF NOT EXISTS idx_feed_cache_mode ON feed_cache(mode, watched, expires_at);
     CREATE INDEX IF NOT EXISTS idx_feed_cache_url ON feed_cache(url);
+    CREATE INDEX IF NOT EXISTS idx_feed_cache_source ON feed_cache(source_domain);
     CREATE INDEX IF NOT EXISTS idx_sources_mode ON sources(mode, active);
+
+    -- Creator lists for multi-platform feed (Reddit subs, TikTok/Insta/Twitter creators)
+    CREATE TABLE IF NOT EXISTS creators (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      platform TEXT NOT NULL,
+      handle TEXT NOT NULL,
+      url TEXT NOT NULL,
+      label TEXT,
+      active INTEGER DEFAULT 1,
+      last_fetched DATETIME,
+      fetch_failures INTEGER DEFAULT 0,
+      added_at DATETIME DEFAULT (datetime('now')),
+      UNIQUE(platform, handle)
+    );
+    CREATE INDEX IF NOT EXISTS idx_creators_platform ON creators(platform, active);
+
+    -- Subscription channel cache (channels seen from authenticated feed loads)
+    -- Used as fallback when YouTube cookies expire: search for recent uploads
+    -- from these channels instead of returning nothing.
+    CREATE TABLE IF NOT EXISTS sub_channels (
+      channel_id TEXT PRIMARY KEY,
+      channel_name TEXT NOT NULL,
+      channel_url TEXT NOT NULL,
+      last_seen DATETIME DEFAULT (datetime('now')),
+      video_count INTEGER DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_sub_channels_seen ON sub_channels(last_seen DESC);
+
+    -- Subscription backups: archive of "who I follow" across all platforms
+    -- Separate from creators (which drives content fetching) — this is a read-only backup
+    CREATE TABLE IF NOT EXISTS subscription_backups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      platform TEXT NOT NULL,
+      handle TEXT NOT NULL,
+      display_name TEXT,
+      profile_url TEXT,
+      platform_id TEXT,
+      backed_up_at DATETIME DEFAULT (datetime('now')),
+      source TEXT DEFAULT 'api',
+      UNIQUE(platform, handle)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sub_backups_platform ON subscription_backups(platform);
+    CREATE INDEX IF NOT EXISTS idx_sub_backups_handle ON subscription_backups(handle);
+    CREATE INDEX IF NOT EXISTS idx_sub_backups_display_name ON subscription_backups(display_name);
   `)
 
   // Seed default categories if empty
@@ -256,7 +301,9 @@ export function initDatabase() {
       db.exec("DELETE FROM categories")
       _seedCategories(db)
     }
-  } catch {}
+  } catch (err) {
+    logger.error('Category migration failed -- DB may have stale seeds:', { error: err.message })
+  }
 
   // Seed default feed sources if empty
   const srcCount = db.prepare('SELECT COUNT(*) as n FROM sources').get()
@@ -264,8 +311,8 @@ export function initDatabase() {
     const insertSrc = db.prepare('INSERT INTO sources (domain, mode, label, query, weight) VALUES (?, ?, ?, ?, ?)')
     const defaultSources = [
       ['youtube.com',   'social', 'YouTube',   'trending videos',    1.0],
-      ['tiktok.com',    'social', 'TikTok',    'tiktok viral trending',            0.9],
-      ['reddit.com',    'social', 'Reddit',    'reddit videos best of',      0.7],
+      ['tiktok.com',    'social', 'TikTok',    '__creators__',       1.0],
+      ['reddit.com',    'social', 'Reddit',    '__creators__',       0.9],
       ['pornhub.com',   'nsfw',   'PornHub',   'https://www.pornhub.com/video?o=tr',       1.0],
       ['xvideos.com',   'nsfw',   'XVideos',   'https://www.xvideos.com/best',             0.8],
       ['spankbang.com', 'nsfw',   'SpankBang', 'https://spankbang.com/trending',           0.7],
@@ -282,7 +329,7 @@ export function initDatabase() {
     const insertSrc = db.prepare('INSERT OR IGNORE INTO sources (domain, mode, label, query, weight) VALUES (?, ?, ?, ?, ?)')
     const newSources = [
       ['reddit.com',     'social', 'Reddit',            'reddit videos best of',                0.7],
-      ['subscriptions',  'social', 'Your Subscriptions', 'https://www.youtube.com/feed/subscriptions', 2.0],
+      ['subscriptions',  'social', 'My Subscriptions',   'https://www.youtube.com/feed/subscriptions', 2.0],
       ['xvideos.com',    'nsfw',   'XVideos',           'https://www.xvideos.com/best',         0.8],
       ['spankbang.com',  'nsfw',   'SpankBang',         'https://spankbang.com/trending',       0.7],
       ['redgifs.com',    'nsfw',   'RedGifs',           'https://www.redgifs.com/trending',     0.9],
@@ -296,8 +343,15 @@ export function initDatabase() {
   // Migrate: fix social source queries from feed URLs (need auth) to search queries
   try {
     db.prepare("UPDATE sources SET query = 'trending videos' WHERE domain = 'youtube.com' AND query LIKE '%youtube.com/feed/%'").run()
-    db.prepare("UPDATE sources SET query = 'tiktok viral trending' WHERE domain = 'tiktok.com' AND query LIKE '%tiktok.com/%'").run()
-    db.prepare("UPDATE sources SET query = 'reddit videos best of' WHERE domain = 'reddit.com' AND query LIKE '%reddit.com/%'").run()
+  } catch {}
+
+  // Migrate: switch TikTok/Reddit to __creators__ mode and add Instagram/Twitter sources
+  try {
+    db.prepare("UPDATE sources SET query = '__creators__', weight = 1.0 WHERE domain = 'tiktok.com' AND query != '__creators__'").run()
+    db.prepare("UPDATE sources SET query = '__creators__', weight = 0.9 WHERE domain = 'reddit.com' AND query != '__creators__'").run()
+    const insertSrc = db.prepare('INSERT OR IGNORE INTO sources (domain, mode, label, query, weight, active) VALUES (?, ?, ?, ?, ?, ?)')
+    insertSrc.run('instagram.com', 'social', 'Instagram', '__creators__', 0.8, 0)
+    insertSrc.run('twitter.com', 'social', 'Twitter/X', '__creators__', 0.7, 0)
   } catch {}
 
   // Migrate: add fetch_interval and last_fetched to sources if missing
@@ -341,6 +395,12 @@ export function initDatabase() {
     if (!cols.some(c => c.name === 'tags')) {
       db.exec("ALTER TABLE feed_cache ADD COLUMN tags TEXT DEFAULT '[]'")
     }
+  } catch {}
+
+  // Migrate: fix 'Your Subscriptions' label to 'My Subscriptions' to match BrowseSection TARGET_LABELS
+  try {
+    db.exec("UPDATE categories SET label = 'My Subscriptions' WHERE key = 'social_subscriptions' AND label = 'Your Subscriptions'")
+    db.exec("UPDATE sources SET label = 'My Subscriptions' WHERE domain = 'subscriptions' AND label = 'Your Subscriptions'")
   } catch {}
 
   logger.info('Database initialized', { path: DB_PATH })

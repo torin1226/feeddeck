@@ -10,6 +10,7 @@ import { promisify } from 'util'
 import { SourceAdapter } from './base.js'
 import { getCookieArgs } from '../cookies.js'
 import { logger } from '../logger.js'
+import { cacheSubscriptionChannels, buildSubscriptionFallbackQueries } from '../sub-channel-cache.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -19,27 +20,74 @@ const YTDLP_TIMEOUT = 30_000
 const YTDLP_SEARCH_TIMEOUT = 120_000
 const MAX_BUFFER = 50 * 1024 * 1024
 
+// Track domains with expired cookies to skip them immediately on subsequent calls
+const _expiredCookieDomains = new Set()
+
 // Safe yt-dlp execution — uses execFile (no shell) to prevent command injection
 // Routes cookies per-domain based on the URL being fetched
 // Accepts optional mode ('social'|'nsfw') for mode-specific cookie file fallback
 async function ytdlp(args, url, options = {}) {
-  const finalArgs = ['--js-runtimes', 'node', ...getCookieArgs(url, options.mode), ...args]
+  // Skip cookies if we already know they're expired for this domain
+  const domain = _extractDomain(url)
+  const skipCookies = domain && _expiredCookieDomains.has(domain)
+  const cookieArgs = skipCookies ? [] : getCookieArgs(url, options.mode)
+  const finalArgs = ['--js-runtimes', 'node', ...cookieArgs, ...args]
   try {
-    const { stdout } = await execFileAsync('yt-dlp', finalArgs, {
+    const { stdout, stderr } = await execFileAsync('yt-dlp', finalArgs, {
       encoding: 'utf8',
       timeout: options.timeout || YTDLP_TIMEOUT,
       maxBuffer: options.maxBuffer || MAX_BUFFER,
       windowsHide: true,
     })
+    // Check stderr for cookie warnings even on success (yt-dlp warns but continues)
+    if (stderr?.includes('cookies are no longer valid') && domain) {
+      _expiredCookieDomains.add(domain)
+      logger.warn(`yt-dlp: marking ${domain} cookies as expired (will skip in future)`)
+    }
     return stdout
   } catch (err) {
     // With --ignore-errors, yt-dlp may exit non-zero but still produce valid output
     if (args.includes('--ignore-errors') && err.stdout?.trim()) {
+      // Still check for cookie warnings
+      if (err.stderr?.includes('cookies are no longer valid') && domain) {
+        _expiredCookieDomains.add(domain)
+      }
       return err.stdout
+    }
+    // If cookies are expired/invalid, mark domain and retry without them
+    const errMsg = err.stderr || err.message || ''
+    if (cookieArgs.length > 0 && errMsg.includes('cookies are no longer valid')) {
+      if (domain) _expiredCookieDomains.add(domain)
+      logger.warn(`yt-dlp: cookies expired for ${domain}, retrying without cookies`)
+      const noCookieArgs = ['--js-runtimes', 'node', ...args]
+      try {
+        const { stdout } = await execFileAsync('yt-dlp', noCookieArgs, {
+          encoding: 'utf8',
+          timeout: options.timeout || YTDLP_TIMEOUT,
+          maxBuffer: options.maxBuffer || MAX_BUFFER,
+          windowsHide: true,
+        })
+        return stdout
+      } catch (retryErr) {
+        if (args.includes('--ignore-errors') && retryErr.stdout?.trim()) {
+          return retryErr.stdout
+        }
+        throw retryErr
+      }
     }
     throw err
   }
 }
+
+// Extract domain from URL or yt-dlp search string
+function _extractDomain(url) {
+  if (!url) return null
+  if (/^ytsearch\w*:/i.test(url)) return 'youtube.com'
+  try { return new URL(url).hostname.replace(/^www\./, '') } catch { return null }
+}
+
+// Export the raw yt-dlp exec helper so other adapters (e.g., CreatorAdapter) can reuse it
+export { ytdlp as ytdlpExec, _extractDomain, YTDLP_TIMEOUT, YTDLP_SEARCH_TIMEOUT }
 
 export class YtDlpAdapter extends SourceAdapter {
   constructor() {
@@ -86,18 +134,20 @@ export class YtDlpAdapter extends SourceAdapter {
     return this.normalizeVideo(data)
   }
 
-  async getStreamUrl(url) {
+  async getStreamUrl(url, options = {}) {
     if (!this.isAvailable()) throw new Error('yt-dlp not installed')
 
-    const formatStr = '480p/240p/720p/best[height<=480][protocol=https][ext=mp4][vcodec!*=av01]/best[height<=480][ext=mp4]/18/best[ext=mp4]/best'
+    // Use caller-specified format (from quality selector) or fall back to default preference
+    const formatStr = options?.format
+      || '1080p/720p/480p/best[height<=1080][protocol=https][ext=mp4][vcodec!*=av01]/best[height<=1080][ext=mp4]/18/best[ext=mp4]/best'
     const stdout = await ytdlp(['-g', '-f', formatStr, url], url)
 
     let cdnUrl = stdout.trim().split('\n')[0]
 
-    // If yt-dlp returned HLS, retry with direct MP4 formats
-    if (cdnUrl.includes('.m3u8')) {
+    // If yt-dlp returned HLS and no explicit format was requested, retry with direct MP4 formats
+    if (cdnUrl.includes('.m3u8') && !options?.format) {
       try {
-        const mp4Out = await ytdlp(['-g', '-f', '480p/240p/720p/18', url], url)
+        const mp4Out = await ytdlp(['-g', '-f', '1080p/720p/480p/18', url], url)
         cdnUrl = mp4Out.trim().split('\n')[0]
       } catch { /* keep original if format 18 fails */ }
     }
@@ -126,7 +176,26 @@ export class YtDlpAdapter extends SourceAdapter {
         /reddit\.com\/r\/\w+\/(hot|top|new)/i.test(query)
       )
 
-      if (isSocialFeedUrl) {
+      if (isSubscriptionFeed) {
+        // Subscription feed: try with cookies first, fall back to cached channels
+        const domain = _extractDomain(query)
+        if (domain && _expiredCookieDomains.has(domain)) {
+          // Cookies already known expired: use channel cache fallback
+          return this._subscriptionFallback(limit)
+        }
+        // Try the real feed; if it fails, catch and fallback below
+        try {
+          const results = await this._fetchPlaylistWithChannelCache(query, limit)
+          return results
+        } catch (err) {
+          const errMsg = err.stderr || err.message || ''
+          if (errMsg.includes('cookies are no longer valid') || errMsg.includes('login required')) {
+            logger.warn('yt-dlp: subscription feed failed, attempting channel cache fallback')
+            return this._subscriptionFallback(limit)
+          }
+          throw err
+        }
+      } else if (isSocialFeedUrl) {
         // Extract a useful search term from the URL
         const searchTerm = this._socialFeedToSearch(query, limit)
         searchUrl = searchTerm
@@ -149,6 +218,86 @@ export class YtDlpAdapter extends SourceAdapter {
     }
 
     return this._fetchPlaylist(searchUrl, limit)
+  }
+
+  // Fetch subscription feed and cache the channels we see for fallback use
+  async _fetchPlaylistWithChannelCache(url, limit) {
+    if (!this.isAvailable()) throw new Error('yt-dlp not installed')
+
+    const stdout = await ytdlp(
+      ['--dump-json', '--playlist-end', String(limit), '--no-download', '--ignore-errors', url],
+      url,
+      { timeout: YTDLP_SEARCH_TIMEOUT }
+    )
+
+    const lines = stdout.trim().split('\n').filter(l => l.trim())
+    const rawEntries = []
+    const videos = []
+
+    for (const line of lines) {
+      try {
+        const raw = JSON.parse(line)
+        rawEntries.push(raw)
+        videos.push(this.normalizeVideo(raw))
+      } catch { /* skip malformed lines */ }
+    }
+
+    // Cache the channels we just saw for fallback use
+    if (rawEntries.length > 0) {
+      cacheSubscriptionChannels(rawEntries)
+    }
+
+    return videos
+  }
+
+  // Fallback: use cached subscription channels to approximate the subscription feed
+  // Returns videos with a _fallback flag so the frontend can show a warning banner
+  async _subscriptionFallback(limit) {
+    const { queries, channelNames } = buildSubscriptionFallbackQueries(limit)
+
+    if (queries.length === 0) {
+      logger.warn('yt-dlp: no cached channels for subscription fallback, using generic trending')
+      const results = await this._fetchPlaylist(`ytsearch${limit}:trending videos today`, limit)
+      return results.map(v => ({ ...v, _fallback: 'no-cache' }))
+    }
+
+    logger.info(`yt-dlp: subscription fallback using ${queries.length} cached channels: ${channelNames.slice(0, 5).join(', ')}...`)
+
+    // Fetch from each channel URL/search in parallel (capped at 5 concurrent)
+    const CONCURRENCY = 5
+    const allVideos = []
+
+    for (let i = 0; i < queries.length; i += CONCURRENCY) {
+      const batch = queries.slice(i, i + CONCURRENCY)
+      const batchResults = await Promise.allSettled(
+        batch.map(q => this._fetchPlaylist(q, 3).catch(() => []))
+      )
+      for (const result of batchResults) {
+        if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+          allVideos.push(...result.value)
+        }
+      }
+      // Stop early if we have enough
+      if (allVideos.length >= limit) break
+    }
+
+    // Dedupe by video ID, shuffle, and cap at limit
+    const seen = new Set()
+    const deduped = allVideos.filter(v => {
+      if (seen.has(v.id)) return false
+      seen.add(v.id)
+      return true
+    })
+
+    // Shuffle so it's not just the first N channels dominating
+    for (let i = deduped.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [deduped[i], deduped[j]] = [deduped[j], deduped[i]]
+    }
+
+    const results = deduped.slice(0, limit)
+    // Tag every video so the frontend knows this is fallback data
+    return results.map(v => ({ ...v, _fallback: 'channel-cache' }))
   }
 
   // Convert social feed URLs (that require auth) to yt-dlp search queries

@@ -22,24 +22,24 @@ export class SourceAdapter {
   }
 
   // Discovery methods (finding new content)
-  async search(query, options = {}) {
+  async search(query, _options = {}) {
     throw new Error(`${this.name}: search() not implemented`)
   }
 
-  async fetchCategory(categoryUrl, options = {}) {
+  async fetchCategory(categoryUrl, _options = {}) {
     throw new Error(`${this.name}: fetchCategory() not implemented`)
   }
 
-  async fetchTrending(options = {}) {
+  async fetchTrending(_options = {}) {
     throw new Error(`${this.name}: fetchTrending() not implemented`)
   }
 
   // Extraction methods (getting details for a known URL)
-  async extractMetadata(url) {
+  async extractMetadata(_url) {
     throw new Error(`${this.name}: extractMetadata() not implemented`)
   }
 
-  async getStreamUrl(url) {
+  async getStreamUrl(_url) {
     throw new Error(`${this.name}: getStreamUrl() not implemented`)
   }
 
@@ -56,7 +56,7 @@ export class SourceAdapter {
       id: raw.id || randomUUID(),
       url: raw.webpage_url || raw.url || '',
       title: raw.title || 'Untitled',
-      thumbnail: raw.thumbnail || raw.thumbnails?.[0]?.url || '',
+      thumbnail: raw.thumbnails?.at(-1)?.url || raw.thumbnail || '',
       duration: raw.duration || 0,
       source: raw.extractor || raw.source || this.name,
       uploader: raw.uploader || raw.channel || raw.creator || '',

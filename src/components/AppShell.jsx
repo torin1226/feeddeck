@@ -6,6 +6,7 @@ import useDeviceStore from '../stores/deviceStore'
 import useModeStore from '../stores/modeStore'
 import ErrorBoundary from './ErrorBoundary'
 import FloatingQueue from './FloatingQueue'
+import GlobalToast from './GlobalToast'
 import OfflineBanner from './OfflineBanner'
 
 // Code-split route-level pages for smaller initial bundle
@@ -13,6 +14,7 @@ const HomePage = lazy(() => import('../pages/HomePage'))
 const LibraryPage = lazy(() => import('../pages/LibraryPage'))
 const FeedPage = lazy(() => import('../pages/FeedPage'))
 const SettingsPage = lazy(() => import('../pages/SettingsPage'))
+const VideoDetailPage = lazy(() => import('../pages/VideoDetailPage'))
 
 // ============================================================
 // AppShell
@@ -52,7 +54,8 @@ export default function AppShell() {
       {/* Skip navigation link for keyboard users */}
       <a href="#main-content" className="skip-nav">Skip to main content</a>
 
-      <main id="main-content">
+      <main id="main-content" role="main">
+        <h1 className="absolute w-px h-px overflow-hidden" style={{ clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0 }}>FeedDeck</h1>
         <Suspense fallback={
           <div className="h-screen w-full flex items-center justify-center bg-surface">
             <div className="w-8 h-8 border-2 border-text-muted border-t-text-primary rounded-full animate-spin" />
@@ -63,12 +66,14 @@ export default function AppShell() {
             <Route path="/library" element={<ErrorBoundary name="Library"><LibraryPage /></ErrorBoundary>} />
             <Route path="/feed" element={<ErrorBoundary name="Feed"><FeedPage /></ErrorBoundary>} />
             <Route path="/settings" element={<ErrorBoundary name="Settings"><SettingsPage /></ErrorBoundary>} />
+            <Route path="/video/:id" element={<ErrorBoundary name="Video"><VideoDetailPage /></ErrorBoundary>} />
           </Routes>
         </Suspense>
       </main>
 
       {/* Global overlays — hide FloatingQueue on feed (immersive) */}
       {!isFeed && <FloatingQueue />}
+      <GlobalToast />
       <OfflineBanner />
     </>
   )
@@ -108,10 +113,9 @@ export default function AppShell() {
             : 'bg-surface-overlay border border-surface-border text-text-secondary hover:text-text-primary hover:border-text-muted'
           }`}
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="7" y="2" width="10" height="20" rx="2" />
-          <line x1="12" y1="18" x2="12" y2="18.01" strokeWidth="3" />
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+          <line x1="12" y1="18" x2="12" y2="18" />
         </svg>
       </button>}
     </>

@@ -4,17 +4,16 @@ import useModeStore from '../stores/modeStore'
 import useFeedStore from '../stores/feedStore'
 import HomeHeader from '../components/home/HomeHeader'
 import HeroSection from '../components/home/HeroSection'
-import FeaturedSection from '../components/home/FeaturedSection'
-import CategoryRows from '../components/home/CategoryRows'
+import GalleryShelf from '../components/home/GalleryShelf'
+import BrowseSection from '../components/home/BrowseSection'
 import TheatreControls from '../components/home/TheatreControls'
-import { SkeletonHero, SkeletonFeatured, SkeletonCategoryRow } from '../components/Skeletons'
+import { SkeletonHero, SkeletonGalleryShelf } from '../components/Skeletons'
 
 // ============================================================
 // HomePage
-// Main landing page with hero, featured carousel, and category
-// rows. Fetches real data from backend on mount, falls back to
-// placeholders if the cache is empty.
-// In theatre mode, FeaturedSection and CategoryRows are hidden.
+// Main landing page with hero (100vh) and three curated browse
+// rows using theatre-size cards with parallax scrolling.
+// In theatre mode, BrowseSection is hidden.
 // ============================================================
 
 export default function HomePage() {
@@ -47,7 +46,7 @@ export default function HomePage() {
       {/* Server-unreachable banner */}
       {fetchError && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-modal px-4 py-2 rounded-full bg-amber-900/80 backdrop-blur text-amber-200 text-xs font-medium flex items-center gap-2">
-          <span>⚠</span>
+          <span>&#9888;</span>
           <span>{fetchError}</span>
           <button
             onClick={() => fetchHomepage(isSFW ? 'social' : 'nsfw')}
@@ -61,18 +60,18 @@ export default function HomePage() {
       {loading ? (
         <>
           <SkeletonHero />
-          <SkeletonFeatured />
-          <SkeletonCategoryRow />
-          <SkeletonCategoryRow />
+          <SkeletonGalleryShelf />
         </>
       ) : (
         <>
           <HeroSection />
           {!theatreMode && (
-            <div className="relative z-content">
-              <FeaturedSection />
-              <CategoryRows />
-            </div>
+            <>
+              <div className="relative z-content pb-24">
+                <GalleryShelf />
+                <BrowseSection />
+              </div>
+            </>
           )}
           <TheatreControls />
         </>

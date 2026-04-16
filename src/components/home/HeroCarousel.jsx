@@ -5,16 +5,19 @@ import useModeStore from '../../stores/modeStore'
 // ============================================================
 // HeroCarousel
 // Horizontal scroll strip of cards at the bottom of the hero.
-// Includes search bar with 380ms debounce.
+// Includes search bar with 380ms debounce and infinite scroll
+// via IntersectionObserver on a sentinel element.
 // ============================================================
 
 export default function HeroCarousel() {
   const { carouselItems, heroItem, setHeroItem } = useHomeStore()
   const scrollRef = useRef(null)
+  const sentinelRef = useRef(null)
   const [query, setQuery] = useState('')
   const [searchResults, setSearchResults] = useState(null)
   const [savedItems, setSavedItems] = useState(null)
   const searchTimer = useRef(null)
+  const [loadingMore, setLoadingMore] = useState(false)
 
   const displayItems = searchResults || carouselItems
   const activeId = heroItem?.id
@@ -91,6 +94,46 @@ export default function HeroCarousel() {
     if (active) active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
   }, [activeId])
 
+  // Infinite scroll: load more when sentinel is visible
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel || searchResults) return
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !loadingMore) {
+          setLoadingMore(true)
+          const mode = useModeStore.getState().isSFW ? 'social' : 'nsfw'
+          fetch(`/api/homepage/more?mode=${mode}&offset=${carouselItems.length}&limit=12`)
+            .then((r) => r.ok ? r.json() : Promise.reject())
+            .then((data) => {
+              const newItems = (data.videos || []).map((v) => ({
+                id: v.id || v.url,
+                url: v.url,
+                title: v.title,
+                thumbnail: v.thumbnail,
+                thumbnailSm: v.thumbnail,
+                duration: v.durationFormatted || '',
+                views: v.view_count ? `${Math.floor(v.view_count / 1000)}K` : '',
+                uploader: v.uploader || v.source || '',
+              }))
+              if (newItems.length > 0) {
+                useHomeStore.setState((s) => ({
+                  carouselItems: [...s.carouselItems, ...newItems],
+                }))
+              }
+            })
+            .catch(() => {})
+            .finally(() => setLoadingMore(false))
+        }
+      },
+      { root: scrollRef.current, rootMargin: '0px 200px 0px 0px' }
+    )
+
+    obs.observe(sentinel)
+    return () => obs.disconnect()
+  }, [carouselItems.length, searchResults, loadingMore])
+
   return (
     <div>
       {/* Search row */}
@@ -161,22 +204,15 @@ export default function HeroCarousel() {
           />
         ))}
 
-        {/* Load more ghost card */}
+        {/* Infinite scroll sentinel */}
         {!searchResults && (
           <div
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); } }}
-            onClick={() => {
-              // In real app, this would load more. For now, noop.
-            }}
-            className="flex-none w-card-lg h-card-thumb-lg rounded-lg flex items-center justify-center
-              flex-col gap-1.5 bg-raised border border-dashed border-surface-border
-              text-text-muted text-caption font-medium cursor-pointer
-              hover:bg-overlay hover:text-text-secondary transition-all"
+            ref={sentinelRef}
+            className="flex-none w-16 h-card-thumb-lg flex items-center justify-center"
           >
-            <span className="text-xl">+</span>
-            <span>Load more</span>
+            {loadingMore && (
+              <div className="w-5 h-5 border-2 border-text-muted/30 border-t-accent rounded-full animate-spin" />
+            )}
           </div>
         )}
       </div>

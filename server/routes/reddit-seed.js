@@ -12,9 +12,8 @@
  * 3. Add multer middleware for zip upload support
  */
 
-import { processRedditExport, seedTagPreferences } from '../scripts/process-reddit-export.js';
-import { existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { processRedditExport } from '../scripts/process-reddit-export.js';
+import { existsSync } from 'fs';
 
 /**
  * SSE endpoint for Reddit seed (matches existing seed pattern)
@@ -91,7 +90,7 @@ export function handleRedditSeed(req, res, db) {
     const skipped = [];
 
     const insertMany = db.transaction((tags) => {
-      for (const { tag, score } of tags) {
+      for (const { tag, score: _score } of tags) {
         const normalized = tag.trim().toLowerCase();
         if (existing.has(normalized)) {
           skipped.push(normalized);

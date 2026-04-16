@@ -1,19 +1,21 @@
 import { useEffect, useRef, useCallback, useState, lazy, Suspense } from 'react'
+import { useNavigate } from 'react-router-dom'
 import useFeedStore from '../stores/feedStore'
-import useDesktopBreakpoint from '../hooks/useDesktopBreakpoint'
-
-const ForYouFeed = lazy(() => import('../components/feed/ForYouFeed'))
-const RemixFeed = lazy(() => import('../components/feed/RemixFeed'))
 import useModeStore from '../stores/modeStore'
+import useDesktopBreakpoint from '../hooks/useDesktopBreakpoint'
 import useFeedGestures from '../hooks/useFeedGestures'
 import FeedVideo from '../components/feed/FeedVideo'
 import FeedToast from '../components/feed/FeedToast'
 import HeartBurst from '../components/feed/HeartBurst'
 import SourceControlSheet from '../components/feed/SourceControlSheet'
-import { useNavigate } from 'react-router-dom'
 import FeedBottomNav from '../components/feed/FeedBottomNav'
 import FeedFilterSheet from '../components/feed/FeedFilterSheet'
+import CookieFallbackBanner from '../components/feed/CookieFallbackBanner'
+import { SkeletonCard } from '../components/Skeletons'
 // QueueSwipeAnimation removed — swipe-to-queue gesture replaced by explicit button
+
+const ForYouFeed = lazy(() => import('../components/feed/ForYouFeed'))
+const RemixFeed = lazy(() => import('../components/feed/RemixFeed'))
 
 // ============================================================
 // FeedPage
@@ -34,7 +36,6 @@ export default function FeedPage() {
   const [hearts, setHearts] = useState([])
   const [sourceSheet, setSourceSheet] = useState(null)
 
-
   const navigate = useNavigate()
   const isDesktop = useDesktopBreakpoint()
   const feedView = useFeedStore(s => s.feedView)
@@ -45,6 +46,18 @@ export default function FeedPage() {
   const [filterOpen, setFilterOpen] = useState(false)
   const filters = useFeedStore(s => s.filters)
   const hasActiveFilters = (filters.sources?.length > 0) || (filters.tags?.length > 0)
+
+  // Sources count for context-aware empty state
+  const [sourcesCount, setSourcesCount] = useState(null)
+  useEffect(() => {
+    fetch('/api/sources/list')
+      .then(r => r.json())
+      .then(data => {
+        const sources = Array.isArray(data) ? data : (data.sources || [])
+        setSourcesCount(sources.length)
+      })
+      .catch(() => setSourcesCount(0))
+  }, [])
 
   // Pull-to-refresh state
   const [refreshing, setRefreshing] = useState(false)
@@ -362,18 +375,36 @@ export default function FeedPage() {
   }
 
   if (initialized && buffer.length === 0) {
+    const noSources = sourcesCount !== null && sourcesCount === 0
     return (
       <div className="h-dvh w-full bg-black flex flex-col items-center justify-center gap-3">
-        <div className="text-2xl">📡</div>
-        <div className="text-text-muted text-sm font-medium">No videos in feed yet</div>
-        <div className="text-text-muted/60 text-xs max-w-[240px] text-center">Add your first source to start discovering videos</div>
+        <div className="text-2xl">{noSources ? '⚙' : '📡'}</div>
+        <div className="text-text-muted text-sm font-medium">
+          {noSources
+            ? 'Add sources in Settings to start your feed'
+            : 'No videos match your current filters'}
+        </div>
+        {!noSources && (
+          <div className="text-text-muted/60 text-xs max-w-[260px] text-center">
+            Try adjusting your source or tag filters.
+          </div>
+        )}
         <div className="flex gap-2 mt-4">
-          <button
-            onClick={() => { import('react-router-dom').then(m => m.default || m).catch(() => {}); window.location.href = '/settings' }}
-            className="px-4 py-2 rounded-full bg-accent text-white text-sm font-medium"
-          >
-            Add Sources
-          </button>
+          {noSources ? (
+            <button
+              onClick={() => navigate('/settings')}
+              className="px-4 py-2 rounded-full bg-accent text-white text-sm font-medium"
+            >
+              Go to Settings
+            </button>
+          ) : (
+            <button
+              onClick={() => navigate('/settings')}
+              className="px-4 py-2 rounded-full bg-accent text-white text-sm font-medium"
+            >
+              Manage Sources
+            </button>
+          )}
           <button
             onClick={() => { useModeStore.getState().toggleMode(); resetFeed(); setTimeout(() => initFeed(), 100) }}
             className="px-4 py-2 rounded-full bg-white/10 text-white text-sm border border-white/20"
@@ -405,8 +436,12 @@ export default function FeedPage() {
         ))}
 
         {loading && (
-          <div className="h-dvh w-full snap-start flex items-center justify-center bg-black">
-            <div className="text-text-muted text-sm animate-pulse">Loading more...</div>
+          <div className="h-dvh w-full snap-start flex flex-col items-center justify-center bg-black gap-6 px-8">
+            {[0, 1].map(i => (
+              <div key={i} className="w-full max-w-sm">
+                <SkeletonCard />
+              </div>
+            ))}
           </div>
         )}
 
@@ -417,6 +452,9 @@ export default function FeedPage() {
           </div>
         )}
       </div>
+
+      {/* Cookie fallback warning */}
+      <CookieFallbackBanner />
 
       {/* Filter button (top-left) */}
       {(!immersive || overlayVisible) && !theatreMode && (
@@ -494,55 +532,32 @@ export default function FeedPage() {
 
       {/* Pull-to-refresh indicator */}
       {refreshing && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-toast px-4 py-2 rounded-full
-          bg-white/15 backdrop-blur-lg border border-white/20 text-white text-sm">
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            Refreshing...
-          </div>
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-toast px-4 py-2 rounded-full bg-black/40 backdrop-blur-lg border border-white/20 text-white text-xs font-medium">
+          Refreshing...
         </div>
       )}
 
       {/* Toast notifications */}
       {toast && (
-        <FeedToast
-          key={toast.id}
-          message={toast.message}
-          onDone={() => setToast(null)}
-        />
+        <FeedToast message={toast} onDismiss={() => setToast(null)} />
       )}
 
-      {/* Heart burst animations */}
-      {hearts.map(h => (
-        <HeartBurst
-          key={h.id}
-          x={h.x}
-          y={h.y}
-          onDone={() => setHearts(prev => prev.filter(p => p.id !== h.id))}
-        />
-      ))}
+      {/* Heart burst animation */}
+      {hearts.length > 0 && (
+        <HeartBurst hearts={hearts} onComplete={() => setHearts([])} />
+      )}
 
       {/* Bottom navigation */}
-      <FeedBottomNav hidden={navHidden || (immersive && !overlayVisible) || theatreMode} onFilterOpen={() => setFilterOpen(true)} />
-
-      {/* Source control sheet (long-press) */}
-      {sourceSheet && (
-        <SourceControlSheet
-          video={sourceSheet}
-          onClose={(action) => {
-            if (action === 'hide') {
-              setToast({ id: Date.now(), message: 'Source hidden' })
-            } else if (action === 'boost') {
-              setToast({ id: Date.now(), message: 'Showing more from this source' })
-            }
-            setSourceSheet(null)
-          }}
-        />
+      {(!immersive || overlayVisible) && !theatreMode && (
+        <FeedBottomNav navHidden={navHidden} />
       )}
 
       {/* Filter sheet */}
-      {filterOpen && (
-        <FeedFilterSheet onClose={() => setFilterOpen(false)} />
+      <FeedFilterSheet open={filterOpen} onOpenChange={setFilterOpen} />
+
+      {/* Source control sheet */}
+      {sourceSheet && (
+        <SourceControlSheet video={sourceSheet} onClose={() => setSourceSheet(null)} />
       )}
     </>
   )

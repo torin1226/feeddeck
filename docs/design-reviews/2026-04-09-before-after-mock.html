@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FeedDeck Accessibility Fixes — Before/After</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: #0a0a0c; color: #e5e5e5; padding: 40px; }
+  h1 { font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 28px; margin-bottom: 8px; }
+  .subtitle { color: #a1a1a6; font-size: 14px; margin-bottom: 48px; }
+  .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-bottom: 64px; }
+  .panel { background: #111113; border-radius: 14px; padding: 24px; border: 1px solid #2a2a2e; }
+  .panel-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; padding: 4px 10px; border-radius: 9999px; display: inline-block; }
+  .before .panel-label { background: #3f1219; color: #fca5a5; }
+  .after .panel-label { background: #052e16; color: #86efac; }
+  .section-title { font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 18px; margin-bottom: 6px; color: #e5e5e5; }
+  .section-desc { font-size: 13px; color: #a1a1a6; margin-bottom: 24px; }
+  .callout { font-size: 12px; padding: 12px 16px; border-radius: 10px; margin-top: 16px; line-height: 1.5; }
+  .callout-bad { background: #1c1215; border: 1px solid #5c2132; color: #fca5a5; }
+  .callout-good { background: #0c1a12; border: 1px solid #1a5c32; color: #86efac; }
+
+  /* Context Menu Mock */
+  .ctx-menu { background: #1c1c1f; border-radius: 10px; padding: 6px; width: 260px; box-shadow: 0 24px 64px rgba(0,0,0,0.7); }
+  .ctx-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: 6px; font-size: 13px; }
+  .ctx-item:hover { background: rgba(255,255,255,0.06); }
+  .ctx-icon { margin-right: 10px; font-size: 14px; }
+  .ctx-shortcut-before { color: rgba(255,255,255,0.5); font-size: 12px; }
+  .ctx-shortcut-after { color: #a1a1aa; font-size: 12px; }
+  .ctx-sep { height: 1px; background: #2a2a2e; margin: 4px 12px; }
+
+  /* Focus Ring Demo */
+  .input-demo { width: 100%; padding: 10px 14px 10px 36px; border-radius: 8px; font-size: 13px; border: 1px solid #2a2a2e; background: #1c1c1f; color: #e5e5e5; }
+  .input-demo::placeholder { color: rgba(255,255,255,0.3); }
+  .input-no-focus { outline: none; }
+  .input-focus-visible { outline: 2px solid rgba(244, 63, 94, 0.5); outline-offset: 2px; border-radius: 8px; }
+  .input-wrapper { position: relative; margin-bottom: 16px; }
+  .input-wrapper .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: rgba(255,255,255,0.3); font-size: 14px; }
+
+  /* Filter Labels */
+  .filter-label-before { color: rgba(255,255,255,0.4); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+  .filter-label-after { color: #a1a1aa; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+  .filter-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { padding: 6px 14px; border-radius: 9999px; font-size: 12px; border: 1px solid #2a2a2e; background: transparent; color: #e5e5e5; }
+  .chip.active { background: #f43f5e; border-color: #f43f5e; }
+
+  /* Queue Item */
+  .queue-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; background: #1c1c1f; margin-bottom: 6px; position: relative; }
+  .queue-grip { color: #52525b; font-size: 16px; }
+  .queue-thumb { width: 64px; height: 36px; background: #2a2a2e; border-radius: 4px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #52525b; }
+  .queue-title { font-size: 13px; color: #e5e5e5; flex: 1; }
+  .queue-remove { width: 24px; height: 24px; border-radius: 50%; background: rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: center; font-size: 12px; color: #a1a1aa; cursor: pointer; }
+  .queue-remove-hidden { opacity: 0; }
+  .queue-remove-visible { opacity: 1; }
+  .focus-ring { outline: 2px solid rgba(244, 63, 94, 0.5); outline-offset: 2px; border-radius: 8px; }
+
+  /* Card Button */
+  .card-mock { width: 180px; background: #1c1c1f; border-radius: 10px; overflow: hidden; }
+  .card-thumb-mock { height: 100px; background: #2a2a2e; display: flex; align-items: center; justify-content: center; color: #52525b; font-size: 12px; position: relative; }
+  .card-duration { position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.8); padding: 2px 6px; border-radius: 4px; font-size: 10px; color: #e5e5e5; }
+  .card-info { padding: 10px; }
+  .card-info-title { font-size: 13px; color: #e5e5e5; margin-bottom: 2px; }
+  .card-info-meta { font-size: 11px; color: #a1a1a6; }
+  .sr-label { background: #1e1b4b; color: #a5b4fc; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-family: monospace; margin-top: 8px; display: inline-block; }
+
+  .anno { font-size: 11px; color: #f59e0b; margin-top: 6px; }
+  .ratio-fail { color: #ef4444; font-weight: 600; }
+  .ratio-pass { color: #22c55e; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>FeedDeck — Accessibility Fixes: Before & After</h1>
+<p class="subtitle">Run 6 Design Review — April 9, 2026 — Focus areas: contrast, focus indicators, ARIA semantics, keyboard access</p>
+
+<!-- 1. Context Menu Contrast -->
+<h2 class="section-title">1. Context Menu — Text Contrast</h2>
+<p class="section-desc">Keyboard shortcuts use white at 50% opacity. Below WCAG AA threshold of 4.5:1.</p>
+<div class="comparison">
+  <div class="panel before">
+    <span class="panel-label">Before</span>
+    <div class="ctx-menu">
+      <div class="ctx-item"><span><span class="ctx-icon">+</span>Add to Queue</span><span class="ctx-shortcut-before">Ctrl+Q</span></div>
+      <div class="ctx-item"><span><span class="ctx-icon">▶</span>Play Now</span><span class="ctx-shortcut-before">Enter</span></div>
+      <div class="ctx-item"><span><span class="ctx-icon">♥</span>Like</span><span class="ctx-shortcut-before">Ctrl+L</span></div>
+      <div class="ctx-item"><span><span class="ctx-icon">⏱</span>Watch Later</span><span class="ctx-shortcut-before">Ctrl+W</span></div>
+      <div class="ctx-sep"></div>
+      <div class="ctx-item"><span>Share...</span></div>
+      <div class="ctx-item" style="color:#ef4444;"><span>Remove</span></div>
+    </div>
+    <div class="callout callout-bad">
+      Shortcuts: rgba(255,255,255,0.5) on #1c1c1f<br>
+      Contrast ratio: <span class="ratio-fail">~4.0:1 — FAILS AA</span>
+    </div>
+  </div>
+  <div class="panel after">
+    <span class="panel-label">After</span>
+    <div class="ctx-menu">
+      <div class="ctx-item"><span><span class="ctx-icon">+</span>Add to Queue</span><span class="ctx-shortcut-after">Ctrl+Q</span></div>
+      <div class="ctx-item"><span><span class="ctx-icon">▶</span>Play Now</span><span class="ctx-shortcut-after">Enter</span></div>
+      <div class="ctx-item"><span><span class="ctx-icon">♥</span>Like</span><span class="ctx-shortcut-after">Ctrl+L</span></div>
+      <div class="ctx-item"><span><span class="ctx-icon">⏱</span>Watch Later</span><span class="ctx-shortcut-after">Ctrl+W</span></div>
+      <div class="ctx-sep"></div>
+      <div class="ctx-item"><span>Share...</span></div>
+      <div class="ctx-item" style="color:#ef4444;"><span>Remove</span></div>
+    </div>
+    <div class="callout callout-good">
+      Shortcuts: solid #a1a1aa on #1c1c1f<br>
+      Contrast ratio: <span class="ratio-pass">7.0:1 — PASSES AA</span><br>
+      Icons get aria-hidden="true"
+    </div>
+  </div>
+</div>
+
+<!-- 2. Filter Sheet Focus + Contrast -->
+<h2 class="section-title">2. Feed Filter Sheet — Focus Ring + Label Contrast</h2>
+<p class="section-desc">Search input has no visible focus indicator. Category labels fail contrast.</p>
+<div class="comparison">
+  <div class="panel before">
+    <span class="panel-label">Before</span>
+    <div class="input-wrapper">
+      <span class="search-icon">🔍</span>
+      <input class="input-demo input-no-focus" placeholder="Search sources..." readonly>
+    </div>
+    <p class="anno">↑ Tab here — no visible focus ring</p>
+    <div style="margin-top: 20px;">
+      <div class="filter-label-before">Categories</div>
+      <div class="filter-chips">
+        <span class="chip active">Design</span>
+        <span class="chip">Tech</span>
+        <span class="chip">Culture</span>
+      </div>
+    </div>
+    <div class="callout callout-bad">
+      Input: outline-none, no focus-visible fallback<br>
+      Labels: rgba(255,255,255,0.4) → <span class="ratio-fail">~3.1:1 FAILS AA</span>
+    </div>
+  </div>
+  <div class="panel after">
+    <span class="panel-label">After</span>
+    <div class="input-wrapper">
+      <span class="search-icon">🔍</span>
+      <input class="input-demo input-focus-visible" placeholder="Search sources..." readonly>
+    </div>
+    <p class="anno">↑ Rose focus ring visible on keyboard tab</p>
+    <div style="margin-top: 20px;">
+      <div class="filter-label-after">Categories</div>
+      <div class="filter-chips">
+        <span class="chip active">Design</span>
+        <span class="chip">Tech</span>
+        <span class="chip">Culture</span>
+      </div>
+    </div>
+    <div class="callout callout-good">
+      Input: focus-visible:outline with rose ring<br>
+      Labels: solid #a1a1aa → <span class="ratio-pass">7.0:1 PASSES AA</span><br>
+      Panel gets role="dialog" aria-modal="true"
+    </div>
+  </div>
+</div>
+
+<!-- 3. Queue Remove Button -->
+<h2 class="section-title">3. Queue Sidebar — Hidden Remove Buttons</h2>
+<p class="section-desc">Remove buttons only appear on hover. Keyboard users who tab to them see nothing.</p>
+<div class="comparison">
+  <div class="panel before">
+    <span class="panel-label">Before</span>
+    <div style="width: 300px;">
+      <div class="queue-item">
+        <span class="queue-grip">☰</span>
+        <div class="queue-thumb">16:9</div>
+        <span class="queue-title">Design Systems at Scale</span>
+        <span class="queue-remove queue-remove-hidden">✕</span>
+      </div>
+      <div class="queue-item focus-ring">
+        <span class="queue-grip">☰</span>
+        <div class="queue-thumb">16:9</div>
+        <span class="queue-title">Advanced CSS Grid</span>
+        <span class="queue-remove queue-remove-hidden">✕</span>
+      </div>
+      <div class="queue-item">
+        <span class="queue-grip">☰</span>
+        <div class="queue-thumb">16:9</div>
+        <span class="queue-title">React Server Components</span>
+        <span class="queue-remove queue-remove-hidden">✕</span>
+      </div>
+    </div>
+    <div class="callout callout-bad">
+      ✕ button: opacity-0, only group-hover:opacity-100<br>
+      Keyboard focus on row → <span class="ratio-fail">button invisible</span>
+    </div>
+  </div>
+  <div class="panel after">
+    <span class="panel-label">After</span>
+    <div style="width: 300px;">
+      <div class="queue-item">
+        <span class="queue-grip">☰</span>
+        <div class="queue-thumb">16:9</div>
+        <span class="queue-title">Design Systems at Scale</span>
+        <span class="queue-remove queue-remove-hidden">✕</span>
+      </div>
+      <div class="queue-item focus-ring">
+        <span class="queue-grip">☰</span>
+        <div class="queue-thumb">16:9</div>
+        <span class="queue-title">Advanced CSS Grid</span>
+        <span class="queue-remove queue-remove-visible">✕</span>
+      </div>
+      <div class="queue-item">
+        <span class="queue-grip">☰</span>
+        <div class="queue-thumb">16:9</div>
+        <span class="queue-title">React Server Components</span>
+        <span class="queue-remove queue-remove-hidden">✕</span>
+      </div>
+    </div>
+    <div class="callout callout-good">
+      ✕ button: group-focus-within:opacity-100 added<br>
+      Keyboard focus on row → <span class="ratio-pass">button visible</span>
+    </div>
+  </div>
+</div>
+
+<!-- 4. Card Accessible Name -->
+<h2 class="section-title">4. Video Cards — Screen Reader Announcement</h2>
+<p class="section-desc">Cards have role="button" but no accessible name. Screen readers say "button" with no context.</p>
+<div class="comparison">
+  <div class="panel before">
+    <span class="panel-label">Before</span>
+    <div class="card-mock">
+      <div class="card-thumb-mock">
+        <span>▶</span>
+        <span class="card-duration">12:30</span>
+      </div>
+      <div class="card-info">
+        <div class="card-info-title">Figma Auto Layout</div>
+        <div class="card-info-meta">Design · 42K views</div>
+      </div>
+    </div>
+    <div class="sr-label">Screen reader: "button"</div>
+    <div class="callout callout-bad">
+      div has role="button" tabIndex={0}<br>
+      Image has alt={title} but it doesn't propagate<br>
+      <span class="ratio-fail">No accessible name on button element</span>
+    </div>
+  </div>
+  <div class="panel after">
+    <span class="panel-label">After</span>
+    <div class="card-mock">
+      <div class="card-thumb-mock">
+        <span>▶</span>
+        <span class="card-duration">12:30</span>
+      </div>
+      <div class="card-info">
+        <div class="card-info-title">Figma Auto Layout</div>
+        <div class="card-info-meta">Design · 42K views</div>
+      </div>
+    </div>
+    <div class="sr-label">Screen reader: "Figma Auto Layout, button"</div>
+    <div class="callout callout-good">
+      aria-label={item.title} added to role="button" div<br>
+      <span class="ratio-pass">Clear, descriptive announcement</span>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top: 64px; padding-top: 32px; border-top: 1px solid #2a2a2e;">
+  <p style="color: #52525b; font-size: 12px;">FeedDeck Design Review Run 6 — Accessibility Deep Dive — Generated 2026-04-09</p>
+</div>
+
+</body>
+</html>

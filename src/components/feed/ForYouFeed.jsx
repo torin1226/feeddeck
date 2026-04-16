@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
 import useFeedStore from '../../stores/feedStore'
 import ForYouSlot from './ForYouSlot'
 import TheatreOverlay from './TheatreOverlay'

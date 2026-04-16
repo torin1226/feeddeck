@@ -67,6 +67,11 @@ export default {
         'modal': '0 24px 64px rgba(0,0,0,0.7)',
         'glow-accent': '0 0 0 1px #f43f5e, 0 8px 32px rgba(244,63,94,0.25)',
         'inner-subtle': 'inset 0 1px 0 rgba(255,255,255,0.04)',
+        // Glass material shadows — map to CSS custom properties so they
+        // respect both dark and light mode without duplication.
+        'glass': 'var(--glass-shadow)',
+        'glass-glow': 'var(--glass-glow-accent)',
+        'glass-highlight': 'inset 0 1px 0 var(--glass-highlight)',
       },
       // Card corner radius tokens
       borderRadius: {
@@ -107,5 +112,10 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    // Variant for pointer: fine (non-touch devices) — used by CategoryRow nav arrows
+    function({ addVariant }) {
+      addVariant('pointer-fine', '@media (pointer: fine)')
+    },
+  ],
 }

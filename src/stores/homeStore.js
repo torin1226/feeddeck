@@ -18,16 +18,6 @@ const descs = [
   'Nobody prepared them for this. Not a single soul.',
 ]
 const genres = ['Golden Hour', 'Chaos Energy', 'Too Pure', 'Certified Bork', 'Drama Queen']
-const featuredLabels = ['New Release', 'Trending Now', 'Staff Pick', 'Most Viewed', "Editor's Choice", 'Just Added', 'Top Rated']
-const featuredTaglines = [
-  'The one everyone is talking about.',
-  "The one you've been waiting for.",
-  'Handpicked by our editors.',
-  "The internet can't stop watching.",
-  'A once-in-a-season find.',
-  'Fresh off the server.',
-  'Consistently exceptional.',
-]
 
 const rnd = (n) => Math.floor(Math.random() * n)
 const fmtDur = (s) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`
@@ -35,6 +25,56 @@ const fmtViews = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math
 
 let idCounter = 100
 let _fetchVersion = 0 // Guards against nuclearFlush/resetHome racing with fetchHomepage
+
+
+// Parse formatted view strings ("4.2M", "850K", "1200") back to numbers
+const parseViews = (s) => {
+  if (!s) return 0
+  if (s.includes('M')) return parseFloat(s) * 1e6
+  if (s.includes('K')) return parseFloat(s) * 1e3
+  return parseInt(s, 10) || 0
+}
+
+// Generate a personalized row title based on the category's content characteristics
+function personalizeLabel(originalLabel, items, likedTags) {
+  if (!items || items.length === 0) return originalLabel
+
+  // Check if most items are short (<3 min)
+  const shortCount = items.filter(v => v.durationSec > 0 && v.durationSec < 180).length
+  if (shortCount > items.length * 0.6) return 'Quick Hits'
+
+  // Check if most items are long (>20 min)
+  const longCount = items.filter(v => v.durationSec > 1200).length
+  if (longCount > items.length * 0.6) return 'Long Watches'
+
+  // Check if items are very recent (<3 days old)
+  const freshCount = items.filter(v => v.daysAgo <= 3).length
+  if (freshCount > items.length * 0.5) return 'Just Dropped'
+
+  // Check if items strongly match liked tags
+  if (likedTags && likedTags.size > 0) {
+    const matchCount = items.filter(v =>
+      (v.tags || []).some(t => likedTags.has(t.toLowerCase()))
+    ).length
+    if (matchCount > items.length * 0.5) return 'Picked for You'
+  }
+
+  // Check if most items share an uploader
+  const uploaderCounts = {}
+  for (const v of items) {
+    if (v.uploader) uploaderCounts[v.uploader] = (uploaderCounts[v.uploader] || 0) + 1
+  }
+  const topUploader = Object.entries(uploaderCounts).sort((a, b) => b[1] - a[1])[0]
+  if (topUploader && topUploader[1] > items.length * 0.4) {
+    return `More from ${topUploader[0]}`
+  }
+
+  // Check if most items have high view counts (>500K)
+  const highViewCount = items.filter(v => parseViews(v.views) > 500000).length
+  if (highViewCount > items.length * 0.5) return 'Most Viewed'
+
+  return originalLabel
+}
 
 function makeItem() {
   const seed = idCounter++
@@ -51,6 +91,7 @@ function makeItem() {
     desc: descs[rnd(descs.length)],
     genre: genres[rnd(genres.length)],
     rating: (7 + Math.random() * 2.5).toFixed(1),
+    orient: Math.random() > 0.6 ? 'v' : 'h',
   }
 }
 
@@ -67,12 +108,11 @@ const useHomeStore = create((set, get) => ({
   // Error from last failed homepage fetch (null = no error)
   fetchError: null,
 
-  // Featured carousel
-  featuredItems: [],
-  featuredIndex: 0,
-
   // Category rows
   categories: [],
+
+  // Top 10 (ranked by view count)
+  top10: [],
 
   // Actions
   setHeroItem: (item) => set({ heroItem: item }),
@@ -81,33 +121,15 @@ const useHomeStore = create((set, get) => ({
   startInlinePlay: () => set({ inlinePlay: true, theatreMode: false }),
   stopInlinePlay: () => set({ inlinePlay: false }),
 
-  setFeaturedIndex: (idx) => {
-    const { featuredItems } = get()
-    set({ featuredIndex: Math.max(0, Math.min(featuredItems.length - 1, idx)) })
-  },
-
-  advanceFeatured: () => {
-    const { featuredItems, featuredIndex } = get()
-    set({ featuredIndex: (featuredIndex + 1) % featuredItems.length })
-  },
-
   // Generate placeholder data (fallback when API has no cached content)
   generateData: () => {
     idCounter = 100
     const carouselItems = genItems(24)
 
-    idCounter = 900
-    const featuredItems = genItems(7).map((item, _i) => ({
-      ...item,
-      featuredLabel: featuredLabels[_i % featuredLabels.length],
-      featuredTagline: featuredTaglines[_i % featuredTaglines.length],
-    }))
-
     const categoryDefs = [
-      { label: 'Trending Now', seed: 300 },
-      { label: 'Popular This Week', seed: 420 },
-      { label: 'New Arrivals', seed: 550 },
-      { label: 'Staff Picks', seed: 680 },
+      { label: 'Live Music', seed: 300 },
+      { label: 'My Subscriptions', seed: 420 },
+      { label: 'Trending', seed: 550 },
     ]
     const categories = categoryDefs.map((cat) => {
       idCounter = cat.seed
@@ -117,8 +139,6 @@ const useHomeStore = create((set, get) => ({
     set({
       carouselItems,
       heroItem: carouselItems[0],
-      featuredItems,
-      featuredIndex: 0,
       categories,
     })
   },
@@ -130,9 +150,8 @@ const useHomeStore = create((set, get) => ({
       heroItem: null,
       carouselItems: [],
       theatreMode: false,
-      featuredItems: [],
-      featuredIndex: 0,
       categories: [],
+      top10: [],
     })
   },
 
@@ -140,7 +159,7 @@ const useHomeStore = create((set, get) => ({
   fetchHomepage: async (mode = 'social') => {
     const version = ++_fetchVersion
     // Clear stale content immediately so UI shows loading state
-    set({ heroItem: null, carouselItems: [], categories: [], featuredItems: [], fetchError: null })
+    set({ heroItem: null, carouselItems: [], categories: [], top10: [], fetchError: null })
     try {
       const res = await fetch(`/api/homepage?mode=${mode}`)
       if (version !== _fetchVersion) return // Stale fetch (mode changed or resetHome called)
@@ -164,10 +183,16 @@ const useHomeStore = create((set, get) => ({
         rating: v.rating != null ? Number(v.rating).toFixed(1) : null,
         url: v.url,
         tags: v.tags || [],
+        orient: (v.height && v.width && v.height > v.width) ? 'v' : 'h',
       })
 
       // Collect all videos from all categories for carousel/hero/featured
-      const allVideos = data.categories.flatMap(cat => cat.videos).map(mapVideo)
+      const allVideos = data.categories.flatMap(cat =>
+        cat.videos.map(v => ({
+          ...mapVideo(v),
+          _fromSubscriptions: cat.key === 'social_subscriptions',
+        }))
+      )
 
       if (allVideos.length === 0) {
         // No cached content yet — fall back to placeholders
@@ -175,20 +200,7 @@ const useHomeStore = create((set, get) => ({
         return
       }
 
-      // Hero carousel: first 24 videos (or all if fewer)
-      const carouselItems = allVideos.slice(0, 24)
-
-      // Featured: pick 7 diverse videos, add featured labels
-      const featuredItems = allVideos
-        .filter((_, i) => i % Math.max(1, Math.floor(allVideos.length / 7)) === 0)
-        .slice(0, 7)
-        .map((item, i) => ({
-          ...item,
-          featuredLabel: featuredLabels[i % featuredLabels.length],
-          featuredTagline: featuredTaglines[i % featuredTaglines.length],
-        }))
-
-      // Category rows from API groupings, sorted by tag preferences
+      // Category rows from API groupings
       let categories = data.categories
         .filter(cat => cat.videos.length > 0)
         .map(cat => ({
@@ -196,22 +208,42 @@ const useHomeStore = create((set, get) => ({
           items: cat.videos.map(mapVideo),
         }))
 
-      // Client-side recommendation scoring: boost categories with liked tags
+      // Hero carousel: round-robin sample across categories for diversity
+      const carouselItems = []
+      const carouselIds = new Set()
+      const maxPerCat = Math.ceil(24 / (categories.length || 1))
+      for (let round = 0; round < maxPerCat && carouselItems.length < 24; round++) {
+        for (const cat of categories) {
+          if (round < cat.items.length && carouselItems.length < 24) {
+            carouselItems.push(cat.items[round])
+            carouselIds.add(cat.items[round].id)
+          }
+        }
+      }
+
+      // Remove carousel videos from category rows to avoid duplicates
+      categories = categories.map(cat => ({
+        ...cat,
+        items: cat.items.filter(v => !carouselIds.has(v.id)),
+      }))
+
+      // Client-side recommendation scoring: boost categories with liked tags + personalize titles
+      let likedTags = new Set()
       try {
         const tagRes = await fetch('/api/tags/preferences')
         if (version !== _fetchVersion) return
         if (tagRes.ok) {
           const prefs = await tagRes.json()
-          const liked = new Set((prefs.liked || []).map(t => t.toLowerCase()))
+          likedTags = new Set((prefs.liked || []).map(t => t.toLowerCase()))
           const disliked = new Set((prefs.disliked || []).map(t => t.toLowerCase()))
 
-          if (liked.size > 0 || disliked.size > 0) {
+          if (likedTags.size > 0 || disliked.size > 0) {
             categories = categories.map(cat => {
               let score = 0
               for (const item of cat.items) {
                 for (const tag of (item.tags || [])) {
                   const t = tag.toLowerCase()
-                  if (liked.has(t)) score += 2
+                  if (likedTags.has(t)) score += 2
                   if (disliked.has(t)) score -= 5
                 }
               }
@@ -221,12 +253,36 @@ const useHomeStore = create((set, get) => ({
         }
       } catch { /* non-fatal — categories render in API order */ }
 
+      // Personalize row titles based on content characteristics
+      const usedLabels = new Set()
+      categories = categories.map(cat => {
+        let label = personalizeLabel(cat.label, cat.items, likedTags)
+        // Avoid duplicate personalized labels — fall back to original
+        if (usedLabels.has(label) && label !== cat.label) label = cat.label
+        usedLabels.add(label)
+        return { ...cat, originalLabel: cat.label, label }
+      })
+
+      // Build Top 10 with personalization: tag affinity + subscription boost + view count
+      const top10 = [...allVideos]
+        .map(v => {
+          let score = parseViews(v.views)
+          if (likedTags.size > 0) {
+            const matchCount = (v.tags || []).filter(t => likedTags.has(t.toLowerCase())).length
+            if (matchCount > 0) score *= (1 + matchCount * 0.5)
+          }
+          if (v._fromSubscriptions) score *= 1.3
+          return { ...v, _score: score }
+        })
+        .sort((a, b) => b._score - a._score)
+        .slice(0, 10)
+        .map((v, i) => ({ ...v, rank: i + 1 }))
+
       set({
         carouselItems,
         heroItem: carouselItems[0],
-        featuredItems: featuredItems.length >= 3 ? featuredItems : get().featuredItems,
-        featuredIndex: 0,
         categories: categories.length > 0 ? categories : get().categories,
+        top10: top10.length >= 3 ? top10 : [],
       })
     } catch (err) {
       console.warn('Homepage fetch failed, using placeholders:', err.message)

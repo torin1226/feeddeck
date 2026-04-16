@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import useThemeStore from '../stores/themeStore'
 import useModeStore from '../stores/modeStore'
+import useToastStore from '../stores/toastStore'
 import useViewTransitionNavigate from '../hooks/useViewTransitionNavigate'
+import { getStorageUsage } from '../stores/safeStorage'
 
 const API = '/api'
 
@@ -9,6 +11,7 @@ export default function SettingsPage() {
   const navigate = useViewTransitionNavigate()
   const { theme, toggleTheme } = useThemeStore()
   const { isSFW } = useModeStore()
+  const showToast = useToastStore(s => s.showToast)
   const [sources, setSources] = useState([])
   const [adapterHealth, setAdapterHealth] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -113,29 +116,48 @@ export default function SettingsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ active: !currentActive }),
     })
+    showToast(`Source ${!currentActive ? 'resumed' : 'paused'}`, 'success')
     fetchSources()
   }
 
   const deleteSource = async (domain) => {
     await fetch(`${API}/sources/${domain}`, { method: 'DELETE' })
+    showToast('Source removed', 'success')
     fetchSources()
   }
 
   const addSource = async (e) => {
     e.preventDefault()
     setAddError('')
+
+    // Client-side validation
+    const domain = newSource.domain.trim()
+    if (!domain) { setAddError('Domain is required'); return }
+    if (!/^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/.test(domain)) {
+      setAddError('Invalid domain format (e.g. example.com)')
+      return
+    }
+    if (!newSource.label.trim()) { setAddError('Label is required'); return }
+    if (!newSource.query.trim()) { setAddError('Search query is required'); return }
+
     setAddLoading(true)
     try {
       const res = await fetch(`${API}/sources`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newSource),
+        body: JSON.stringify({
+          ...newSource,
+          domain: newSource.domain.trim(),
+          label: newSource.label.trim(),
+          query: newSource.query.trim(),
+        }),
       })
       const data = await res.json()
       if (!res.ok) {
         setAddError(data.error || 'Failed to add source')
         return
       }
+      showToast(`Source "${data.source?.label || newSource.label}" added`, 'success')
       setNewSource({ domain: '', mode: 'nsfw', label: '', query: '' })
       setShowAdd(false)
       fetchSources()
@@ -159,15 +181,17 @@ export default function SettingsPage() {
     })
     const data = await res.json()
     if (res.ok) {
+      showToast('Cookies imported', 'success')
       fetchSources() // refresh cookie status
     } else {
-      alert(data.error || 'Failed to import cookies')
+      showToast(data.error || 'Failed to import cookies', 'error')
     }
     e.target.value = '' // reset file input
   }
 
   const handleCookieDelete = async (mode) => {
     await fetch(cookieUrl(mode), { method: 'DELETE' })
+    showToast('Cookies removed', 'success')
     fetchSources()
   }
 
@@ -178,12 +202,14 @@ export default function SettingsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tag: newTag.trim(), preference: newTagPref }),
     })
+    showToast(`Tag "${newTag.trim()}" ${newTagPref}`, 'success')
     setNewTag('')
     fetchSources()
   }
 
   const removeTagPref = async (tag) => {
     await fetch(`${API}/tags/preferences/${encodeURIComponent(tag)}`, { method: 'DELETE' })
+    showToast(`Tag "${tag}" removed`, 'success')
     fetchSources()
   }
 
@@ -558,8 +584,78 @@ export default function SettingsPage() {
             </div>
           </section>
         )}
+
+        {/* Storage */}
+        <StorageSection showToast={showToast} />
       </div>
     </div>
+  )
+}
+
+// Storage usage indicator with prune option
+function StorageSection({ showToast }) {
+  const [usage, setUsage] = useState(0)
+  const QUOTA = 5 * 1024 * 1024 // 5MB typical localStorage quota
+
+  useEffect(() => { setUsage(getStorageUsage()) }, [])
+
+  const usageKB = (usage / 1024).toFixed(1)
+  const quotaKB = (QUOTA / 1024).toFixed(0)
+  const pct = Math.min(100, (usage / QUOTA) * 100)
+
+  const pruneOldData = () => {
+    // Only prune library — it's typically the largest store
+    try {
+      const raw = localStorage.getItem('fd-lib')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (parsed?.state?.videos?.length > 100) {
+          // Keep only the 100 most recent videos (by addedAt)
+          const sorted = [...parsed.state.videos].sort((a, b) =>
+            (b.addedAt || '').localeCompare(a.addedAt || '')
+          )
+          parsed.state.videos = sorted.slice(0, 100)
+          localStorage.setItem('fd-lib', JSON.stringify(parsed))
+        }
+      }
+      setUsage(getStorageUsage())
+      showToast('Storage pruned', 'success')
+    } catch (_err) {
+      showToast('Failed to prune storage', 'error')
+    }
+  }
+
+  return (
+    <section>
+      <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-3">Storage</h2>
+      <div className="bg-surface-raised rounded-xl border border-surface-border p-4 space-y-3">
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-text-primary">Local storage usage</span>
+          <span className="text-text-muted">{usageKB} KB / ~{quotaKB} KB</span>
+        </div>
+        <div className="h-2 bg-surface-overlay rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-300 ${
+              pct > 80 ? 'bg-accent' : pct > 50 ? 'bg-amber-500' : 'bg-green-500'
+            }`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        {pct > 50 && (
+          <div className="flex items-center justify-between">
+            <span className="text-text-muted text-xs">
+              {pct > 80 ? 'Storage nearly full. Prune old library entries to free space.' : 'Storage getting full.'}
+            </span>
+            <button
+              onClick={pruneOldData}
+              className="px-3 py-1.5 rounded-lg text-xs border border-surface-border text-text-secondary hover:text-text-primary hover:border-text-muted transition-colors"
+            >
+              Prune old entries
+            </button>
+          </div>
+        )}
+      </div>
+    </section>
   )
 }
 

@@ -4,6 +4,7 @@ import clsx from 'clsx'
 import useModeStore from '../stores/modeStore'
 import useLibraryStore from '../stores/libraryStore'
 import useQueueStore from '../stores/queueStore'
+import useToastStore from '../stores/toastStore'
 
 // ============================================================
 // MobileSwipeView
@@ -16,6 +17,7 @@ export default function MobileSwipeView() {
   const { isSFW, toggleMode } = useModeStore()
   const { videos, toggleFavorite, markWatched } = useLibraryStore()
   const { addToQueue } = useQueueStore()
+  const showToast = useToastStore(s => s.showToast)
 
   const displayVideos = videos
 
@@ -136,7 +138,7 @@ export default function MobileSwipeView() {
               <ActionButton
                 icon="+"
                 label="Queue"
-                onClick={() => addToQueue(current)}
+                onClick={() => { addToQueue(current); showToast('Added to queue') }}
               />
             </div>
           )}

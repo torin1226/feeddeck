@@ -13,9 +13,11 @@ import { safeStorage } from './safeStorage'
 
 const API = '/api'
 
-// Serialize reorder requests to prevent race conditions from rapid drags
-let _reorderInFlight = false
-let _pendingReorder = null
+// Debounce reorder server sync to prevent race conditions from rapid drags.
+// Optimistic changes apply instantly; server sync fires after 300ms of no new drags.
+let _reorderTimer = null
+let _lastConfirmedQueue = null  // Last server-confirmed queue state for rollback
+let _lastConfirmedIndex = -1
 
 // Normalize server queue items to include `url` (alias of `video_url`)
 // and `durationFormatted` (alias of `duration_formatted`) for backwards compat
@@ -152,14 +154,19 @@ const useQueueStore = create(persist((set, get) => ({
 
   // -----------------------------------------------------------
   // Drag reorder: move item from fromIdx to toIdx
+  // Optimistic local reorder applies instantly. Server sync is
+  // debounced (300ms) so rapid drags only send the final order.
+  // On failure, rolls back to last server-confirmed state.
   // -----------------------------------------------------------
-  reorder: async (fromIdx, toIdx) => {
+  reorder: (fromIdx, toIdx) => {
     const { queue, currentIndex } = get()
     if (fromIdx < 0 || fromIdx >= queue.length || toIdx < 0 || toIdx >= queue.length) return
 
-    // Store pre-optimistic state for rollback
-    const prevQueue = queue
-    const prevIndex = currentIndex
+    // Capture server-confirmed state on first drag of a burst
+    if (!_reorderTimer) {
+      _lastConfirmedQueue = queue
+      _lastConfirmedIndex = currentIndex
+    }
 
     // Optimistic local reorder
     const next = [...queue]
@@ -175,52 +182,33 @@ const useQueueStore = create(persist((set, get) => ({
 
     set({ queue: next, currentIndex: newIndex })
 
-    // Serialize reorder requests to prevent race conditions
-    if (_reorderInFlight) {
-      _pendingReorder = { order: next.map(item => item.id), prevQueue, prevIndex }
-      return
-    }
-
-    _reorderInFlight = true
-    try {
-      const res = await fetch(`${API}/queue`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order: next.map(item => item.id) }),
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data = await res.json()
-      set({ queue: normalizeQueue(data.queue) || next, online: true, lastSynced: Date.now() })
-    } catch {
-      set({ queue: prevQueue, currentIndex: prevIndex, online: false })
-    } finally {
-      _reorderInFlight = false
-    }
-
-    // Process any pending reorder that came in while we were syncing
-    if (_pendingReorder) {
-      const pending = _pendingReorder
-      _pendingReorder = null
-      _reorderInFlight = true
+    // Debounce server sync — only fires after 300ms of no new reorders
+    clearTimeout(_reorderTimer)
+    _reorderTimer = setTimeout(async () => {
+      _reorderTimer = null
+      const { queue: finalQueue } = get()
       try {
         const res = await fetch(`${API}/queue`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ order: pending.order }),
+          body: JSON.stringify({ order: finalQueue.map(item => item.id) }),
         })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
-        set({ queue: normalizeQueue(data.queue), online: true, lastSynced: Date.now() })
+        _lastConfirmedQueue = normalizeQueue(data.queue)
+        _lastConfirmedIndex = get().currentIndex
+        set({ queue: _lastConfirmedQueue, online: true, lastSynced: Date.now() })
       } catch {
-        set({ queue: pending.prevQueue, currentIndex: pending.prevIndex, online: false })
-      } finally {
-        _reorderInFlight = false
+        // Rollback to last server-confirmed state
+        set({ queue: _lastConfirmedQueue, currentIndex: _lastConfirmedIndex, online: false })
       }
-    }
+    }, 300)
   },
 
   // -----------------------------------------------------------
   // Advance to next item in queue (auto-advance on video end)
+  // Uses local queue first, then syncs with server in background
+  // to handle server restarts where queue may have been lost.
   // -----------------------------------------------------------
   advance: () => {
     const { queue, currentIndex } = get()
@@ -230,6 +218,11 @@ const useQueueStore = create(persist((set, get) => ({
       // Validate item has a URL before advancing
       if (!nextItem?.url && !nextItem?.video_url) return null
       set({ currentIndex: nextIndex })
+      // Background sync: re-fetch queue from server to catch restarts.
+      // If the server queue differs (e.g. empty after restart), the next
+      // polling cycle from useQueueSync will reconcile. This is a
+      // best-effort early check.
+      get().fetchQueue().catch(() => {})
       return nextItem
     }
     return null

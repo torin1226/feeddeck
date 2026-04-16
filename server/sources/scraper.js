@@ -14,17 +14,29 @@
 import { SourceAdapter } from './base.js'
 import { logger } from '../logger.js'
 
-// Lazy import: puppeteer is only needed when this adapter is used
+// Lazy import: puppeteer-extra + stealth plugin for Cloudflare bypass.
+// Falls back to plain puppeteer if puppeteer-extra is not installed.
 let puppeteer = null
 async function getPuppeteer() {
   if (!puppeteer) {
     try {
-      puppeteer = await import('puppeteer')
+      const extra = await import('puppeteer-extra')
+      const stealth = await import('puppeteer-extra-plugin-stealth')
+      const pptr = extra.default || extra
+      pptr.use((stealth.default || stealth)())
+      puppeteer = pptr
+      logger.info('Puppeteer loaded with stealth plugin')
     } catch {
-      throw new Error('puppeteer not installed. Run: npm install puppeteer')
+      try {
+        const plain = await import('puppeteer')
+        puppeteer = plain.default || plain
+        logger.info('Puppeteer loaded without stealth (puppeteer-extra not available)')
+      } catch {
+        throw new Error('puppeteer not installed. Run: npm install puppeteer')
+      }
     }
   }
-  return puppeteer.default || puppeteer
+  return puppeteer
 }
 
 // Site-specific scraper configs
@@ -37,7 +49,7 @@ const SITE_CONFIGS = {
     trendingUrl: 'https://www.pornhub.com/video?o=tr',
     selectors: {
       videoCard: '.pcVideoListItem, li.videoBox',
-      title: '.title a, a[title]',
+      title: 'span.title a',
       thumbnail: 'img.thumb, img[data-thumb_url]',
       duration: '.duration, var.duration',
       views: '.views, span.views',
@@ -55,12 +67,12 @@ const SITE_CONFIGS = {
     trendingUrl: 'https://www.xvideos.com/best',
     selectors: {
       videoCard: '.thumb-block',
-      title: '.thumb-under p a, p.title a',
-      thumbnail: 'img.thumb',
-      duration: '.duration, span.duration',
-      views: '.metadata .bg span',
-      uploader: '.metadata .name a',
-      link: '.thumb-under p a, a',
+      title: '.title a',
+      thumbnail: '.thumb-link img',
+      duration: 'span.duration',
+      views: 'span.views-count',
+      uploader: 'a.name',
+      link: '.title a, .thumb-link',
     },
     thumbnailAttr: ['data-src', 'src'],
     baseUrl: 'https://www.xvideos.com',
@@ -72,12 +84,12 @@ const SITE_CONFIGS = {
     trendingUrl: 'https://spankbang.com/trending_videos/',
     selectors: {
       videoCard: '.js-video-item, [data-testid="video-item"]',
-      title: 'a[href*="/video/"][title]',
-      thumbnail: 'picture img, img',
-      duration: 'div[class*="bottom-2"][class*="right-2"], .l',
-      views: 'span[class*="whitespace-nowrap"], .v',
-      uploader: 'span.text-action-tertiary, .u a',
-      link: 'a[href*="/video/"]',
+      title: '.line-clamp-2 a[title], [data-testid="video-info-with-badge"] a[href*="/video/"][title]',
+      thumbnail: 'img[x-ref="thumbnail"], picture img',
+      duration: '[data-testid="video-item-length"]',
+      views: '[data-testid="views"]',
+      uploader: 'a[data-testid="title"]',
+      link: 'a[href*="/video/"], a[href*="/video"]',
     },
     thumbnailAttr: ['src', 'data-src'],
     baseUrl: 'https://spankbang.com',
@@ -87,16 +99,17 @@ const SITE_CONFIGS = {
     searchUrl: (q) => `https://www.redtube.com/?search=${encodeURIComponent(q)}`,
     categoryUrl: (cat) => `https://www.redtube.com/category/${encodeURIComponent(cat)}`,
     trendingUrl: 'https://www.redtube.com/mostviewed?period=today',
+    ageGate: true,
     selectors: {
-      videoCard: '.video-box, li.videoBox',
-      title: '.video-title a, a[title]',
-      thumbnail: 'img.video-thumb, img[data-thumb_url]',
-      duration: '.duration, span.duration',
-      views: '.video-views, span.views',
-      uploader: '.video-uploader a, .uploader a',
-      link: '.video-title a, a.video-thumb-link',
+      videoCard: 'li.thumbnail-card[data-video-id]',
+      title: 'a.tm_video_title',
+      thumbnail: 'picture.video_thumb_image img',
+      duration: 'span.tm_video_duration',
+      views: 'span.info-views',
+      uploader: 'a.author-title-text',
+      link: 'a.video_link',
     },
-    thumbnailAttr: ['data-thumb_url', 'data-src', 'src'],
+    thumbnailAttr: ['data-src', 'src'],
     baseUrl: 'https://www.redtube.com',
   },
 
@@ -104,16 +117,17 @@ const SITE_CONFIGS = {
     searchUrl: (q) => `https://www.youporn.com/search/?query=${encodeURIComponent(q)}`,
     categoryUrl: (cat) => `https://www.youporn.com/category/${encodeURIComponent(cat)}/`,
     trendingUrl: 'https://www.youporn.com/most_viewed/?t=t',
+    ageGate: true,
     selectors: {
-      videoCard: '.video-box, .video-listing .video-box',
-      title: '.video-box-title a, a[title]',
-      thumbnail: 'img.video-thumb, img[data-thumbnail]',
-      duration: '.video-duration, span.duration',
-      views: '.video-views, span.views',
-      uploader: '.video-uploader a',
-      link: '.video-box-title a, a.video-thumb-link',
+      videoCard: 'article.video-box[data-video-id]',
+      title: 'a.video-title-text',
+      thumbnail: 'img.thumb-image',
+      duration: '.video-duration span',
+      views: 'span.info-views',
+      uploader: 'a.author-title-text',
+      link: 'a.tm_video_link[href*="/watch/"]',
     },
-    thumbnailAttr: ['data-thumbnail', 'data-src', 'src'],
+    thumbnailAttr: ['data-src', 'src'],
     baseUrl: 'https://www.youporn.com',
   },
 
@@ -139,7 +153,7 @@ export class ScraperAdapter extends SourceAdapter {
   constructor() {
     super({
       name: 'scraper',
-      supportedDomains: Object.keys(SITE_CONFIGS),
+      supportedDomains: [...Object.keys(SITE_CONFIGS), 'redgifs.com', 'fikfap.com'],
       capabilities: {
         search: true,
         categories: true,
@@ -150,6 +164,7 @@ export class ScraperAdapter extends SourceAdapter {
     })
     this.browser = null
     this._consecutiveFailures = 0
+    this._idleTimer = null
   }
 
   async _getBrowser() {
@@ -178,6 +193,16 @@ export class ScraperAdapter extends SourceAdapter {
   async _newPage() {
     const browser = await this._getBrowser()
     const page = await browser.newPage()
+
+    // Reset idle timeout — close browser after 10 min of no scraping activity
+    clearTimeout(this._idleTimer)
+    this._idleTimer = setTimeout(async () => {
+      if (this.browser) {
+        logger.info('Closing idle Puppeteer browser (10 min timeout)')
+        await this.browser.close().catch(() => {})
+        this.browser = null
+      }
+    }, 10 * 60 * 1000)
 
     try {
       // Stealth basics: realistic user agent + viewport
@@ -215,18 +240,78 @@ export class ScraperAdapter extends SourceAdapter {
       page = await this._newPage()
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 })
 
-      // Wait for video cards to appear
-      await page.waitForSelector(config.selectors.videoCard, { timeout: 10_000 })
-        .catch(() => {}) // Some pages might not have results
+      // Cloudflare challenge detection: if the page title indicates a challenge,
+      // wait up to 15 seconds for it to auto-solve (JS challenges resolve in 3-8s).
+      const CF_WAIT_MS = 15_000
+      const CF_CHECK_INTERVAL = 1_000
+      let pageTitle = await page.title().catch(() => '')
+      if (pageTitle.includes('Cloudflare') || pageTitle.includes('Attention Required') || pageTitle.includes('Just a moment')) {
+        logger.info(`Scraper: Cloudflare challenge detected for ${siteKey}, waiting up to ${CF_WAIT_MS / 1000}s...`)
+        const deadline = Date.now() + CF_WAIT_MS
+        while (Date.now() < deadline) {
+          await new Promise(r => setTimeout(r, CF_CHECK_INTERVAL))
+          pageTitle = await page.title().catch(() => '')
+          if (!pageTitle.includes('Cloudflare') && !pageTitle.includes('Attention Required') && !pageTitle.includes('Just a moment')) {
+            logger.info(`Scraper: Cloudflare challenge resolved for ${siteKey} (title: "${pageTitle}")`)
+            break
+          }
+        }
+      }
+
+      // Age gate dismissal: some sites (RedTube, YouPorn) show an age verification
+      // overlay before content is visible. Click through it automatically.
+      if (config.ageGate) {
+        /* eslint-disable no-undef -- runs in Puppeteer browser context */
+        const dismissed = await page.evaluate(() => {
+          // Try common age gate button patterns
+          const selectors = [
+            '#js_enterForm button[type="submit"]',
+            'button[data-testid="age-verification-enter"]',
+          ]
+          for (const sel of selectors) {
+            const btn = document.querySelector(sel)
+            if (btn) { btn.click(); return sel }
+          }
+          // Fallback: find button/link with "I am 18" or "Enter" text
+          for (const btn of document.querySelectorAll('button, a')) {
+            const text = btn.textContent?.trim()?.toLowerCase() || ''
+            if ((text.includes('i am 18') || text.includes('enter')) && !text.includes('sign') && !text.includes('cookie')) {
+              btn.click()
+              return `text:"${btn.textContent.trim().slice(0, 40)}"`
+            }
+          }
+          return null
+        }).catch(() => null)
+        /* eslint-enable no-undef */
+
+        if (dismissed) {
+          logger.info(`Scraper: dismissed age gate for ${siteKey} (${dismissed})`)
+          await new Promise(r => setTimeout(r, 2000))
+          await page.waitForNetworkIdle({ timeout: 8000 }).catch(() => {})
+        }
+      }
+
+      // Wait for video cards to appear. Log a warning if the selector times out
+      // so stale selectors are visible in server logs rather than silently returning 0.
+      const selectorFound = await page.waitForSelector(config.selectors.videoCard, { timeout: 10_000 })
+        .then(() => true)
+        .catch(() => false)
+
+      if (!selectorFound) {
+        pageTitle = await page.title().catch(() => '(unknown)')
+        logger.warn(`Scraper: no cards found for "${siteKey}" at ${url} (selector: ${config.selectors.videoCard}, page title: "${pageTitle}"). Selectors may be stale or the page requires login.`)
+      }
 
       // Scroll to load lazy content
       for (let i = 0; i < scrollCount; i++) {
+        // eslint-disable-next-line no-undef
         await page.evaluate(() => window.scrollBy(0, window.innerHeight))
         await new Promise(r => setTimeout(r, 800))
       }
 
       // Extract video data from the DOM
       const videos = await page.evaluate((cfg, maxResults) => {
+        // eslint-disable-next-line no-undef
         const cards = document.querySelectorAll(cfg.selectors.videoCard)
         const results = []
 
@@ -336,18 +421,172 @@ export class ScraperAdapter extends SourceAdapter {
     // Normalize "www.pornhub.com" -> "pornhub.com"
     const clean = siteOrDomain.replace(/^www\./, '')
     if (SITE_CONFIGS[clean]) return clean
+    if (clean === 'redgifs.com') return 'redgifs.com'
+    if (clean === 'fikfap.com') return 'fikfap.com'
 
     // Try partial match
     for (const key of Object.keys(SITE_CONFIGS)) {
       if (clean.includes(key) || key.includes(clean)) return key
     }
+    if (clean.includes('redgifs') || 'redgifs.com'.includes(clean)) return 'redgifs.com'
+    if (clean.includes('fikfap') || 'fikfap.com'.includes(clean)) return 'fikfap.com'
     return null
+  }
+
+  // RedGifs uses a JSON API with temporary bearer tokens
+  async _getRedGifsToken() {
+    // Cache token for 1 hour (they last ~24h but we play it safe)
+    if (this._redGifsToken && Date.now() < this._redGifsTokenExpiry) {
+      return this._redGifsToken
+    }
+    const res = await fetch('https://api.redgifs.com/v2/auth/temporary', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36' },
+    })
+    if (!res.ok) throw new Error(`RedGifs auth error: ${res.status}`)
+    const data = await res.json()
+    this._redGifsToken = data.token
+    this._redGifsTokenExpiry = Date.now() + 60 * 60 * 1000
+    return this._redGifsToken
+  }
+
+  async searchRedGifs(query, options = {}) {
+    const { limit = 20 } = options
+    const token = await this._getRedGifsToken()
+
+    // HYDRATION: Parse RedGifs URLs to extract the actual search query or detect trending.
+    // refillCategory passes URLs like "https://www.redgifs.com/search?query=amateur&order=trending"
+    // which must not be encoded wholesale as search_text.
+    // Note: /v2/gifs/trending endpoint was removed ~April 2026. Use /v2/gifs/search with order=trending instead.
+    let apiUrl
+    if (query.includes('redgifs.com')) {
+      try {
+        const parsed = new URL(query)
+        if (parsed.pathname.includes('/trending')) {
+          const type = parsed.searchParams.get('type') || ''
+          apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=&order=trending&count=${limit}${type ? `&type=${type}` : ''}`
+        } else if (parsed.searchParams.has('query')) {
+          const searchText = parsed.searchParams.get('query')
+          const order = parsed.searchParams.get('order') || ''
+          apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=${encodeURIComponent(searchText)}&count=${limit}${order ? `&order=${order}` : ''}`
+        } else {
+          // Fall back to using the path segment as search text
+          const pathSearch = parsed.pathname.split('/').filter(Boolean).pop() || query
+          apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=${encodeURIComponent(pathSearch)}&count=${limit}`
+        }
+      } catch {
+        apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=${encodeURIComponent(query)}&count=${limit}`
+      }
+    } else {
+      apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=${encodeURIComponent(query)}&count=${limit}`
+    }
+
+    const res = await fetch(apiUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    })
+    if (!res.ok) throw new Error(`RedGifs API error: ${res.status}`)
+
+    const data = await res.json()
+    const gifs = data.gifs || []
+
+    return gifs.slice(0, limit).map(g => ({
+      ...this.normalizeVideo({
+        id: g.id,
+        webpage_url: `https://www.redgifs.com/watch/${g.id}`,
+        title: g.description || g.tags?.join(', ') || g.id,
+        thumbnail: g.urls?.poster || g.urls?.thumbnail || '',
+        duration: Math.round(g.duration || 0),
+        view_count: g.views || 0,
+        uploader: g.userName || '',
+        source: 'redgifs.com',
+      }),
+      // RedGifs API returns direct CDN stream URLs -- bypass yt-dlp for faster playback.
+      stream_url: g.urls?.hd || g.urls?.sd || null,
+    }))
+  }
+
+  // FikFap uses a JSON API with anonymous UUID auth.
+  // No token exchange needed — any random UUID works as authorization-anonymous header.
+  async searchFikFap(query, options = {}) {
+    const { limit = 20 } = options
+
+    // Map FikFap URL patterns or search queries to API params.
+    // FikFap supports sort: new, trending, top, random (not "hot" or "best").
+    // The /trending route no longer exists on fikfap.com — use sort=trending instead.
+    let sort = 'trending'
+    if (query.includes('fikfap.com/new') || query.includes('sort=new')) sort = 'new'
+    else if (query.includes('fikfap.com/top') || query.includes('sort=top')) sort = 'top'
+    else if (query.includes('fikfap.com/random') || query.includes('sort=random')) sort = 'random'
+    else if (query.includes('fikfap.com/trending') || query.includes('fikfap.com')) sort = 'trending'
+
+    // Generate a random anonymous token (FikFap accepts any UUID)
+    const anonToken = crypto.randomUUID()
+    const url = `https://api.fikfap.com/posts?amount=${limit}&sort=${sort}&useDistinctUserIds=true&minimumScore=-20`
+
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        'Origin': 'https://fikfap.com',
+        'Referer': 'https://fikfap.com/',
+        'authorization-anonymous': anonToken,
+        'isloggedin': 'false',
+        'ispwa': 'false',
+      },
+    })
+    if (!res.ok) throw new Error(`FikFap API error: ${res.status}`)
+
+    const posts = await res.json()
+    if (!Array.isArray(posts)) throw new Error('FikFap API returned unexpected format')
+
+    return posts.slice(0, limit).map(p => {
+      // Build a canonical URL from the postId
+      const webUrl = `https://fikfap.com/post/${p.postId}`
+
+      // Title: use label (description), fall back to hashtags or postId
+      const hashtagStr = p.hashtags?.map(h => `#${h.label}`).join(' ') || ''
+      const title = p.label?.trim() || hashtagStr || `FikFap #${p.postId}`
+
+      return {
+        ...this.normalizeVideo({
+          id: `fikfap_${p.postId}`,
+          webpage_url: webUrl,
+          title,
+          thumbnail: p.thumbnailStreamUrl || '',
+          duration: Math.round(p.duration || 0),
+          view_count: p.viewsCount || 0,
+          uploader: p.author?.username || '',
+          source: 'fikfap.com',
+        }),
+        // FikFap API returns a direct BunnyCDN HLS URL at scrape time.
+        // Store it now so playback works without yt-dlp (which may not support fikfap.com).
+        stream_url: p.videoStreamUrl || null,
+      }
+    })
   }
 
   async search(query, options = {}) {
     const { site = 'pornhub.com', limit = 20 } = options
     const siteKey = this._getSiteKey(site)
     if (!siteKey) throw new Error(`Scraper doesn't support ${site}`)
+
+    // RedGifs and FikFap use JSON APIs, not Puppeteer scraping
+    if (siteKey === 'redgifs.com') {
+      return this.searchRedGifs(query, { limit })
+    }
+    if (siteKey === 'fikfap.com') {
+      return this.searchFikFap(query, { limit })
+    }
+
+    // If the query is already a URL (e.g. category page passed from refillCategory),
+    // scrape it directly instead of wrapping it in a search URL.
+    // This prevents URLs like "/s/https%3A%2F%2Fspankbang.com%2Ftrending/".
+    if (query.startsWith('http')) {
+      return this._scrapeVideoList(query, siteKey, { limit })
+    }
 
     const config = SITE_CONFIGS[siteKey]
     const url = config.searchUrl(query)
@@ -356,6 +595,16 @@ export class ScraperAdapter extends SourceAdapter {
 
   async fetchCategory(categoryUrl, options = {}) {
     const { limit = 20 } = options
+
+    // FikFap uses its own JSON API
+    if (categoryUrl.includes('fikfap.com')) {
+      return this.searchFikFap(categoryUrl, { limit })
+    }
+
+    // RedGifs uses its own JSON API
+    if (categoryUrl.includes('redgifs.com')) {
+      return this.searchRedGifs(categoryUrl, { limit })
+    }
 
     // Figure out which site from the URL
     let siteKey = null
@@ -376,10 +625,10 @@ export class ScraperAdapter extends SourceAdapter {
     return this._scrapeVideoList(config.trendingUrl, siteKey, { limit })
   }
 
-  // Multi-site search: hit all configured sites in parallel
+  // Multi-site search: hit all configured sites + RedGifs in parallel
   async searchAll(query, options = {}) {
     const { limit = 10 } = options
-    const sites = Object.keys(SITE_CONFIGS)
+    const sites = [...Object.keys(SITE_CONFIGS), 'redgifs.com']
 
     const results = await Promise.allSettled(
       sites.map(site => this.search(query, { site, limit }))
@@ -399,6 +648,7 @@ export class ScraperAdapter extends SourceAdapter {
 
   // Cleanup: close the browser when shutting down
   async close() {
+    clearTimeout(this._idleTimer)
     if (this.browser) {
       await this.browser.close()
       this.browser = null
@@ -407,4 +657,4 @@ export class ScraperAdapter extends SourceAdapter {
 }
 
 // Export supported sites for use in UI/config
-export const SUPPORTED_SITES = Object.keys(SITE_CONFIGS)
+export const SUPPORTED_SITES = [...Object.keys(SITE_CONFIGS), 'redgifs.com', 'fikfap.com']

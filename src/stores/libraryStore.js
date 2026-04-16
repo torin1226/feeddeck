@@ -124,6 +124,7 @@ const useLibraryStore = create(
       // Load from server (future — for now returns empty)
       // -----------------------------------------------------------
       loadFromServer: async () => {
+        set({ loading: true })
         try {
           const mode = useModeStore.getState().isSFW ? 'social' : 'nsfw'
           const res = await fetch(`/api/videos?mode=${mode}`)
@@ -135,6 +136,8 @@ const useLibraryStore = create(
           }
         } catch {
           // Server not running yet — that's fine, use localStorage
+        } finally {
+          set({ loading: false })
         }
       },
 
