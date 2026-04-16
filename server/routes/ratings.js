@@ -135,12 +135,10 @@ router.post('/api/ratings', express.json(), (req, res) => {
 // Called after 4+ consecutive thumbs-down on a row
 // -----------------------------------------------------------
 router.post('/api/ratings/row-refresh', express.json(), (req, res) => {
-  const { surfaceKey, mode, count = 12 } = req.body || {}
+  const { surfaceKey, count = 12 } = req.body || {}
   if (!surfaceKey) return res.status(400).json({ error: 'surfaceKey required' })
 
   try {
-    const videoMode = mode || 'nsfw'
-
     // Get unviewed videos from homepage_cache for this category, excluding downvoted
     const candidates = db.prepare(`
       SELECT id, url, title, thumbnail, duration, source, uploader, view_count, tags, fetched_at

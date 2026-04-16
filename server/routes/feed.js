@@ -3,7 +3,7 @@ import express from 'express'
 import { db } from '../database.js'
 import { logger } from '../logger.js'
 import { formatDuration } from '../utils.js'
-import { scoreVideo, isDownvoted, invalidateProfileCache } from '../scoring.js'
+import { scoreVideo, isDownvoted } from '../scoring.js'
 
 const router = Router()
 
