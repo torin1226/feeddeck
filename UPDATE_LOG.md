@@ -1,5 +1,25 @@
 # FeedDeck Update Log
 
+## 2026-04-15 (evening) - Sprint Merged to Master
+
+### Completed
+- Daily git sync: local and remote already in sync, no action needed
+- Merged `sprint/2026-04-07` → `master` via PR #3 (62 commits, 181 files changed)
+- Local `master` updated to match remote
+
+### Decisions Made
+- Sprint/2026-04-07 is now the stable baseline on master — all work from April 7–15 is shipped
+
+### Key Files Changed
+- `SYNC_LOG.md` — updated with sync entry (uncommitted, on sprint branch)
+
+### Next Session Should
+1. Create a new sprint branch from master for the next round of work
+2. Test end-to-end: run the app, verify NSFW sources work after the source blitz fixes
+3. Check FikFap BunnyCDN video URL expiry/HLS behavior
+
+---
+
 ## 2026-04-15 - NSFW Source Blitz (8/9 Sources Working)
 
 ### Completed

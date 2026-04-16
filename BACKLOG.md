@@ -466,6 +466,53 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 - [x] Radial gradient vignette overlay blends edges into background color seamlessly
 - [x] Works across aspect ratios: blurred fill handles letterboxing for any ratio
 
+### 3.12 Taste Feedback & Adaptive Ranking (2-Step Rating System)
+
+> **Full spec:** `ADR_taste-feedback-system.md` | **UX report:** `UX_taste-feedback-report.md` | **Mockup:** `mockup_taste-feedback.html`
+> Goal: Thumbs up/down on any video, directly influencing what content surfaces across all pages. Two feedback tiers: quick rating (Step 1) and keyword override for bad rows (Step 2). Multi-signal taste profile with 60-day decay half-life.
+
+**Phase A — Database & Scoring Engine (do first, everything depends on this):**
+- [ ] Add `video_ratings` table (video_url, surface_type, surface_key, rating, tags JSON, creator, rated_at)
+- [ ] Add `creator_boosts` table (creator PK, boost_score, surface_boosts JSON, last_updated)
+- [ ] Add `taste_profile` table (signal_type, signal_value, weight, surface_key nullable, updated_at)
+- [ ] Migrate existing `tag_preferences` data into `taste_profile` (signal_type='tag', surface_key=NULL)
+- [ ] Build unified scoring function on server: base_score * (1 + tag_score) * (1 + creator_score) * (1 + surface_tag_score) * (1 + surface_creator_score), clamped at 5x base
+- [ ] Add 60-day half-life decay to scoring reads: `weight * (0.5 ^ (days_since_update / 60))`
+- [ ] Replace `homeStore.js` client-side scoring with server-side scored results
+- [ ] Integrate `taste_profile` scores into `feed.js` weighted selection (replace simple tag multiplier)
+
+**Phase B — Step 1: Thumbs Up/Down (MVP interaction):**
+- [ ] Create `ratingsStore.js` (Zustand): per-row consecutive-down tracker, per-row 30s window tracker, toast pause timer
+- [ ] Create `ThumbsRating.jsx`: glass pill overlay at bottom of focused card, thumbs up/down buttons (44px touch targets)
+- [ ] Wire ThumbsRating into PosterCard (homepage cards) — show on focused card hover only
+- [ ] Wire ThumbsRating into FeedVideo (swipe feed cards)
+- [ ] `POST /api/ratings` endpoint: record rating, update taste_profile + creator_boosts
+- [ ] Thumbs-down card animation: 0.3s shrink + fade out, replacement card fades in (0.35s spring)
+- [ ] Thumbs-up: pulse animation on card, auto-boost creator (0.25 global + 0.25 surface), add to Liked section
+- [ ] 4+ consecutive downs on same row: trigger `POST /api/ratings/row-refresh`, staggered domino fade-swap (100ms stagger)
+- [ ] Reset consecutive-down counter after row-refresh
+
+**Phase C — Toast System Upgrade:**
+- [ ] Upgrade GlobalToast to support two tiers: passive (auto-dismiss 3s, no interaction) and action (CTA button, 8s timeout)
+- [ ] Action toast: rose left-border, pointer-events-auto, configurable buttons
+- [ ] Toast fatigue: 1st toast normal, 2nd toast adds "Pause for 1hr" option, pause suppresses all rating toasts for 60min
+- [ ] Pause applies to both thumbs-up and thumbs-down toasts
+- [ ] Max 1 action toast per 60s globally (queue others)
+
+**Phase D — Step 2: Enhanced Feedback Loop:**
+- [ ] Rapid-dislike detection: 2+ thumbs-down within 30s on same row triggers action toast ("This row isn't hitting. Want to fix it?")
+- [ ] Keyword override panel: inline panel anchored below row header, up to 5 keyword inputs, Apply button
+- [ ] `POST /api/ratings/row-preferences` endpoint: save keywords to taste_profile with surface_key, trigger targeted search
+- [ ] Row reload: new videos lazy-load one at a time (200ms stagger), pushing old content out
+- [ ] Thumbs-up toast: "Saved. More from [creator] coming your way." (passive tier)
+
+**Phase E — Liked Section & Polish:**
+- [ ] "Liked" virtual shelf in library (backed by video_ratings WHERE rating='up')
+- [ ] "Your Likes" row on homepage (appears after 3+ liked videos)
+- [ ] Score clamping safety rail: final_score max 5x base_score
+- [ ] Debug overlay (dev mode only): show score breakdown on card hover
+- [ ] `GET /api/ratings/history` endpoint for future "your ratings" view
+
 ### 3.10 Mobile Feed Filter System
 
 > Depends on: 3.2 (Tag Preferences) and 3.6 (Search) for backend infrastructure. Can build the UI shell earlier but full functionality needs tags and search wired up.
