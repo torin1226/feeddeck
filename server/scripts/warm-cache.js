@@ -217,12 +217,42 @@ for (let i = 0; i < unresolved.length; i += CONCURRENCY) {
 }
 console.log()
 
+// --- Phase 4: Purge stale cache entries ---
+console.log('\n--- Phase 4: Purge Stale Entries ---')
+stats.purged = 0
+
+const feedPurged = db.prepare(`
+  DELETE FROM feed_cache
+  WHERE watched = 1 AND fetched_at < datetime('now', '-7 days')
+`).run()
+stats.purged += feedPurged.changes
+console.log(`  feed_cache: purged ${feedPurged.changes} watched entries older than 7 days`)
+
+const homepagePurged = db.prepare(`
+  DELETE FROM homepage_cache
+  WHERE viewed = 1 AND fetched_at < datetime('now', '-7 days')
+`).run()
+stats.purged += homepagePurged.changes
+console.log(`  homepage_cache: purged ${homepagePurged.changes} viewed entries older than 7 days`)
+
+// Dedup: remove feed_cache entries with duplicate URLs (keep newest)
+const dupsPurged = db.prepare(`
+  DELETE FROM feed_cache WHERE rowid NOT IN (
+    SELECT MIN(rowid) FROM feed_cache GROUP BY url
+  )
+`).run()
+if (dupsPurged.changes > 0) {
+  stats.purged += dupsPurged.changes
+  console.log(`  feed_cache: removed ${dupsPurged.changes} duplicate URL entries`)
+}
+
 // --- Summary ---
 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
 console.log(`\n--- Summary ---`)
 console.log(`  Categories refilled: ${stats.categoriesRefilled}`)
 console.log(`  Feed sources refilled: ${stats.feedRefilled}`)
 console.log(`  Stream URLs resolved: ${stats.streamUrlsResolved}`)
+console.log(`  Stale entries purged: ${stats.purged}`)
 console.log(`  Errors: ${stats.errors}`)
 console.log(`  Time: ${elapsed}s\n`)
 

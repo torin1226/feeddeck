@@ -414,25 +414,31 @@ router.delete('/api/sources/:domain', (req, res) => {
 // Returns cached videos grouped by category.
 // Falls back to placeholder data if cache is empty.
 // -----------------------------------------------------------
-router.get('/api/homepage', (req, res) => {
-  const mode = req.query.mode === 'nsfw' ? 'nsfw' : 'social'
-
-  try {
-    // Get categories for this mode
-    const categories = db.prepare(
+let _homepageCategoriesStmt, _homepageVideosStmt
+function getHomepageStmts() {
+  if (!_homepageCategoriesStmt) {
+    _homepageCategoriesStmt = db.prepare(
       'SELECT key, label, query FROM categories WHERE mode = ? ORDER BY sort_order'
-    ).all(mode)
-
-    // Get cached videos for each category
-    const videosStmt = db.prepare(
+    )
+    _homepageVideosStmt = db.prepare(
       `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, tags, viewed
        FROM homepage_cache
        WHERE category_key = ? AND expires_at > datetime('now')
        ORDER BY fetched_at DESC
        LIMIT 20`
     )
+  }
+  return { categories: _homepageCategoriesStmt, videos: _homepageVideosStmt }
+}
+
+router.get('/api/homepage', (req, res) => {
+  const mode = req.query.mode === 'nsfw' ? 'nsfw' : 'social'
+
+  try {
+    const stmts = getHomepageStmts()
+    const categories = stmts.categories.all(mode)
     const result = categories.map(cat => {
-      const videos = videosStmt.all(cat.key)
+      const videos = stmts.videos.all(cat.key)
 
       return {
         key: cat.key,
@@ -471,23 +477,32 @@ router.get('/api/homepage', (req, res) => {
 // Marks a homepage_cache video as viewed. Triggers async refill
 // if the category drops below the threshold.
 // -----------------------------------------------------------
+let _markViewedStmt, _getCategoryStmt, _unviewedCountStmt
+function getViewedStmts() {
+  if (!_markViewedStmt) {
+    _markViewedStmt = db.prepare('UPDATE homepage_cache SET viewed = 1 WHERE id = ?')
+    _getCategoryStmt = db.prepare('SELECT category_key FROM homepage_cache WHERE id = ?')
+    _unviewedCountStmt = db.prepare(
+      `SELECT COUNT(*) as n FROM homepage_cache
+       WHERE category_key = ? AND viewed = 0 AND expires_at > datetime('now')`
+    )
+  }
+  return { markViewed: _markViewedStmt, getCategory: _getCategoryStmt, unviewedCount: _unviewedCountStmt }
+}
+
 router.post('/api/homepage/viewed', (req, res) => {
   const { id } = req.query
   if (!id) return res.status(400).json({ error: 'Video ID required' })
 
   try {
-    db.prepare('UPDATE homepage_cache SET viewed = 1 WHERE id = ?').run(id)
+    const stmts = getViewedStmts()
+    stmts.markViewed.run(id)
 
-    // Check if the category needs refill
-    const video = db.prepare('SELECT category_key FROM homepage_cache WHERE id = ?').get(id)
+    const video = stmts.getCategory.get(id)
     if (video) {
-      const unviewed = db.prepare(
-        `SELECT COUNT(*) as n FROM homepage_cache
-         WHERE category_key = ? AND viewed = 0 AND expires_at > datetime('now')`
-      ).get(video.category_key)
+      const unviewed = stmts.unviewedCount.get(video.category_key)
 
       if (unviewed.n < 8) {
-        // Trigger async refill (fire-and-forget)
         refillCategory(video.category_key).catch(err =>
           logger.error('Refill error:', { error: err.message })
         )

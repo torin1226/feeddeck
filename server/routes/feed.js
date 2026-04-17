@@ -7,6 +7,16 @@ import { scoreVideo, isDownvoted } from '../scoring.js'
 
 const router = Router()
 
+let _feedUnwatchedCountStmt
+function getFeedUnwatchedCountStmt() {
+  if (!_feedUnwatchedCountStmt) {
+    _feedUnwatchedCountStmt = db.prepare(
+      'SELECT COUNT(*) as n FROM feed_cache WHERE mode = ? AND watched = 0'
+    )
+  }
+  return _feedUnwatchedCountStmt
+}
+
 // -----------------------------------------------------------
 // GET /api/feed/next?mode=social|nsfw&count=10
 // Return next unwatched videos from feed cache, weighted by
@@ -33,8 +43,6 @@ router.get('/api/feed/next', (req, res) => {
       }
     }
 
-    params.push(count)
-
     // Get unwatched videos using a two-pass approach for source diversity:
     // 1. Pick up to 2 videos per source (round-robin fairness)
     // 2. Fill remaining slots with weighted random from all sources
@@ -53,7 +61,7 @@ router.get('/api/feed/next', (req, res) => {
       WHERE fc.mode = ? AND fc.watched = 0${whereExtra}
       ORDER BY RANDOM()
       LIMIT ${count * 10}
-    `).all(...params.slice(0, -1)) // remove the original LIMIT param
+    `).all(...params)
 
     // Unified taste profile scoring (3.12): replaces old tag_preferences multiplier.
     // Uses multi-signal taste_profile + creator_boosts + decay for weights.
@@ -121,11 +129,7 @@ router.get('/api/feed/next', (req, res) => {
       durationFormatted: formatDuration(v.duration),
     }))
 
-    // Check if we need more content
-    const unviewedCount = db.prepare(
-      `SELECT COUNT(*) as n FROM feed_cache
-       WHERE mode = ? AND watched = 0`
-    ).get(mode)
+    const unviewedCount = getFeedUnwatchedCountStmt().get(mode)
 
     if (unviewedCount.n < 20) {
       // Import refillFeedCache lazily to avoid circular dependency
