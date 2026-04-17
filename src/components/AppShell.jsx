@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef } from 'react'
+import { lazy, Suspense } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import useKeyboard from '../hooks/useKeyboard'
 import useQueueSync from '../hooks/useQueueSync'
@@ -31,15 +31,6 @@ export default function AppShell() {
   const mobilePreview = useDeviceStore(s => s.mobilePreview)
   const toggleMobilePreview = useDeviceStore(s => s.toggleMobilePreview)
   const modeHydrated = useModeStore(s => s._hydrated)
-
-  // Trigger View Transitions API crossfade on route changes
-  const prevPath = useRef(location.pathname)
-  useEffect(() => {
-    if (prevPath.current !== location.pathname && document.startViewTransition) {
-      document.startViewTransition()
-    }
-    prevPath.current = location.pathname
-  }, [location.pathname])
 
   // Block ALL rendering until mode store has hydrated.
   // This prevents NSFW content from flashing on SFW first load.

@@ -323,6 +323,13 @@ function LibraryEmptyState({ tab, onNavigate }) {
       cta: 'Browse Feed',
       action: () => onNavigate('/feed'),
     },
+    liked: {
+      icon: '👍',
+      title: 'No liked videos yet',
+      desc: 'Thumbs up videos you enjoy and they\'ll appear here.',
+      cta: 'Browse Feed',
+      action: () => onNavigate('/feed'),
+    },
     favorites: {
       icon: '♡',
       title: 'No favorites yet',
