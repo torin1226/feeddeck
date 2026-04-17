@@ -142,10 +142,7 @@ export default function HomeHeader() {
 
   return (
     <header
-      className="fixed top-0 left-0 right-0 z-system h-14 flex items-center justify-between px-10"
-      style={{
-        background: `linear-gradient(to bottom, var(--color-surface) 0%, transparent 100%)`,
-      }}
+      className="fixed top-0 left-0 right-0 z-system h-14 flex items-center justify-between px-10 bg-white/[0.03] backdrop-blur-2xl border-b border-white/[0.06]"
     >
       {/* Logo */}
       <div className="text-lg font-bold tracking-tight font-display">
@@ -153,21 +150,18 @@ export default function HomeHeader() {
       </div>
 
       {/* Nav */}
-      <nav className="flex gap-7">
+      <nav className="flex gap-1">
         {navItems.map((item) => (
           <button
             key={item.path}
             onClick={() => navigate(item.path)}
-            className={`text-sm font-medium transition-colors cursor-pointer relative pb-0.5 ${
+            className={`text-sm font-medium transition-all duration-150 cursor-pointer rounded-full px-3.5 py-1.5 border ${
               location.pathname === item.path
-                ? 'text-text-primary'
-                : 'text-text-secondary hover:text-text-primary'
+                ? 'text-accent bg-accent/[0.10] border-accent/[0.20]'
+                : 'text-text-secondary border-transparent hover:text-text-primary hover:bg-white/[0.05] hover:border-white/[0.06]'
             }`}
           >
             {item.label}
-            {location.pathname === item.path && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-accent rounded-full" />
-            )}
           </button>
         ))}
       </nav>
@@ -327,7 +321,7 @@ export default function HomeHeader() {
           className={`px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition-all tracking-wide ${
             isSFW
               ? 'bg-amber-500/[0.06] border border-amber-500/25 text-amber-400 hover:bg-amber-500/[0.12]'
-              : 'bg-surface-overlay border border-surface-border text-text-secondary hover:text-text-primary hover:border-text-muted'
+              : 'bg-white/[0.04] border border-white/[0.08] text-text-secondary hover:text-text-primary hover:bg-white/[0.07] hover:border-white/[0.12]'
           }`}
         >
           &#9679; {isSFW ? 'SOCIAL MODE' : 'NSFW MODE'}

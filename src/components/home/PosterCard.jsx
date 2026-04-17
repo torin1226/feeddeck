@@ -158,7 +158,8 @@ const PosterCard = memo(
     }
 
     return (
-      <div ref={ref} style={containerStyle} onClick={onClick} role="button" tabIndex={0}
+      <div ref={ref} style={containerStyle} className={isFocused ? 'poster-card-focused' : undefined}
+        onClick={onClick} role="button" tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.() } }}
         onMouseEnter={() => isFocused && setShowThumbs(true)}
         onMouseLeave={() => setShowThumbs(false)}>
