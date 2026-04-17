@@ -236,6 +236,7 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_history_date ON history(watched_at DESC);
     CREATE INDEX IF NOT EXISTS idx_homepage_cache_cat_viewed ON homepage_cache(category_key, viewed);
     CREATE INDEX IF NOT EXISTS idx_homepage_cache_expires ON homepage_cache(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_homepage_cache_url ON homepage_cache(url);
     CREATE INDEX IF NOT EXISTS idx_categories_mode ON categories(mode, sort_order);
     CREATE INDEX IF NOT EXISTS idx_feed_cache_mode ON feed_cache(mode, watched, expires_at);
     CREATE INDEX IF NOT EXISTS idx_feed_cache_url ON feed_cache(url);

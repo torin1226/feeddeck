@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Continue Watching Hero Strip — Before / After</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+  :root {
+    --surface: #0a0a0c;
+    --accent: #f43f5e;
+    --accent-hover: #e11d48;
+    --glass-bg: rgba(255,255,255,0.06);
+    --glass-border: rgba(255,255,255,0.08);
+    --glass-highlight: rgba(255,255,255,0.06);
+    --text-primary: #e5e5e5;
+    --text-secondary: rgba(255,255,255,0.6);
+    --text-muted: rgba(255,255,255,0.35);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--surface);
+    color: var(--text-primary);
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    min-height: 100vh;
+  }
+
+  .layout {
+    display: flex;
+    gap: 48px;
+    padding: 40px;
+    max-width: 1800px;
+    margin: 0 auto;
+  }
+
+  .panel {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .panel-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .panel-label .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+
+  .panel-label .dot-red { background: #ef4444; }
+  .panel-label .dot-green { background: #22c55e; }
+
+  /* Hero mock */
+  .hero-mock {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16/9;
+    border-radius: 16px;
+    overflow: hidden;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  }
+
+  .hero-bg {
+    position: absolute;
+    inset: 0;
+    background: url('https://picsum.photos/seed/hero1/1200/675') center/cover;
+    filter: brightness(0.4);
+  }
+
+  .hero-gradient-bottom {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, var(--surface) 0%, rgba(10,10,12,0.6) 40%, transparent 70%);
+  }
+
+  .hero-gradient-left {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to right, rgba(10,10,12,0.8) 0%, rgba(10,10,12,0.4) 35%, transparent 60%);
+  }
+
+  /* Hero content overlay */
+  .hero-content {
+    position: absolute;
+    left: 32px;
+    bottom: 140px;
+    max-width: 380px;
+    z-index: 2;
+  }
+
+  .hero-tags {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+
+  .hero-tag {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: rgba(255,255,255,0.1);
+    padding: 3px 10px;
+    border-radius: 4px;
+    letter-spacing: 0.03em;
+  }
+
+  .hero-title {
+    font-size: clamp(22px, 3vw, 36px);
+    font-weight: 700;
+    letter-spacing: -0.8px;
+    line-height: 1.1;
+    margin-bottom: 8px;
+  }
+
+  .hero-meta {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 14px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .hero-meta .star { color: #fbbf24; font-weight: 600; }
+  .hero-meta .sep { color: var(--text-muted); }
+
+  .hero-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .btn-play {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+  }
+
+  .btn-glass {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: var(--text-primary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    backdrop-filter: blur(12px);
+  }
+
+  .btn-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: var(--text-primary);
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  /* Carousel strip at hero bottom */
+  .carousel-strip {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 16px 32px 20px;
+    z-index: 3;
+    background: linear-gradient(to top, var(--surface) 0%, transparent 100%);
+  }
+
+  .carousel-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  .carousel-cards {
+    display: flex;
+    gap: 8px;
+    overflow: hidden;
+  }
+
+  .carousel-card {
+    flex-shrink: 0;
+    width: 120px;
+    height: 68px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid transparent;
+    position: relative;
+  }
+
+  .carousel-card.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), 0 0 20px rgba(244,63,94,0.15);
+  }
+
+  .carousel-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .carousel-card .card-title {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 4px 6px;
+    background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+    font-size: 9px;
+    font-weight: 600;
+    color: white;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ===== CONTINUE WATCHING STRIP (the proposal) ===== */
+  .cw-strip {
+    position: absolute;
+    bottom: 96px;
+    left: 0;
+    right: 0;
+    padding: 0 32px;
+    z-index: 4;
+  }
+
+  .cw-inner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: rgba(10, 10, 12, 0.55);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    box-shadow: inset 0 1px 0 var(--glass-highlight), 0 8px 32px rgba(0,0,0,0.4);
+    max-width: 640px;
+  }
+
+  .cw-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    white-space: nowrap;
+    writing-mode: vertical-lr;
+    transform: rotate(180deg);
+    line-height: 1;
+  }
+
+  .cw-items {
+    display: flex;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .cw-card {
+    flex-shrink: 0;
+    width: 140px;
+    border-radius: 10px;
+    overflow: hidden;
+    background: rgba(255,255,255,0.04);
+    cursor: pointer;
+    transition: transform 200ms cubic-bezier(0.4,0,0.2,1), box-shadow 200ms;
+    position: relative;
+  }
+
+  .cw-card:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+
+  .cw-thumb {
+    width: 100%;
+    aspect-ratio: 16/9;
+    object-fit: cover;
+    display: block;
+  }
+
+  .cw-progress-track {
+    height: 3px;
+    background: rgba(255,255,255,0.1);
+    position: relative;
+  }
+
+  .cw-progress-bar {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 0 2px 2px 0;
+    transition: width 300ms;
+  }
+
+  .cw-card-info {
+    padding: 6px 8px;
+  }
+
+  .cw-card-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+  }
+
+  .cw-card-meta {
+    font-size: 9px;
+    color: var(--text-muted);
+    margin-top: 1px;
+  }
+
+  /* Play overlay on hover */
+  .cw-card .cw-play-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    aspect-ratio: 16/9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.4);
+    opacity: 0;
+    transition: opacity 150ms;
+  }
+
+  .cw-card:hover .cw-play-overlay {
+    opacity: 1;
+  }
+
+  .cw-play-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 12px;
+    box-shadow: 0 4px 12px rgba(244,63,94,0.4);
+  }
+
+  /* Annotation arrows / callouts */
+  .callout {
+    position: absolute;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--accent);
+    padding: 6px 12px;
+    background: rgba(244,63,94,0.08);
+    border: 1px solid rgba(244,63,94,0.2);
+    border-radius: 8px;
+    white-space: nowrap;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  /* Gallery rows placeholder below hero */
+  .gallery-placeholder {
+    margin-top: 12px;
+    padding: 0 32px;
+  }
+
+  .gallery-row-label {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+    margin-bottom: 12px;
+    color: var(--text-primary);
+  }
+
+  .gallery-row-cards {
+    display: flex;
+    gap: 8px;
+    overflow: hidden;
+    height: 160px;
+    align-items: center;
+  }
+
+  .gallery-row-card {
+    flex-shrink: 0;
+    width: 180px;
+    height: 140px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    overflow: hidden;
+  }
+
+  .gallery-row-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* Buried indicator */
+  .buried-indicator {
+    margin-top: 16px;
+    padding: 24px 32px;
+    text-align: center;
+  }
+
+  .buried-indicator .arrow-down {
+    font-size: 20px;
+    color: var(--text-muted);
+    animation: bounce 2s infinite;
+  }
+
+  .buried-indicator .buried-text {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  @keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(6px); }
+  }
+
+  /* Header bar */
+  .page-header {
+    text-align: center;
+    padding: 32px 40px 0;
+  }
+
+  .page-header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    margin-bottom: 6px;
+  }
+
+  .page-header p {
+    font-size: 13px;
+    color: var(--text-secondary);
+    max-width: 600px;
+    margin: 0 auto;
+    line-height: 1.5;
+  }
+
+  .divider {
+    width: 1px;
+    background: rgba(255,255,255,0.08);
+    align-self: stretch;
+    flex-shrink: 0;
+  }
+
+  /* Behavior change callout */
+  .behavior-banner {
+    margin: 32px 40px 0;
+    padding: 16px 24px;
+    background: rgba(244,63,94,0.06);
+    border: 1px solid rgba(244,63,94,0.15);
+    border-radius: 12px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .behavior-banner .icon {
+    font-size: 18px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .behavior-banner h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+
+  .behavior-banner p {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+  <div class="page-header">
+    <h1>Continue Watching: Hero Strip</h1>
+    <p>
+      In-progress videos currently live 3 viewports below the hero, buried under 2 gallery rows.
+      This promotes them to the hero zone, making resume the default action when Torin opens FeedDeck.
+    </p>
+  </div>
+
+  <div class="behavior-banner">
+    <span class="icon">&#9670;</span>
+    <div>
+      <h3>Behavior change</h3>
+      <p>
+        Today: Torin opens FeedDeck, browses hero, scrolls past 2 gallery rows, maybe finds Continue Watching, maybe not.<br>
+        After: Torin opens FeedDeck, sees his in-progress videos immediately, resumes in one click. Browse is still there, it just isn't blocking resume.
+      </p>
+    </div>
+  </div>
+
+  <div class="layout">
+
+    <!-- BEFORE -->
+    <div class="panel">
+      <div class="panel-label">
+        <span class="dot dot-red"></span>
+        Before — Continue Watching buried below fold
+      </div>
+
+      <div class="hero-mock">
+        <div class="hero-bg"></div>
+        <div class="hero-gradient-bottom"></div>
+        <div class="hero-gradient-left"></div>
+
+        <div class="hero-content">
+          <div class="hero-tags">
+            <span class="hero-tag">2026</span>
+            <span class="hero-tag">Tech</span>
+            <span class="hero-tag">12:34</span>
+          </div>
+          <div class="hero-title">The Architecture of Modern Streaming</div>
+          <div class="hero-meta">
+            <span class="star">&#9733; 8.4/10</span>
+            <span class="sep">&middot;</span>
+            <span>42K views</span>
+            <span class="sep">&middot;</span>
+            <span>TechVault</span>
+          </div>
+          <div class="hero-actions">
+            <button class="btn-play">&#9654; Play</button>
+            <button class="btn-glass">&#9974; Theatre</button>
+            <button class="btn-icon">+</button>
+            <button class="btn-icon">&#9825;</button>
+          </div>
+        </div>
+
+        <div class="carousel-strip">
+          <div class="carousel-label">Up Next</div>
+          <div class="carousel-cards">
+            <div class="carousel-card active">
+              <img src="https://picsum.photos/seed/c1/240/136" alt="">
+              <div class="card-title">Architecture of...</div>
+            </div>
+            <div class="carousel-card"><img src="https://picsum.photos/seed/c2/240/136" alt=""><div class="card-title">React Patterns</div></div>
+            <div class="carousel-card"><img src="https://picsum.photos/seed/c3/240/136" alt=""><div class="card-title">Design Systems</div></div>
+            <div class="carousel-card"><img src="https://picsum.photos/seed/c4/240/136" alt=""><div class="card-title">Typography Deep</div></div>
+            <div class="carousel-card"><img src="https://picsum.photos/seed/c5/240/136" alt=""><div class="card-title">Motion Principles</div></div>
+            <div class="carousel-card"><img src="https://picsum.photos/seed/c6/240/136" alt=""><div class="card-title">Color Theory</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gallery rows (showing what's between hero and CW) -->
+      <div class="gallery-placeholder">
+        <div class="gallery-row-label">Trending</div>
+        <div class="gallery-row-cards">
+          <div class="gallery-row-card"><img src="https://picsum.photos/seed/g1/360/280" alt=""></div>
+          <div class="gallery-row-card"><img src="https://picsum.photos/seed/g2/360/280" alt=""></div>
+          <div class="gallery-row-card"><img src="https://picsum.photos/seed/g3/360/280" alt=""></div>
+          <div class="gallery-row-card"><img src="https://picsum.photos/seed/g4/360/280" alt=""></div>
+        </div>
+      </div>
+      <div class="gallery-placeholder">
+        <div class="gallery-row-label">Recently Added</div>
+        <div class="gallery-row-cards">
+          <div class="gallery-row-card"><img src="https://picsum.photos/seed/g5/360/280" alt=""></div>
+          <div class="gallery-row-card"><img src="https://picsum.photos/seed/g6/360/280" alt=""></div>
+          <div class="gallery-row-card"><img src="https://picsum.photos/seed/g7/360/280" alt=""></div>
+          <div class="gallery-row-card"><img src="https://picsum.photos/seed/g8/360/280" alt=""></div>
+        </div>
+      </div>
+
+      <div class="buried-indicator">
+        <div class="arrow-down">&#8595; &#8595; &#8595;</div>
+        <div class="buried-text">Continue Watching is down here, ~3 viewports below the hero</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- AFTER -->
+    <div class="panel">
+      <div class="panel-label">
+        <span class="dot dot-green"></span>
+        After — Continue Watching in hero zone
+      </div>
+
+      <div class="hero-mock">
+        <div class="hero-bg"></div>
+        <div class="hero-gradient-bottom"></div>
+        <div class="hero-gradient-left"></div>
+
+        <div class="hero-content">
+          <div class="hero-tags">
+            <span class="hero-tag">2026</span>
+            <span class="hero-tag">Tech</span>
+            <span class="hero-tag">12:34</span>
+          </div>
+          <div class="hero-title">The Architecture of Modern Streaming</div>
+          <div class="hero-meta">
+            <span class="star">&#9733; 8.4/10</span>
+            <span class="sep">&middot;</span>
+            <span>42K views</span>
+            <span class="sep">&middot;</span>
+            <span>TechVault</span>
+          </div>
+          <div class="hero-actions">
+            <button class="btn-play">&#9654; Play</button>
+            <button class="btn-glass">&#9974; Theatre</button>
+            <button class="btn-icon">+</button>
+            <button class="btn-icon">&#9825;</button>
+          </div>
+        </div>
+
+        <!-- THE PROPOSAL: Continue Watching strip above carousel -->
+        <div class="cw-strip">
+          <div class="cw-inner">
+            <div class="cw-label">Resume</div>
+            <div class="cw-items">
+              <!-- Card 1: 72% progress -->
+              <div class="cw-card">
+                <img class="cw-thumb" src="https://picsum.photos/seed/cw1/280/158" alt="">
+                <div class="cw-play-overlay">
+                  <div class="cw-play-icon">&#9654;</div>
+                </div>
+                <div class="cw-progress-track">
+                  <div class="cw-progress-bar" style="width: 72%"></div>
+                </div>
+                <div class="cw-card-info">
+                  <div class="cw-card-title">Figma to Code Pipeline</div>
+                  <div class="cw-card-meta">18:22 left</div>
+                </div>
+              </div>
+
+              <!-- Card 2: 35% progress -->
+              <div class="cw-card">
+                <img class="cw-thumb" src="https://picsum.photos/seed/cw2/280/158" alt="">
+                <div class="cw-play-overlay">
+                  <div class="cw-play-icon">&#9654;</div>
+                </div>
+                <div class="cw-progress-track">
+                  <div class="cw-progress-bar" style="width: 35%"></div>
+                </div>
+                <div class="cw-card-info">
+                  <div class="cw-card-title">Advanced CSS Grid</div>
+                  <div class="cw-card-meta">28:41 left</div>
+                </div>
+              </div>
+
+              <!-- Card 3: 58% progress -->
+              <div class="cw-card">
+                <img class="cw-thumb" src="https://picsum.photos/seed/cw3/280/158" alt="">
+                <div class="cw-play-overlay">
+                  <div class="cw-play-icon">&#9654;</div>
+                </div>
+                <div class="cw-progress-track">
+                  <div class="cw-progress-bar" style="width: 58%"></div>
+                </div>
+                <div class="cw-card-info">
+                  <div class="cw-card-title">Design Leadership</div>
+                  <div class="cw-card-meta">12:05 left</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="callout" style="top: -32px; right: 0;">
+            Glass strip, max 3 cards. Disappears when empty.
+          </div>
+        </div>
+
+        <div class="carousel-strip">
+          <div class="carousel-label">Up Next</div>
+          <div class="carousel-cards">
+            <div class="carousel-card active">
+              <img src="https://picsum.photos/seed/c1/240/136" alt="">
+              <div class="card-title">Architecture of...</div>
+            </div>
+            <div class="carousel-card"><img src="https://picsum.photos/seed/c2/240/136" alt=""><div class="card-title">React Patterns</div></div>
+            <div class="carousel-card"><img src="https://picsum.photos/seed/c3/240/136" alt=""><div class="card-title">Design Systems</div></div>
+            <div class="carousel-card"><img src="https://picsum.photos/seed/c4/240/136" alt=""><div class="card-title">Typography Deep</div></div>
+            <div class="carousel-card"><img src="https://picsum.photos/seed/c5/240/136" alt=""><div class="card-title">Motion Principles</div></div>
+            <div class="carousel-card"><img src="https://picsum.photos/seed/c6/240/136" alt=""><div class="card-title">Color Theory</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gallery rows still exist, just not blocking resume -->
+      <div class="gallery-placeholder">
+        <div class="gallery-row-label">Trending</div>
+        <div class="gallery-row-cards">
+          <div class="gallery-row-card"><img src="https://picsum.photos/seed/g1/360/280" alt=""></div>
+          <div class="gallery-row-card"><img src="https://picsum.photos/seed/g2/360/280" alt=""></div>
+          <div class="gallery-row-card"><img src="https://picsum.photos/seed/g3/360/280" alt=""></div>
+          <div class="gallery-row-card"><img src="https://picsum.photos/seed/g4/360/280" alt=""></div>
+        </div>
+      </div>
+      <div class="gallery-placeholder">
+        <div class="gallery-row-label">Recently Added</div>
+        <div class="gallery-row-cards">
+          <div class="gallery-row-card"><img src="https://picsum.photos/seed/g5/360/280" alt=""></div>
+          <div class="gallery-row-card"><img src="https://picsum.photos/seed/g6/360/280" alt=""></div>
+          <div class="gallery-row-card"><img src="https://picsum.photos/seed/g7/360/280" alt=""></div>
+          <div class="gallery-row-card"><img src="https://picsum.photos/seed/g8/360/280" alt=""></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

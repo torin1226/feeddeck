@@ -424,14 +424,15 @@ router.get('/api/homepage', (req, res) => {
     ).all(mode)
 
     // Get cached videos for each category
+    const videosStmt = db.prepare(
+      `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, tags, viewed
+       FROM homepage_cache
+       WHERE category_key = ? AND expires_at > datetime('now')
+       ORDER BY fetched_at DESC
+       LIMIT 20`
+    )
     const result = categories.map(cat => {
-      const videos = db.prepare(
-        `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, tags, viewed
-         FROM homepage_cache
-         WHERE category_key = ? AND expires_at > datetime('now')
-         ORDER BY fetched_at DESC
-         LIMIT 20`
-      ).all(cat.key)
+      const videos = videosStmt.all(cat.key)
 
       return {
         key: cat.key,
