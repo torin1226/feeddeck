@@ -141,7 +141,7 @@ router.post('/api/ratings/row-refresh', express.json(), (req, res) => {
   try {
     // Get unviewed videos from homepage_cache for this category, excluding downvoted
     const candidates = db.prepare(`
-      SELECT id, url, title, thumbnail, duration, source, uploader, view_count, tags, fetched_at
+      SELECT id, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, fetched_at
       FROM homepage_cache
       WHERE category_key = ? AND viewed = 0
       ORDER BY fetched_at DESC

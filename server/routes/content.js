@@ -421,7 +421,7 @@ function getHomepageStmts() {
       'SELECT key, label, query FROM categories WHERE mode = ? ORDER BY sort_order'
     )
     _homepageVideosStmt = db.prepare(
-      `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, tags, viewed
+      `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, viewed
        FROM homepage_cache
        WHERE category_key = ? AND expires_at > datetime('now')
        ORDER BY fetched_at DESC
@@ -545,14 +545,14 @@ async function refillCategory(categoryKey) {
     }
 
     const insert = db.prepare(`
-      INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, tags, fetched_at, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
+      INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, fetched_at, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
     `)
 
     let added = 0
     for (const v of videos) {
       try {
-        const result = insert.run(v.id, categoryKey, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, JSON.stringify(v.tags || []))
+        const result = insert.run(v.id, categoryKey, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []))
         if (result.changes > 0) added++
       } catch (err) {
         logger.warn(`  ⚠️ Insert failed for ${v.id} in ${categoryKey}:`, { error: err.message })

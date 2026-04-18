@@ -139,6 +139,9 @@ export function initDatabase() {
       source TEXT,
       uploader TEXT,
       view_count INTEGER DEFAULT 0,
+      like_count INTEGER,
+      subscriber_count INTEGER,
+      upload_date TEXT,
       tags TEXT DEFAULT '[]',
       fetched_at DATETIME DEFAULT (datetime('now')),
       expires_at DATETIME DEFAULT (datetime('now', '+7 days')),
@@ -171,6 +174,10 @@ export function initDatabase() {
       thumbnail TEXT,
       duration INTEGER DEFAULT 0,
       orientation TEXT DEFAULT 'horizontal',
+      view_count INTEGER,
+      like_count INTEGER,
+      subscriber_count INTEGER,
+      upload_date TEXT,
       fetched_at DATETIME DEFAULT (datetime('now')),
       expires_at DATETIME DEFAULT (datetime('now', '+6 hours')),
       watched INTEGER DEFAULT 0,
@@ -433,6 +440,26 @@ export function initDatabase() {
       db.exec("ALTER TABLE feed_cache ADD COLUMN tags TEXT DEFAULT '[]'")
     }
   } catch {}
+
+  // Migrate: add upload_date / like_count / subscriber_count to feed_cache and homepage_cache
+  for (const table of ['feed_cache', 'homepage_cache']) {
+    try {
+      const cols = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name))
+      const additions = [
+        ['upload_date', 'TEXT'],
+        ['like_count', 'INTEGER'],
+        ['subscriber_count', 'INTEGER'],
+      ]
+      if (table === 'feed_cache') additions.push(['view_count', 'INTEGER'])
+      for (const [name, type] of additions) {
+        if (!cols.has(name)) {
+          db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`)
+        }
+      }
+    } catch (err) {
+      logger.warn(`Migration failed for ${table}:`, { error: err.message })
+    }
+  }
 
   // Migrate: fix 'Your Subscriptions' label to 'My Subscriptions' to match BrowseSection TARGET_LABELS
   try {

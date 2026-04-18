@@ -3,7 +3,7 @@ import express from 'express'
 import { db } from '../database.js'
 import { logger } from '../logger.js'
 import { formatDuration } from '../utils.js'
-import { scoreVideo, isDownvoted } from '../scoring.js'
+import { scoreVideo, isDownvoted, MIN_VISIBLE_SCORE } from '../scoring.js'
 
 const router = Router()
 
@@ -43,65 +43,72 @@ router.get('/api/feed/next', (req, res) => {
       }
     }
 
-    // Get unwatched videos using a two-pass approach for source diversity:
-    // 1. Pick up to 2 videos per source (round-robin fairness)
-    // 2. Fill remaining slots with weighted random from all sources
-    //
-    // Weight logic: base weight from sources table, then 5x boost if the
-    // video's creator is in subscription_backups (user's followed accounts).
+    // Pull a wide candidate set, then score in JS using the point-based engine.
+    // The SQL exposes:
+    //   - is_subscribed: row's creator is in subscription_backups
+    //   - from_saved_search: source's query matches a system_searches entry
+    // These flags feed scoreVideo() so the additive points stack correctly.
     const perSourceLimit = Math.max(2, Math.ceil(count / 5))
     const rawUnwatched = db.prepare(`
       SELECT fc.id, fc.url, fc.stream_url AS streamUrl, fc.title, fc.creator AS uploader, fc.thumbnail,
              fc.duration, fc.orientation, fc.source_domain AS source, fc.tags,
-             COALESCE(s.weight, 1.0) * CASE WHEN sb.id IS NOT NULL THEN 5.0 ELSE 1.0 END AS weight
+             fc.upload_date, fc.like_count, fc.view_count, fc.subscriber_count,
+             CASE WHEN sb.id IS NOT NULL THEN 1 ELSE 0 END AS is_subscribed,
+             CASE WHEN ss.id IS NOT NULL THEN 1 ELSE 0 END AS from_saved_search
       FROM feed_cache fc
       LEFT JOIN sources s ON fc.source_domain = s.domain
       LEFT JOIN subscription_backups sb ON fc.creator IS NOT NULL
         AND (sb.handle = fc.creator OR sb.display_name = fc.creator)
+      LEFT JOIN system_searches ss ON s.query IS NOT NULL AND ss.query = s.query AND ss.active = 1
       WHERE fc.mode = ? AND fc.watched = 0${whereExtra}
       ORDER BY RANDOM()
       LIMIT ${count * 10}
     `).all(...params)
 
-    // Unified taste profile scoring (3.12): replaces old tag_preferences multiplier.
-    // Uses multi-signal taste_profile + creator_boosts + decay for weights.
-    // Also excludes downvoted videos from results.
     const allUnwatched = rawUnwatched.filter(v => !isDownvoted(v.url))
     for (const v of allUnwatched) {
-      const tasteScore = scoreVideo(v, 'feed', null)
-      // Blend taste score with existing source/subscription weight
-      v.weight = v.weight * (0.5 + tasteScore)
+      v._score = scoreVideo(v, 'feed', null, {
+        isSubscribed: !!v.is_subscribed,
+        fromSavedSearch: !!v.from_saved_search,
+      })
     }
 
-    // Round-robin: take perSourceLimit from each source
+    // Drop low-quality content (per user spec: "don't show low scores, that is bad content").
+    // Only filter when we have metadata to judge by — videos with no signals at all
+    // are "unknown quality," not "known bad," so they stay (and rank low naturally).
+    const visible = allUnwatched.filter(v => {
+      const hasData = v.upload_date != null || v.like_count != null || v.view_count != null
+      if (hasData && v._score < MIN_VISIBLE_SCORE) return false
+      return true
+    })
+
+    // Round-robin first pass for source diversity, then fill by score DESC.
     const bySource = {}
-    for (const v of allUnwatched) {
+    for (const v of visible) {
       if (!bySource[v.source]) bySource[v.source] = []
       bySource[v.source].push(v)
     }
+    // Within each source, prefer highest-scored first
+    for (const arr of Object.values(bySource)) arr.sort((a, b) => b._score - a._score)
 
     const videos = []
     const used = new Set()
-    // First pass: round-robin
-    for (const [_src, vids] of Object.entries(bySource)) {
+    for (const vids of Object.values(bySource)) {
       for (const v of vids.slice(0, perSourceLimit)) {
         if (videos.length >= count) break
         videos.push(v)
         used.add(v.id)
       }
     }
-    // Second pass: fill remaining slots with weighted random sampling
     if (videos.length < count) {
-      const remaining = allUnwatched.filter(v => !used.has(v.id))
-      // Weighted shuffle: items with higher weight are more likely to appear first
-      remaining.sort((a, b) => (Math.random() ** (1 / (b.weight || 1))) - (Math.random() ** (1 / (a.weight || 1))))
+      const remaining = visible.filter(v => !used.has(v.id)).sort((a, b) => b._score - a._score)
       for (const v of remaining) {
         if (videos.length >= count) break
         videos.push(v)
       }
     }
-    // Final shuffle so sources are interleaved, not grouped
-    videos.sort(() => Math.random() - 0.5)
+    // Final order: by score DESC so highest priority surfaces first
+    videos.sort((a, b) => b._score - a._score)
 
     // Apply tag filter (tags stored as JSON array in feed_cache)
     // Also matches against title as fallback for videos without tags
@@ -126,6 +133,9 @@ router.get('/api/feed/next', (req, res) => {
     const formatted = filtered.map(v => ({
       ...v,
       tags: undefined, // Don't send raw tags JSON to client
+      is_subscribed: undefined,
+      from_saved_search: undefined,
+      _score: undefined,
       durationFormatted: formatDuration(v.duration),
     }))
 

@@ -7,6 +7,20 @@
 
 import { randomUUID } from 'crypto'
 
+// Convert various source date formats to ISO YYYY-MM-DD.
+// yt-dlp returns YYYYMMDD strings. Reddit returns unix seconds.
+// Other adapters may return unix ms or ISO already.
+export function toIsoDate(raw) {
+  if (raw === null || raw === undefined || raw === '') return null
+  if (typeof raw === 'string' && /^\d{8}$/.test(raw)) {
+    return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`
+  }
+  const d = typeof raw === 'number'
+    ? new Date(raw < 1e12 ? raw * 1000 : raw)
+    : new Date(raw)
+  return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10)
+}
+
 export class SourceAdapter {
   constructor(config = {}) {
     this.name = config.name || 'unknown'
@@ -61,8 +75,10 @@ export class SourceAdapter {
       source: raw.extractor || raw.source || this.name,
       uploader: raw.uploader || raw.channel || raw.creator || '',
       view_count: raw.view_count || 0,
+      like_count: raw.like_count ?? null,
+      subscriber_count: raw.channel_follower_count ?? raw.subscriber_count ?? null,
       tags: raw.tags || [],
-      upload_date: raw.upload_date || '',
+      upload_date: toIsoDate(raw.upload_date ?? raw.timestamp ?? raw.created_utc),
       orientation: (raw.height && raw.width && raw.height > raw.width) ? 'vertical' : 'horizontal',
     }
   }

@@ -89,8 +89,8 @@ async function _refillFeedCacheImpl(mode) {
 
       // Two INSERT variants: one for videos with a pre-set stream URL (longer cache TTL
       // since the CDN URL is already known-good), one for videos that need yt-dlp resolution.
-      const COLS = 'id, source_domain, mode, url, stream_url, title, creator, thumbnail, duration, orientation, tags, fetched_at, expires_at'
-      const VALS = '?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime(\'now\')'
+      const COLS = 'id, source_domain, mode, url, stream_url, title, creator, thumbnail, duration, orientation, tags, view_count, like_count, subscriber_count, upload_date, fetched_at, expires_at'
+      const VALS = '?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime(\'now\')'
       const insertWithStream = db.prepare(
         `INSERT OR IGNORE INTO feed_cache (${COLS}) VALUES (${VALS}, datetime('now', '+7 days'))`
       )
@@ -103,7 +103,7 @@ async function _refillFeedCacheImpl(mode) {
       for (const v of videos) {
         try {
           const tags = Array.isArray(v.tags) ? JSON.stringify(v.tags) : (v.tags || '[]')
-          const params = [v.id, src.domain, mode, v.url, v.stream_url || null, v.title, v.uploader, v.thumbnail, v.duration, v.orientation, tags]
+          const params = [v.id, src.domain, mode, v.url, v.stream_url || null, v.title, v.uploader, v.thumbnail, v.duration, v.orientation, tags, v.view_count ?? null, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null]
           const stmt = v.stream_url ? insertWithStream : insertDefault
           const result = stmt.run(...params)
           if (result.changes > 0) {
@@ -199,13 +199,13 @@ function startScheduledTrendingRefresh() {
     try {
       const videos = await scraperAdapter.fetchTrending({ site, limit: 20 })
       const insert = db.prepare(`
-        INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, tags, fetched_at, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
+        INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, fetched_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
       `)
       let added = 0
       for (const v of videos) {
         try {
-          const result = insert.run(v.id, 'nsfw_trending', v.url, v.title, v.thumbnail, v.duration, v.source || site, v.uploader, v.view_count, JSON.stringify(v.tags || []))
+          const result = insert.run(v.id, 'nsfw_trending', v.url, v.title, v.thumbnail, v.duration, v.source || site, v.uploader, v.view_count, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []))
           if (result.changes > 0) added++
         } catch { /* skip on schema error */ }
       }

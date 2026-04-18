@@ -9,7 +9,7 @@
 // (oldest-fetched-first) to avoid hammering any single creator.
 // ============================================================
 
-import { SourceAdapter } from './base.js'
+import { SourceAdapter, toIsoDate } from './base.js'
 import { ytdlpExec, YTDLP_TIMEOUT } from './ytdlp.js'
 import { logger } from '../logger.js'
 import { db } from '../database.js'
@@ -224,6 +224,9 @@ export class CreatorAdapter extends SourceAdapter {
           source: 'reddit',
           uploader: `r/${p.subreddit}`,
           view_count: p.ups || 0,
+          like_count: p.ups || 0,
+          subscriber_count: null,
+          upload_date: toIsoDate(p.created_utc),
           tags: [],
           orientation: (p.media.reddit_video.height > p.media.reddit_video.width) ? 'vertical' : 'horizontal',
           streamUrl: p.media.reddit_video.fallback_url,
@@ -242,6 +245,9 @@ export class CreatorAdapter extends SourceAdapter {
           source: 'reddit',
           uploader: `r/${p.subreddit}`,
           view_count: p.ups || 0,
+          like_count: p.ups || 0,
+          subscriber_count: null,
+          upload_date: toIsoDate(p.created_utc),
           tags: [],
           orientation: 'horizontal',
         })

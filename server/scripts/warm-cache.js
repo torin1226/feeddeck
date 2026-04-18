@@ -117,14 +117,14 @@ for (const mode of modes) {
       }
 
       const insert = db.prepare(`
-        INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, tags, fetched_at, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
+        INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, fetched_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
       `)
 
       let added = 0
       for (const v of videos) {
         try {
-          const result = insert.run(v.id, cat.key, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, JSON.stringify(v.tags || []))
+          const result = insert.run(v.id, cat.key, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []))
           if (result.changes > 0) added++
         } catch (err) {
           console.log(`      ⚠️ Insert failed for ${v.url?.substring(0, 60)}: ${err.message.substring(0, 60)}`)
@@ -153,8 +153,8 @@ for (const mode of modes) {
       const videos = await withRetry(src.label, () => registry.search(query, { site: src.domain, limit: 20 }))
 
       const insert = db.prepare(`
-        INSERT OR IGNORE INTO feed_cache (id, source_domain, mode, url, title, creator, thumbnail, duration, orientation, tags, fetched_at, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+6 hours'))
+        INSERT OR IGNORE INTO feed_cache (id, source_domain, mode, url, title, creator, thumbnail, duration, orientation, tags, view_count, like_count, subscriber_count, upload_date, fetched_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+6 hours'))
       `)
 
       let added = 0
@@ -162,7 +162,7 @@ for (const mode of modes) {
       for (const v of videos) {
         try {
           const tags = Array.isArray(v.tags) ? JSON.stringify(v.tags) : (v.tags || '[]')
-          const result = insert.run(v.id, src.domain, mode, v.url, v.title, v.uploader, v.thumbnail, v.duration, v.orientation, tags)
+          const result = insert.run(v.id, src.domain, mode, v.url, v.title, v.uploader, v.thumbnail, v.duration, v.orientation, tags, v.view_count ?? null, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null)
           if (result.changes > 0) {
             added++
             if (v.url) newUrls.push(v.url)
