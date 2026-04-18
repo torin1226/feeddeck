@@ -6,6 +6,7 @@ import { db } from '../database.js'
 import { getCookieArgs } from '../cookies.js'
 import { logger } from '../logger.js'
 import { getMode, inferMode, formatDuration, safeParse } from '../utils.js'
+import { invalidateProfileCache } from '../scoring.js'
 
 const execFileP = promisify(execFile)
 
@@ -32,7 +33,17 @@ router.put('/api/tags/preferences', express.json(), (req, res) => {
   if (!tag?.trim()) return res.status(400).json({ error: 'tag required' })
   if (!['liked', 'disliked'].includes(preference)) return res.status(400).json({ error: 'preference must be liked or disliked' })
   try {
-    db.prepare('INSERT OR REPLACE INTO tag_preferences (tag, preference, updated_at) VALUES (?, ?, datetime(\'now\'))').run(tag.trim().toLowerCase(), preference)
+    const cleanTag = tag.trim().toLowerCase()
+    const weight = preference === 'liked' ? 1.0 : -1.0
+    db.prepare('INSERT OR REPLACE INTO tag_preferences (tag, preference, updated_at) VALUES (?, ?, datetime(\'now\'))').run(cleanTag, preference)
+    // Keep taste_profile in sync so the feed scoring engine sees manual preferences immediately
+    const existing = db.prepare('SELECT id FROM taste_profile WHERE signal_type = ? AND signal_value = ? AND surface_key IS NULL').get('tag', cleanTag)
+    if (existing) {
+      db.prepare('UPDATE taste_profile SET weight = ?, updated_at = datetime(\'now\') WHERE id = ?').run(weight, existing.id)
+    } else {
+      db.prepare('INSERT INTO taste_profile (signal_type, signal_value, weight, surface_key, updated_at) VALUES (?, ?, ?, NULL, datetime(\'now\'))').run('tag', cleanTag, weight)
+    }
+    invalidateProfileCache()
     res.json({ ok: true })
   } catch (err) {
     logger.error('Tag preference set error', { error: err.message })
@@ -43,7 +54,11 @@ router.put('/api/tags/preferences', express.json(), (req, res) => {
 // DELETE /api/tags/preferences/:tag — remove a tag preference
 router.delete('/api/tags/preferences/:tag', (req, res) => {
   try {
-    db.prepare('DELETE FROM tag_preferences WHERE tag = ?').run(req.params.tag)
+    const cleanTag = req.params.tag.toLowerCase()
+    db.prepare('DELETE FROM tag_preferences WHERE tag = ?').run(cleanTag)
+    // Remove from taste_profile so the feed stops boosting/penalizing this tag
+    db.prepare('DELETE FROM taste_profile WHERE signal_type = ? AND signal_value = ? AND surface_key IS NULL').run('tag', cleanTag)
+    invalidateProfileCache()
     res.json({ ok: true })
   } catch (err) {
     logger.error('Tag preference delete error', { error: err.message })
