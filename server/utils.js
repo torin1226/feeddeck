@@ -16,6 +16,9 @@ export const ALLOWED_CDN_DOMAINS = [
   'redgifs.com',
   'thumbs2.redgifs.com',
   'b-cdn.net',         // BunnyCDN (FikFap video streams)
+  'xhms.pro',          // xHamster CDN
+  'redtube.com',       // RedTube CDN (also uses phncdn.com)
+  'youporn.com',       // YouPorn CDN (also uses phncdn.com)
 ]
 
 export function isAllowedCdnUrl(url) {
@@ -70,6 +73,12 @@ export function getRefererForUrl(url) {
   if (url.includes('tiktok')) return 'https://www.tiktok.com/'
   if (url.includes('googlevideo') || url.includes('youtube')) return 'https://www.youtube.com/'
   if (url.includes('redgifs') || url.includes('b-cdn.net')) return 'https://www.redgifs.com/'
+  if (url.includes('xhamster') || url.includes('xhms') || url.includes('hamster')) return 'https://xhamster.com/'
+  if (url.includes('xvideos') || url.includes('xv-cdn')) return 'https://www.xvideos.com/'
+  if (url.includes('spankbang')) return 'https://spankbang.com/'
+  if (url.includes('redtube')) return 'https://www.redtube.com/'
+  if (url.includes('youporn')) return 'https://www.youporn.com/'
+  if (url.includes('fikfap')) return 'https://fikfap.com/'
   return 'https://www.youtube.com/'
 }
 
