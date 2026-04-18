@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
 import useHomeStore from '../../stores/homeStore'
 import PosterCard from './PosterCard'
+import PosterInfoPanel from './PosterInfoPanel'
 
 // ============================================================
 // GalleryRow
@@ -42,9 +43,16 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
   const endFired = useRef(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const activeIndexRef = useRef(0)
+  // Ref passed to PosterInfoPanel so it can compute panel position
+  const focusedCardRef = useRef(null)
+  // Outer row wrapper — PosterInfoPanel positions itself absolute within this
+  const trackWrapRef = useRef(null)
 
-  // Keep ref in sync
-  useEffect(() => { activeIndexRef.current = activeIndex }, [activeIndex])
+  // Keep refs in sync with activeIndex
+  useEffect(() => {
+    activeIndexRef.current = activeIndex
+    focusedCardRef.current = cardsRef.current[activeIndex] ?? null
+  }, [activeIndex])
 
   // RAF-batched parallax + focus detection on scroll
   const updateParallax = useCallback(() => {
@@ -133,10 +141,21 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
   // Compute distance from center for each card based on activeIndex
   const getCardDist = useCallback((index) => Math.abs(index - activeIndex), [activeIndex])
 
+  const handleRowKeyDown = useCallback((e) => {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); scrollByCard(-1) }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); scrollByCard(1) }
+  }, [scrollByCard])
+
   if (!items?.length) return null
 
   return (
-    <div className="mb-2 group/gallery">
+    <div
+      ref={trackWrapRef}
+      className="mb-2 group/gallery relative"
+      tabIndex={0}
+      onKeyDown={handleRowKeyDown}
+      style={{ outline: 'none' }}
+    >
       <style>{ARROW_HOVER_CSS}</style>
 
       {/* Row header */}
@@ -239,6 +258,15 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
           <span className="text-micro text-text-muted ml-1">+{items.length - 14}</span>
         )}
       </div>
+
+      {/* Info panel — poster variant only, anchored to focused card */}
+      {variant !== 'landscape' && (
+        <PosterInfoPanel
+          item={items[activeIndex]}
+          cardRef={focusedCardRef}
+          trackWrapRef={trackWrapRef}
+        />
+      )}
     </div>
   )
 }

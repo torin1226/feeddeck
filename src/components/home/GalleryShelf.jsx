@@ -1,10 +1,11 @@
 import useHomeStore from '../../stores/homeStore'
 import GalleryRow from './GalleryRow'
+import PosterPeekRow from './PosterPeekRow'
 
 // ============================================================
 // GalleryShelf
-// Replaces PosterShelf. Renders the first 2 homepage categories
-// as individual GalleryRow components (one per category).
+// Renders the first 2 homepage categories as GalleryRows.
+// Shows a peek strip of the 3rd category below to tease more.
 // ============================================================
 
 export default function GalleryShelf() {
@@ -13,6 +14,8 @@ export default function GalleryShelf() {
   if (!categories || categories.length === 0) return null
 
   const shelfCategories = categories.slice(0, 2)
+  // Peek row shows thumbnails from the next unrendered category
+  const peekCategory = categories[2] ?? null
 
   return (
     <div>
@@ -23,6 +26,12 @@ export default function GalleryShelf() {
           label={cat.label}
         />
       ))}
+      {peekCategory && (
+        <PosterPeekRow
+          category={peekCategory}
+          onActivate={null}
+        />
+      )}
     </div>
   )
 }
