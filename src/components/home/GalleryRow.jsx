@@ -146,6 +146,22 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
     else if (e.key === 'ArrowRight') { e.preventDefault(); scrollByCard(1) }
   }, [scrollByCard])
 
+  // Vertical scroll wheel navigates card-by-card. Horizontal (trackpad swipe) scrolls natively.
+  // Must be attached via useEffect with { passive: false } -- React's onWheel is passive by default
+  // which makes preventDefault() a no-op for wheel events.
+  const handleWheel = useCallback((e) => {
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return
+    e.preventDefault()
+    scrollByCard(e.deltaY > 0 ? 1 : -1)
+  }, [scrollByCard])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    el.addEventListener('wheel', handleWheel, { passive: false })
+    return () => el.removeEventListener('wheel', handleWheel)
+  }, [handleWheel])
+
   if (!items?.length) return null
 
   return (
@@ -191,7 +207,8 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
               <div
                 key={item.id || `card-${i}`}
                 ref={(el) => (cardsRef.current[i] = el)}
-                className="flex-none snap-center"
+                className="flex-none snap-center animate-card-entrance"
+                style={{ animationDelay: `${i * 40}ms` }}
               >
                 <PosterCard
                   item={item}
