@@ -500,6 +500,8 @@ export class ScraperAdapter extends SourceAdapter {
         thumbnail: g.urls?.poster || g.urls?.thumbnail || '',
         duration: Math.round(g.duration || 0),
         view_count: g.views || 0,
+        like_count: g.likes ?? null,
+        timestamp: g.createDate ?? null,
         uploader: g.userName || '',
         source: 'redgifs.com',
       }),

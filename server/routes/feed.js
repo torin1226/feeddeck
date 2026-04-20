@@ -74,10 +74,12 @@ router.get('/api/feed/next', (req, res) => {
     }
 
     // Drop low-quality content (per user spec: "don't show low scores, that is bad content").
-    // Only filter when we have metadata to judge by — videos with no signals at all
-    // are "unknown quality," not "known bad," so they stay (and rank low naturally).
+    // Only filter when we have temporal or quality metadata to judge by.
+    // view_count alone is not enough -- scraper content always has view_count but no
+    // upload_date or like_count, so we can't tell if low views means "bad" or "just new".
+    // Without upload_date we can't contextualize view count, so treat as unknown quality.
     const visible = allUnwatched.filter(v => {
-      const hasData = v.upload_date != null || v.like_count != null || v.view_count != null
+      const hasData = v.upload_date != null || v.like_count != null
       if (hasData && v._score < MIN_VISIBLE_SCORE) return false
       return true
     })
