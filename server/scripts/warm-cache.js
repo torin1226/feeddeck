@@ -89,6 +89,17 @@ if (dryRun) {
 const stats = { categoriesRefilled: 0, feedRefilled: 0, streamUrlsResolved: 0, errors: 0 }
 const startTime = Date.now()
 
+// --- Phase 0: Purge stale homepage entries ---
+// Must run before Phase 1 so INSERT OR IGNORE can add fresh content
+// (stale IDs block new inserts otherwise)
+console.log('--- Phase 0: Purge Stale Homepage Entries ---')
+const homepageStalePurged = db.prepare(`
+  DELETE FROM homepage_cache
+  WHERE fetched_at < datetime('now', '-3 days')
+`).run()
+stats.purged = homepageStalePurged.changes
+console.log(`  Purged ${homepageStalePurged.changes} homepage entries older than 3 days\n`)
+
 // --- Phase 1: Refill homepage categories ---
 console.log('--- Phase 1: Homepage Categories ---')
 const modes = modeArg === 'all' ? ['social', 'nsfw'] : [modeArg]
@@ -219,7 +230,6 @@ console.log()
 
 // --- Phase 4: Purge stale cache entries ---
 console.log('\n--- Phase 4: Purge Stale Entries ---')
-stats.purged = 0
 
 const feedPurged = db.prepare(`
   DELETE FROM feed_cache
