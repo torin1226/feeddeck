@@ -17,6 +17,26 @@ function getFeedUnwatchedCountStmt() {
   return _feedUnwatchedCountStmt
 }
 
+let _stmts
+function getStmts() {
+  if (!_stmts) {
+    _stmts = {
+      markWatched: db.prepare('UPDATE feed_cache SET watched = 1 WHERE id = ?'),
+      hideSource: db.prepare('UPDATE sources SET active = 0 WHERE domain = ?'),
+      boostSource: db.prepare('UPDATE sources SET weight = MIN(weight + 0.3, 3.0) WHERE domain = ?'),
+      getQueue: db.prepare('SELECT id, position, video_url, title, thumbnail, duration, duration_formatted, added_at FROM queue ORDER BY position ASC'),
+      getQueueIds: db.prepare('SELECT id FROM queue ORDER BY position ASC'),
+      updateQueuePos: db.prepare('UPDATE queue SET position = ? WHERE id = ?'),
+      maxQueuePos: db.prepare('SELECT COALESCE(MAX(position), -1) as maxPos FROM queue'),
+      shiftQueue: db.prepare('UPDATE queue SET position = position + 1 WHERE position >= ?'),
+      insertQueue: db.prepare('INSERT INTO queue (id, position, video_url, title, thumbnail, duration, duration_formatted) VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?, ?, ?)'),
+      deleteQueueItem: db.prepare('DELETE FROM queue WHERE id = ?'),
+      clearQueue: db.prepare('DELETE FROM queue'),
+    }
+  }
+  return _stmts
+}
+
 // -----------------------------------------------------------
 // GET /api/feed/next?mode=social|nsfw&count=10
 // Return next unwatched videos from feed cache, weighted by
@@ -169,7 +189,7 @@ router.post('/api/feed/watched', (req, res) => {
   if (!id) return res.status(400).json({ error: 'Video ID required' })
 
   try {
-    db.prepare('UPDATE feed_cache SET watched = 1 WHERE id = ?').run(id)
+    getStmts().markWatched.run(id)
     res.json({ ok: true })
   } catch (err) {
     logger.error('Feed watched error:', { error: err.message })
@@ -186,10 +206,11 @@ router.post('/api/feed/source-feedback', (req, res) => {
   if (!domain || !action) return res.status(400).json({ error: 'domain and action required' })
 
   try {
+    const s = getStmts()
     if (action === 'hide') {
-      db.prepare('UPDATE sources SET active = 0 WHERE domain = ?').run(domain)
+      s.hideSource.run(domain)
     } else if (action === 'boost') {
-      db.prepare('UPDATE sources SET weight = MIN(weight + 0.3, 3.0) WHERE domain = ?').run(domain)
+      s.boostSource.run(domain)
     }
     res.json({ ok: true })
   } catch (err) {
@@ -204,13 +225,13 @@ router.post('/api/feed/source-feedback', (req, res) => {
 // -----------------------------------------------------------
 
 function getFullQueue() {
-  return db.prepare('SELECT id, position, video_url, title, thumbnail, duration, duration_formatted, added_at FROM queue ORDER BY position ASC').all()
+  return getStmts().getQueue.all()
 }
 
 function reindexQueue() {
-  const items = db.prepare('SELECT id FROM queue ORDER BY position ASC').all()
-  const update = db.prepare('UPDATE queue SET position = ? WHERE id = ?')
-  items.forEach((item, i) => update.run(i, item.id))
+  const s = getStmts()
+  const items = s.getQueueIds.all()
+  items.forEach((item, i) => s.updateQueuePos.run(i, item.id))
 }
 
 // GET /api/queue — return ordered queue
@@ -229,17 +250,16 @@ router.post('/api/queue', express.json(), (req, res) => {
   if (!video_url) return res.status(400).json({ error: 'video_url required' })
 
   try {
-    const maxPos = db.prepare('SELECT COALESCE(MAX(position), -1) as maxPos FROM queue').get().maxPos
+    const s = getStmts()
+    const maxPos = s.maxQueuePos.get().maxPos
     const insertPos = position !== undefined ? position : maxPos + 1
 
     // If inserting at a specific position, shift items down
     if (position !== undefined) {
-      db.prepare('UPDATE queue SET position = position + 1 WHERE position >= ?').run(insertPos)
+      s.shiftQueue.run(insertPos)
     }
 
-    db.prepare(
-      'INSERT INTO queue (id, position, video_url, title, thumbnail, duration, duration_formatted) VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?, ?, ?)'
-    ).run(insertPos, video_url, title || '', thumbnail || '', duration || 0, duration_formatted || '0:00')
+    s.insertQueue.run(insertPos, video_url, title || '', thumbnail || '', duration || 0, duration_formatted || '0:00')
 
     res.json({ queue: getFullQueue() })
   } catch (err) {
@@ -254,8 +274,7 @@ router.put('/api/queue', express.json(), (req, res) => {
   if (!Array.isArray(order)) return res.status(400).json({ error: 'order array required' })
 
   try {
-    const update = db.prepare('UPDATE queue SET position = ? WHERE id = ?')
-    order.forEach((id, i) => update.run(i, id))
+    order.forEach((id, i) => getStmts().updateQueuePos.run(i, id))
     res.json({ queue: getFullQueue() })
   } catch (err) {
     logger.error('Queue reorder error', { error: err.message })
@@ -266,7 +285,7 @@ router.put('/api/queue', express.json(), (req, res) => {
 // DELETE /api/queue/:id — remove single item, reindex
 router.delete('/api/queue/:id', (req, res) => {
   try {
-    db.prepare('DELETE FROM queue WHERE id = ?').run(req.params.id)
+    getStmts().deleteQueueItem.run(req.params.id)
     reindexQueue()
     res.json({ queue: getFullQueue() })
   } catch (err) {
@@ -278,7 +297,7 @@ router.delete('/api/queue/:id', (req, res) => {
 // DELETE /api/queue — clear all
 router.delete('/api/queue', (req, res) => {
   try {
-    db.prepare('DELETE FROM queue').run()
+    getStmts().clearQueue.run()
     res.json({ queue: [] })
   } catch (err) {
     logger.error('Queue clear error', { error: err.message })

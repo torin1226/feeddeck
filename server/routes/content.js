@@ -414,7 +414,7 @@ router.delete('/api/sources/:domain', (req, res) => {
 // Returns cached videos grouped by category.
 // Falls back to placeholder data if cache is empty.
 // -----------------------------------------------------------
-let _homepageCategoriesStmt, _homepageVideosStmt
+let _homepageCategoriesStmt, _homepageVideosStmt, _homepageVideosFallbackStmt
 function getHomepageStmts() {
   if (!_homepageCategoriesStmt) {
     _homepageCategoriesStmt = db.prepare(
@@ -427,8 +427,16 @@ function getHomepageStmts() {
        ORDER BY fetched_at DESC
        LIMIT 20`
     )
+    // Serves stale entries when warm-cache hasn't run and all entries are expired
+    _homepageVideosFallbackStmt = db.prepare(
+      `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, viewed
+       FROM homepage_cache
+       WHERE category_key = ? AND viewed = 0
+       ORDER BY fetched_at DESC
+       LIMIT 20`
+    )
   }
-  return { categories: _homepageCategoriesStmt, videos: _homepageVideosStmt }
+  return { categories: _homepageCategoriesStmt, videos: _homepageVideosStmt, videosFallback: _homepageVideosFallbackStmt }
 }
 
 router.get('/api/homepage', (req, res) => {
@@ -438,7 +446,10 @@ router.get('/api/homepage', (req, res) => {
     const stmts = getHomepageStmts()
     const categories = stmts.categories.all(mode)
     const result = categories.map(cat => {
-      const videos = stmts.videos.all(cat.key)
+      let videos = stmts.videos.all(cat.key)
+      if (videos.length === 0) {
+        videos = stmts.videosFallback.all(cat.key)
+      }
 
       return {
         key: cat.key,
@@ -519,8 +530,23 @@ router.post('/api/homepage/viewed', (req, res) => {
 // -----------------------------------------------------------
 // Async refill: fetch new videos for a category via yt-dlp
 // -----------------------------------------------------------
+let _refillStmts
+function getRefillStmts() {
+  if (!_refillStmts) {
+    _refillStmts = {
+      getCat: db.prepare('SELECT query, mode FROM categories WHERE key = ?'),
+      insert: db.prepare(`
+        INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, fetched_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
+      `),
+    }
+  }
+  return _refillStmts
+}
+
 async function refillCategory(categoryKey) {
-  const cat = db.prepare('SELECT query, mode FROM categories WHERE key = ?').get(categoryKey)
+  const stmts = getRefillStmts()
+  const cat = stmts.getCat.get(categoryKey)
   if (!cat) return
 
   const query = cat.query
@@ -528,12 +554,8 @@ async function refillCategory(categoryKey) {
   logger.info(`  🔄 Refilling category: ${categoryKey} (query: "${query}")`)
 
   try {
-    // Use yt-dlp for YouTube/search queries. For NSFW site URLs, use the
-    // registry fallback chain (scraper → yt-dlp) since yt-dlp can't always
-    // extract from NSFW sites directly.
     let videos
     if (cat.mode === 'nsfw' && query.startsWith('http')) {
-      // Extract domain from URL for site-specific routing
       try {
         const domain = new URL(query).hostname.replace(/^www\./, '')
         videos = await registry.search(query, { site: domain, limit: 12 })
@@ -544,15 +566,10 @@ async function refillCategory(categoryKey) {
       videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
     }
 
-    const insert = db.prepare(`
-      INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, fetched_at, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
-    `)
-
     let added = 0
     for (const v of videos) {
       try {
-        const result = insert.run(v.id, categoryKey, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []))
+        const result = stmts.insert.run(v.id, categoryKey, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []))
         if (result.changes > 0) added++
       } catch (err) {
         logger.warn(`  ⚠️ Insert failed for ${v.id} in ${categoryKey}:`, { error: err.message })
