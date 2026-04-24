@@ -178,20 +178,37 @@ export class ScraperAdapter extends SourceAdapter {
     }
 
     const pptr = await getPuppeteer()
-    this.browser = await pptr.launch({
-      headless: 'new',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-      ],
-    })
-    return this.browser
+
+    // Retry launch once after a short delay. On low-memory systems (e.g. Beelink 8GB),
+    // an OOM during a refresh rotation would otherwise throw synchronously and propagate
+    // up through every active scraper call simultaneously, disabling all Puppeteer sources.
+    // Returning null instead lets callers degrade gracefully to empty results.
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        this.browser = await pptr.launch({
+          headless: 'new',
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+          ],
+        })
+        return this.browser
+      } catch (err) {
+        logger.warn(`Puppeteer launch failed (attempt ${attempt}/2): ${err.message}`)
+        this.browser = null
+        if (attempt < 2) await new Promise(r => setTimeout(r, 2000))
+      }
+    }
+
+    logger.error('Puppeteer failed to launch after 2 attempts -- scraper will return empty results until next retry')
+    return null
   }
 
   async _newPage() {
     const browser = await this._getBrowser()
+    if (!browser) return null
     const page = await browser.newPage()
 
     // Reset idle timeout — close browser after 10 min of no scraping activity
@@ -238,6 +255,10 @@ export class ScraperAdapter extends SourceAdapter {
     let page
     try {
       page = await this._newPage()
+      if (!page) {
+        logger.warn(`Scraper: Chromium unavailable, skipping ${siteKey} (${url})`)
+        return []
+      }
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 })
 
       // Cloudflare challenge detection: if the page title indicates a challenge,
