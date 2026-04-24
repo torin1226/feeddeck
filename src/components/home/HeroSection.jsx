@@ -352,10 +352,14 @@ export default function HeroSection() {
 
         {/* Meta */}
         <div className="flex items-center gap-2.5 text-[13px] text-text-secondary mb-5 flex-wrap">
-          <span className="flex items-center gap-1 text-amber-400 font-semibold">
-            &#9733; {heroItem.rating}/10
-          </span>
-          <span className="text-text-muted">&middot;</span>
+          {heroItem.rating != null && (
+            <>
+              <span className="flex items-center gap-1 text-amber-400 font-semibold">
+                &#9733; {heroItem.rating}/10
+              </span>
+              <span className="text-text-muted">&middot;</span>
+            </>
+          )}
           <span>{heroItem.views} views</span>
           <span className="text-text-muted">&middot;</span>
           <span>{heroItem.uploader}</span>
