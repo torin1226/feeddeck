@@ -29,7 +29,7 @@ For backlog management protocol, see `.claude/skills/backlog/SKILL.md`.
 | M4: Deploy & Advanced | Waiting | 23/35 (66%) | Social pipeline, AI recs, extension |
 | M5: Design Polish | Active | 47/52 (90%) | Color tokens, glass materials, logo |
 | M5a: Playback | Blocked | 10/18 (56%) | Needs manual browser testing (8 [?]) |
-| Discovered Tasks | Mixed | 30/50 (60%) | Scroll hijack bug (P0), dead code cleanup |
+| Discovered Tasks | Mixed | 32/50 (64%) | Scroll hijack bug (P0), dead code cleanup |
 
 > **Archive:** 135+ completed tasks moved to [`BACKLOG-ARCHIVE.md`](BACKLOG-ARCHIVE.md) on 2026-04-25.
 
@@ -533,11 +533,6 @@ _Claude Code adds tasks here as they come up during implementation. Move to the 
 
 - [x] (2026-04-24) **Recency bias: prioritize recently cached videos across all rows** — fixed alongside the `daysAgo` bug. Same change set above.
 
-- [ ] (2026-04-24) **`/api/homepage/more` endpoint missing (load-more is dead code)** — `HeroCarousel.jsx:107` fetches `/api/homepage/more?mode=&offset=&limit=` from an IntersectionObserver when the carousel scrolls to its end. The endpoint returns 404 (no matching route in `server/routes/`); the failure is silently swallowed by `.catch(() => {})`. Either implement the endpoint server-side (return next batch from `homepage_cache` past the initial 20-item cap) or rip out the IntersectionObserver and the `loadingMore` state. Found while debugging the recency fix — not regressed by it.
-  > Files: `src/components/home/HeroCarousel.jsx` (lines 97-135), `server/routes/content.js` (would add new route)
-  > Severity: low — feature is unused but invisible to users
-
-- [ ] (2026-04-24) **Tech debt: `PosterInfoPanel.jsx` is dead code** — `GalleryRow.jsx` no longer imports or renders `PosterInfoPanel`. The file still exists at `src/components/home/PosterInfoPanel.jsx`. Safe to delete. No other files import it (verify with grep before deleting).
 
 - [ ] (2026-04-24) **BUG: Vertical scroll hijacked by gallery row wheel handler** — GalleryRow.jsx lines 152-156: `handleWheel` captures vertical `deltaY` and converts to horizontal scroll via `e.preventDefault()`. When scrolling down the page and cursor passes over any gallery row, page scroll stops and the row scrolls horizontally instead. Fix: remove wheel-to-horizontal-scroll behavior entirely, or only activate when row is explicitly focused/active (e.g. after a click). All rows after the Top 10 are affected.
   > Files: `src/components/home/GalleryRow.jsx` (handleWheel, useEffect line 158-163)
@@ -604,6 +599,8 @@ _Open items from archived design review runs. Completed review items in [`BACKLO
 
 > Full history: [`BACKLOG-ARCHIVE.md`](BACKLOG-ARCHIVE.md)
 
+- [x] (2026-04-25) **Discovered: `/api/homepage/more` dead code removed** — Ripped out the IntersectionObserver, sentinel ref, and `loadingMore` state from `HeroCarousel.jsx`. Endpoint was never implemented; silent-404 fetch is gone.
+- [x] (2026-04-25) **Discovered: `PosterInfoPanel.jsx` deleted** — Verified zero imports in `src/` and `server/` before removing.
 - [x] (2026-03-22) 4.1 Deployment, 4.3 Theme, 4.8 Source Management (committed from previous session)
 - [x] (2026-03-22) 5.9 Library Page Upgrade: font-display headers, tab bar (All/Favorites/History/Watch Later/Top Rated) with count badges, Continue Watching horizontal row with progress bars, per-tab empty states with CTAs, watchProgress tracking in libraryStore
 - [x] (2026-03-22) 5a.1 Playback Audit & Fixes: HLS.js fatal error recovery (reject instead of resolve), HeroSection onEnded queue autoadvance, proxy-stream 15s timeout, stream URL expires_at check, proactive TTL monitor (re-resolves URLs expiring within 15min)
