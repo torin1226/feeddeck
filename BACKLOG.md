@@ -29,7 +29,7 @@ For backlog management protocol, see `.claude/skills/backlog/SKILL.md`.
 | M4: Deploy & Advanced | Waiting | 23/35 (66%) | Social pipeline, AI recs, extension |
 | M5: Design Polish | Active | 47/52 (90%) | Color tokens, glass materials, logo |
 | M5a: Playback | Blocked | 10/18 (56%) | Needs manual browser testing (8 [?]) |
-| Discovered Tasks | Mixed | 32/50 (64%) | Scroll hijack bug (P0), dead code cleanup |
+| Discovered Tasks | Mixed | 35/50 (70%) | Editorial design polish, deferred items |
 
 > **Archive:** 135+ completed tasks moved to [`BACKLOG-ARCHIVE.md`](BACKLOG-ARCHIVE.md) on 2026-04-25.
 
@@ -534,17 +534,6 @@ _Claude Code adds tasks here as they come up during implementation. Move to the 
 - [x] (2026-04-24) **Recency bias: prioritize recently cached videos across all rows** — fixed alongside the `daysAgo` bug. Same change set above.
 
 
-- [ ] (2026-04-24) **BUG: Vertical scroll hijacked by gallery row wheel handler** — GalleryRow.jsx lines 152-156: `handleWheel` captures vertical `deltaY` and converts to horizontal scroll via `e.preventDefault()`. When scrolling down the page and cursor passes over any gallery row, page scroll stops and the row scrolls horizontally instead. Fix: remove wheel-to-horizontal-scroll behavior entirely, or only activate when row is explicitly focused/active (e.g. after a click). All rows after the Top 10 are affected.
-  > Files: `src/components/home/GalleryRow.jsx` (handleWheel, useEffect line 158-163)
-  > Severity: high — breaks core page navigation
-
-- [ ] (2026-04-24) **"Viral This Week" row too small** — BrowseSection renders all categories after the first 2 with `variant="landscape"`, which caps card height at `min(50vh, 360px)`. GalleryShelf renders first 2 categories with default `variant='poster'` at full `50vh`. On tall viewports (1080p+), the landscape rows look noticeably shorter. Fix: either increase the landscape cap or unify all browse rows to the same visual height.
-  > Files: `src/components/home/PosterCard.jsx` (cardHeight), `src/components/home/GalleryRow.jsx` (getCardHeight)
-  > Severity: medium — inconsistent visual weight
-
-- [ ] (2026-04-24) **Top 10 row too small** — Top10Row uses hardcoded `w-[130px]` / `h-[185px]` cards, which are tiny compared to 50vh (~500px) GalleryRow cards. Should match the visual height of other gallery sections. Scale up card dimensions and rank numbers proportionally.
-  > Files: `src/components/home/Top10Row.jsx` (card sizing, rank font size)
-  > Severity: medium — visual hierarchy is off
 
 - [ ] (2026-04-24) Phase 3 of NSFW homepage plan: taste-driven row engine ("Because you liked POV", "More from {creator}", "Tonight's Picks"). Stored as dynamic `persistent_rows` entries with a `dynamic_query` field, regenerated nightly. Sketched in `~/.claude/plans/refactored-swimming-cocoa.md`. Defer until current shelves are validated in real use.
 - [ ] (2026-04-24) Top-3 PH model rows are wired but currently empty (`creator_boosts` table has no PH creators with positive boost yet). Will auto-appear once enough thumbs-up ratings accrue on PH content. No code action needed — just usage time.
@@ -599,6 +588,9 @@ _Open items from archived design review runs. Completed review items in [`BACKLO
 
 > Full history: [`BACKLOG-ARCHIVE.md`](BACKLOG-ARCHIVE.md)
 
+- [x] (2026-04-25) **Discovered: Vertical scroll hijack — already fixed** — Stale backlog item. `GalleryRow.jsx:142` already says "Scroll hijacking REMOVED — vertical wheel scrolls the page, not the row." Resolved in commit `2cd9422`. Marked complete.
+- [x] (2026-04-25) **Discovered: "Viral This Week" landscape rows scaled up** — `PosterCard.jsx` landscape cap bumped `min(50vh, 360px)` → `min(50vh, 420px)`. On 1080p the landscape cards now render at 420px (was 360px), narrowing the visual-weight gap with poster shelves at 540px.
+- [x] (2026-04-25) **Discovered: Top 10 row scaled up** — `Top10Row.jsx` switched from fixed `w-[130px]/h-[185px]/text-[80px]` to clamp-based responsive sizing. On 1080p: card 189×270 (was 130×185), rank 156px (was 80px). Aspect ratio 0.703 preserved across all viewport sizes.
 - [x] (2026-04-25) **Discovered: `/api/homepage/more` dead code removed** — Ripped out the IntersectionObserver, sentinel ref, and `loadingMore` state from `HeroCarousel.jsx`. Endpoint was never implemented; silent-404 fetch is gone.
 - [x] (2026-04-25) **Discovered: `PosterInfoPanel.jsx` deleted** — Verified zero imports in `src/` and `server/` before removing.
 - [x] (2026-03-22) 4.1 Deployment, 4.3 Theme, 4.8 Source Management (committed from previous session)

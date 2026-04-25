@@ -79,7 +79,7 @@ export default function Top10Row() {
             >
               {/* Rank number */}
               <span
-                className="text-[80px] font-display font-black leading-none text-transparent select-none shrink-0 -mr-3 relative z-10"
+                className="text-[clamp(80px,15vh,156px)] font-display font-black leading-none text-transparent select-none shrink-0 -mr-3 relative z-10"
                 style={{
                   WebkitTextStroke: '2px rgba(244,63,94,0.5)',
                 }}
@@ -88,12 +88,12 @@ export default function Top10Row() {
               </span>
 
               {/* Card */}
-              <div className="w-[130px] rounded-lg overflow-hidden bg-raised shadow-card-hover">
+              <div className="w-[clamp(130px,17.5vh,253px)] rounded-lg overflow-hidden bg-raised shadow-card-hover">
                 <img
                   src={item.thumbnailSm || item.thumbnail}
                   alt={item.title}
                   loading="lazy"
-                  className="w-full h-[185px] object-cover block bg-overlay"
+                  className="w-full h-[clamp(185px,25vh,360px)] object-cover block bg-overlay"
                 />
                 <div className="p-2">
                   <div className="text-[11px] font-semibold leading-tight line-clamp-2">

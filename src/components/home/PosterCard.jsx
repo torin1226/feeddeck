@@ -52,8 +52,9 @@ const PosterCard = memo(
     const finalBrightness = isFocused ? 1 : brightness
     const finalScale = isFocused ? 1 : scale
 
-    // Landscape rows (e.g. Continue Watching, category rows) get capped height
-    const cardHeight = variant === 'landscape' ? 'min(50vh, 360px)' : '50vh'
+    // Landscape rows (e.g. Continue Watching, category rows) get capped height.
+    // 16:9 cards at full 50vh would be too wide on 1080p+ monitors, so we cap.
+    const cardHeight = variant === 'landscape' ? 'min(50vh, 420px)' : '50vh'
 
     const containerStyle = {
       position: 'relative',
