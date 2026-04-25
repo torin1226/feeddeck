@@ -415,13 +415,14 @@ router.delete('/api/sources/:domain', (req, res) => {
 // Falls back to placeholder data if cache is empty.
 // -----------------------------------------------------------
 let _homepageCategoriesStmt, _homepageVideosStmt, _homepageVideosFallbackStmt
+let _persistentRowsStmt, _persistentItemsStmt
 function getHomepageStmts() {
   if (!_homepageCategoriesStmt) {
     _homepageCategoriesStmt = db.prepare(
       'SELECT key, label, query FROM categories WHERE mode = ? ORDER BY sort_order'
     )
     _homepageVideosStmt = db.prepare(
-      `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, viewed
+      `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, fetched_at, tags, viewed
        FROM homepage_cache
        WHERE category_key = ? AND expires_at > datetime('now')
        ORDER BY fetched_at DESC
@@ -429,14 +430,33 @@ function getHomepageStmts() {
     )
     // Serves stale entries when warm-cache hasn't run and all entries are expired
     _homepageVideosFallbackStmt = db.prepare(
-      `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, viewed
+      `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, fetched_at, tags, viewed
        FROM homepage_cache
        WHERE category_key = ? AND viewed = 0
        ORDER BY fetched_at DESC
        LIMIT 20`
     )
+    _persistentRowsStmt = db.prepare(
+      `SELECT key, label FROM persistent_rows
+       WHERE mode = ? AND active = 1
+       ORDER BY sort_order`
+    )
+    _persistentItemsStmt = db.prepare(
+      `SELECT video_url AS url, title, thumbnail, duration, uploader,
+              view_count, like_count, upload_date, tags, liked_at, added_at
+       FROM persistent_row_items
+       WHERE row_key = ?
+       ORDER BY COALESCE(liked_at, added_at) DESC
+       LIMIT 30`
+    )
   }
-  return { categories: _homepageCategoriesStmt, videos: _homepageVideosStmt, videosFallback: _homepageVideosFallbackStmt }
+  return {
+    categories: _homepageCategoriesStmt,
+    videos: _homepageVideosStmt,
+    videosFallback: _homepageVideosFallbackStmt,
+    persistentRows: _persistentRowsStmt,
+    persistentItems: _persistentItemsStmt,
+  }
 }
 
 router.get('/api/homepage', (req, res) => {
@@ -444,8 +464,46 @@ router.get('/api/homepage', (req, res) => {
 
   try {
     const stmts = getHomepageStmts()
+
+    // Persistent rows (sticky shelves like "My PornHub Likes") lead the response.
+    // Empty rows are dropped so we don't render placeholder shelves.
+    let persistent = []
+    try {
+      const prRows = stmts.persistentRows.all(mode)
+      persistent = prRows
+        .map(pr => {
+          const items = stmts.persistentItems.all(pr.key)
+          if (items.length === 0) return null
+          return {
+            key: pr.key,
+            label: pr.label,
+            pinned: true,
+            videos: items.map(v => ({
+              id: v.url,
+              url: v.url,
+              title: v.title,
+              thumbnail: v.thumbnail,
+              duration: v.duration,
+              source: 'pornhub.com',
+              uploader: v.uploader,
+              view_count: v.view_count,
+              like_count: v.like_count,
+              subscriber_count: null,
+              upload_date: v.upload_date,
+              tags: v.tags ? JSON.parse(v.tags) : [],
+              durationFormatted: formatDuration(v.duration),
+              viewed: 0,
+            })),
+          }
+        })
+        .filter(Boolean)
+    } catch (err) {
+      // Non-fatal: persistent_rows table may not exist on older DBs
+      logger.warn(`Homepage: persistent rows lookup failed: ${err.message}`)
+    }
+
     const categories = stmts.categories.all(mode)
-    const result = categories.map(cat => {
+    const categoryRows = categories.map(cat => {
       let videos = stmts.videos.all(cat.key)
       if (videos.length === 0) {
         videos = stmts.videosFallback.all(cat.key)
@@ -462,12 +520,13 @@ router.get('/api/homepage', (req, res) => {
       }
     })
 
-    // Check if any category needs refill (below 8 videos)
-    const needsRefill = result.some(cat => cat.videos.length < 8)
+    const result = [...persistent, ...categoryRows]
 
-    // Trigger async refill for any sparse categories (fire-and-forget)
+    // Check if any category needs refill (below 8 videos). Persistent rows
+    // refill on a different schedule (warm-cache Phase 1.5) and aren't included.
+    const needsRefill = categoryRows.some(cat => cat.videos.length < 8)
     if (needsRefill) {
-      for (const cat of result) {
+      for (const cat of categoryRows) {
         if (cat.videos.length < 8) {
           refillCategory(cat.key).catch(err =>
             logger.error('Refill error:', { error: err.message })

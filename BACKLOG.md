@@ -748,6 +748,35 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 
 _Claude Code adds tasks here as they come up during implementation. Move to the appropriate section when triaging._
 
+### Homepage Quality Pass (filed 2026-04-24 from visual review)
+
+- [x] (2026-04-24) **BUG: `daysAgo` uses `fetched_at` instead of `upload_date`** — fixed 2026-04-24. mapVideo now parses `upload_date` (YYYY-MM-DD, YYYYMMDD, and ISO 8601), uses it for `daysAgo`, and exposes `uploadTs`/`fetchedTs` as sortable timestamps. Backend `/api/homepage` SELECT now also returns `fetched_at`. Categories sort newest-first by `uploadTs` before round-robin. Plus: stale-cache filter (180-day window) excludes pre-2025 content from non-pinned shelves and Top 10 — pinned/subscription content exempt. Plan: `~/.claude/plans/fix-up-next-carousel-distributed-lark.md`.
+
+- [x] (2026-04-24) **Recency bias: prioritize recently cached videos across all rows** — fixed alongside the `daysAgo` bug. Same change set above.
+
+- [ ] (2026-04-24) **`/api/homepage/more` endpoint missing (load-more is dead code)** — `HeroCarousel.jsx:107` fetches `/api/homepage/more?mode=&offset=&limit=` from an IntersectionObserver when the carousel scrolls to its end. The endpoint returns 404 (no matching route in `server/routes/`); the failure is silently swallowed by `.catch(() => {})`. Either implement the endpoint server-side (return next batch from `homepage_cache` past the initial 20-item cap) or rip out the IntersectionObserver and the `loadingMore` state. Found while debugging the recency fix — not regressed by it.
+  > Files: `src/components/home/HeroCarousel.jsx` (lines 97-135), `server/routes/content.js` (would add new route)
+  > Severity: low — feature is unused but invisible to users
+
+- [ ] (2026-04-24) **Tech debt: `PosterInfoPanel.jsx` is dead code** — `GalleryRow.jsx` no longer imports or renders `PosterInfoPanel`. The file still exists at `src/components/home/PosterInfoPanel.jsx`. Safe to delete. No other files import it (verify with grep before deleting).
+
+- [ ] (2026-04-24) **BUG: Vertical scroll hijacked by gallery row wheel handler** — GalleryRow.jsx lines 152-156: `handleWheel` captures vertical `deltaY` and converts to horizontal scroll via `e.preventDefault()`. When scrolling down the page and cursor passes over any gallery row, page scroll stops and the row scrolls horizontally instead. Fix: remove wheel-to-horizontal-scroll behavior entirely, or only activate when row is explicitly focused/active (e.g. after a click). All rows after the Top 10 are affected.
+  > Files: `src/components/home/GalleryRow.jsx` (handleWheel, useEffect line 158-163)
+  > Severity: high — breaks core page navigation
+
+- [ ] (2026-04-24) **"Viral This Week" row too small** — BrowseSection renders all categories after the first 2 with `variant="landscape"`, which caps card height at `min(50vh, 360px)`. GalleryShelf renders first 2 categories with default `variant='poster'` at full `50vh`. On tall viewports (1080p+), the landscape rows look noticeably shorter. Fix: either increase the landscape cap or unify all browse rows to the same visual height.
+  > Files: `src/components/home/PosterCard.jsx` (cardHeight), `src/components/home/GalleryRow.jsx` (getCardHeight)
+  > Severity: medium — inconsistent visual weight
+
+- [ ] (2026-04-24) **Top 10 row too small** — Top10Row uses hardcoded `w-[130px]` / `h-[185px]` cards, which are tiny compared to 50vh (~500px) GalleryRow cards. Should match the visual height of other gallery sections. Scale up card dimensions and rank numbers proportionally.
+  > Files: `src/components/home/Top10Row.jsx` (card sizing, rank font size)
+  > Severity: medium — visual hierarchy is off
+
+- [ ] (2026-04-24) Phase 3 of NSFW homepage plan: taste-driven row engine ("Because you liked POV", "More from {creator}", "Tonight's Picks"). Stored as dynamic `persistent_rows` entries with a `dynamic_query` field, regenerated nightly. Sketched in `~/.claude/plans/refactored-swimming-cocoa.md`. Defer until current shelves are validated in real use.
+- [ ] (2026-04-24) Top-3 PH model rows are wired but currently empty (`creator_boosts` table has no PH creators with positive boost yet). Will auto-appear once enough thumbs-up ratings accrue on PH content. No code action needed — just usage time.
+- [ ] (2026-04-24) `0 new videos` runs on `nsfw_redgifs_amatr/couple/pov/solo` and `nsfw_xvideos_hits` — likely scraper selectors are stale or those queries return mostly already-cached URLs. Investigate if rows stay thin after a week of warm-cache runs.
+- [ ] (2026-04-24) Cookie-health probe failing for `pornhub.com` is cosmetic — yt-dlp's PH probe is finicky but actual scraper + Phase 1.5 fetchers work. Could be silenced or replaced with a Puppeteer-based probe to avoid the scary 🔴 in cookie-health output.
+- [x] (2026-04-24) NSFW homepage thinness — landed in this session. See "## Completed" for full details. Net +12 category rows + 2 sticky personalized shelves leading the page.
 - [x] Reduce CDN URL cache TTL from 4 hours to 2 hours (PornHub URLs expire in ~2hr)
 - [x] Wire source adapter system (`server/sources/`) into `server/index.js` — completed in 3.0 Integration
 - [x] Clean up 3 stale `vite.config.js.timestamp-*` files in project root
@@ -834,6 +863,8 @@ _Added by automated daily design review. Live comparison against Netflix and HBO
 
 ## Completed
 
+- [x] (2026-04-24) **PosterCard on-card overlay refactor — removed PosterInfoPanel, all metadata + actions now on card face** — `PosterInfoPanel` was a floating glass container that sat below each GalleryRow and repeated title/meta already on the card. It's been removed from `GalleryRow.jsx` entirely. `PosterCard.jsx` now self-contains two states: **expanded** (`isFocused && variant !== 'landscape'`): deeper gradient + genre/duration pills, title, meta, description snippet, Play / Queue / 👎👍 rating buttons — all on the thumbnail face; **collapsed** (all other cards): title + uploader/views overlay unchanged. Landscape rows (BrowseSection) never expanded — they show ThumbsRating hover overlay instead. Rating buttons (`handleRate`) call `useRatingsStore.recordRating` + `/api/ratings` + `useToastStore.showToast` (same logic as ThumbsRating). `PosterInfoPanel.jsx` file still exists but is now dead code. Plan file: `~/.claude/plans/fix-postercard-overlay-text-wondrous-breeze.md`.
+- [x] (2026-04-24) **NSFW homepage row expansion (Phases 1 + 2 of design plan)** — net +14 visible rows on NSFW. Added 3 missing sources (RedTube/YouPorn/xHamster) to `sources` table; added 6 diversifying categories (RedGifs POV/Solo, XVideos New/Hits, SpankBang New, FikFap New); seeded 22 NSFW + 28 social `system_searches` from CONTENT_QUERIES.md (boost feed scoring +10 pts/match); created `persistent_rows` + `persistent_row_items` tables with sticky shelves; built `server/sources/pornhub-personal.js` with 3 fetchers (`fetchLikes`, `fetchSubscriptionsFeed` with Puppeteer fallback, `fetchModel`); auto-derives top-3 PH model rows from `creator_boosts`; Phase 1.5 inserted into `warm-cache.js`; `/api/homepage` prepends pinned rows; `homeStore.js` preserves pinned-row labels and pins them above taste-sort. Live verified: "My PornHub Likes" (9 videos) + "From Your Subscriptions" (4 videos) lead the NSFW homepage. Plan file: `~/.claude/plans/refactored-swimming-cocoa.md`.
 - [x] (2026-04-11) Continue Watching row on Homepage — wired existing ContinueWatchingRow into BrowseSection as first row before category rows (Netflix competitive parity)
 - [x] (2026-04-11) Top 10 / Trending row — wired Top10Row into BrowseSection, added top10 state to homeStore populated by view count ranking from fetched data
 - [x] (2026-04-11) Personalized row titles — added personalizeLabel() to homeStore that generates contextual names (Quick Hits, Fresh Today, Picked for You, Most Viewed, More from X) with dedup logic

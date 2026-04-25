@@ -72,6 +72,80 @@ function _seedCategories(database) {
   }
 }
 
+// System searches from CONTENT_QUERIES.md — saved searches that boost feed scoring.
+// Matched videos get +SYSTEM_SEARCH points (see scoring.js). They do not add homepage rows on their own.
+function _seedSystemSearches(database) {
+  const insert = database.prepare(
+    'INSERT OR IGNORE INTO system_searches (name, query, mode, weight) VALUES (?, ?, ?, ?)'
+  )
+  const rows = [
+    // NSFW: Personalized Feeds (1.5)
+    ['Recommended For You',    'https://www.pornhub.com/recommended',                                    'nsfw', 1.5],
+    ['My Subscriptions',       'https://www.pornhub.com/subscriptions',                                  'nsfw', 1.5],
+    ['RedGifs Feed',           'https://www.redgifs.com/trending',                                       'nsfw', 1.5],
+    ['FikFap Feed',            'https://fikfap.com/trending',                                            'nsfw', 1.5],
+    // NSFW: Taste-Specific (1.2)
+    ['Amateur HD',             'https://www.pornhub.com/video/search?search=amateur+homemade&hd=1&o=tr', 'nsfw', 1.2],
+    ['POV Trending',           'https://www.pornhub.com/video/search?search=pov&hd=1&o=tr',              'nsfw', 1.2],
+    ['Real Couples',           'https://www.pornhub.com/video/search?search=real+couple&hd=1&o=tr',      'nsfw', 1.2],
+    ['Solo',                   'https://www.pornhub.com/video/search?search=solo&hd=1&o=tr',             'nsfw', 1.2],
+    ['Sensual / Romantic',     'https://www.pornhub.com/video/search?search=sensual+romantic&hd=1',      'nsfw', 1.2],
+    ['Massage',                'https://www.pornhub.com/video/search?search=massage&hd=1&o=tr',          'nsfw', 1.2],
+    ['Casting',                'https://www.pornhub.com/video/search?search=casting&hd=1&o=tr',          'nsfw', 1.2],
+    ['Fit / Yoga',             'https://www.pornhub.com/video/search?search=fit+yoga&hd=1&o=tr',         'nsfw', 1.2],
+    ['Cosplay',                'https://www.pornhub.com/video/search?search=cosplay&hd=1&o=tr',          'nsfw', 1.2],
+    // NSFW: Discovery (1.0)
+    ['Trending Today',         'https://www.pornhub.com/video?o=tr',                                     'nsfw', 1.0],
+    ['Hottest Rated',          'https://www.pornhub.com/video?o=ht',                                     'nsfw', 1.0],
+    ['Most Viewed This Week',  'https://www.pornhub.com/video?o=mv&t=w',                                 'nsfw', 1.0],
+    ['New This Week',          'https://www.pornhub.com/video?o=cm&t=w',                                 'nsfw', 1.0],
+    ['Verified Amateurs',      'https://www.pornhub.com/categories/verified-amateurs',                   'nsfw', 1.0],
+    ['XVideos Best',           'https://www.xvideos.com/best',                                           'nsfw', 1.0],
+    ['SpankBang Trending',     'https://spankbang.com/trending',                                         'nsfw', 1.0],
+    // NSFW: Short-Form (1.3)
+    ['RedGifs Clips Only',     'https://www.redgifs.com/trending?type=g',                                'nsfw', 1.3],
+    ['PH Shorts',              'https://www.pornhub.com/video/search?search=amateur&max_duration=5&o=tr','nsfw', 1.3],
+    // Social: Cookies-Powered Feeds (1.5)
+    ['My Subscriptions',       'https://www.youtube.com/feed/subscriptions',                             'social', 1.5],
+    ['YouTube Trending',       'https://www.youtube.com/feed/trending',                                  'social', 1.5],
+    ['YouTube Shorts',         'https://www.youtube.com/shorts',                                         'social', 1.5],
+    ['TikTok For You',         'https://www.tiktok.com/foryou',                                          'social', 1.5],
+    ['TikTok Trending',        'https://www.tiktok.com/trending',                                        'social', 1.5],
+    ['Reddit Front Page',      'https://www.reddit.com/r/videos/hot',                                    'social', 1.5],
+    // Social: Music (1.3)
+    ['R&B Music Videos',       'ytsearch10:R&B music video new',                                         'social', 1.3],
+    ['Tiny Desk Concerts',     'ytsearch10:tiny desk concert',                                           'social', 1.3],
+    ['DJ Sets Sunday Clean',   'ytsearch10:DJ set house music cleaning vibes',                           'social', 1.3],
+    ['Live Looping',           'ytsearch10:live looping performance',                                    'social', 1.3],
+    ['Jazz Cafe Ambience',     'ytsearch10:jazz cafe ambience',                                          'social', 1.3],
+    ['Chill Beats',            'ytsearch10:lofi hip hop chill beats study',                              'social', 1.3],
+    ['Album Reactions',        'ytsearch10:album reaction first listen R&B',                             'social', 1.3],
+    // Social: Tech & Design (1.2)
+    ['Future of UX Design',    'ytsearch10:future of UX design',                                         'social', 1.2],
+    ['Vibe Coding',            'ytsearch10:vibe coding new skills AI',                                   'social', 1.2],
+    ['Fireship',               'https://www.youtube.com/@Fireship/shorts',                               'social', 1.2],
+    ['UI Design Tips',         'ytsearch10:UI design tips',                                              'social', 1.2],
+    ['AI Tools for Designers', 'ytsearch10:AI tools for designers',                                      'social', 1.2],
+    // Social: Funny / Viral (1.2)
+    ['Funny Sketches New',     'ytsearch10:funny sketch comedy new',                                     'social', 1.2],
+    ['Vine Compilations',      'ytsearch10:vine compilation funny best',                                 'social', 1.2],
+    ['Reddit Unexpected',      'https://www.reddit.com/r/Unexpected/hot',                                'social', 1.2],
+    ['Reddit NextLevel',       'https://www.reddit.com/r/nextfuckinglevel/hot',                          'social', 1.2],
+    ['Try Not to Laugh',       'ytsearch10:try not to laugh challenge',                                  'social', 1.2],
+    // Social: Lifestyle & Culture (1.0)
+    ['City Walks 4K',          'ytsearch10:city walking tour 4K',                                        'social', 1.0],
+    ['Street Food',            'ytsearch10:street food tour',                                            'social', 1.0],
+    ['Home Office Setups',     'ytsearch10:home office setup tour',                                      'social', 1.0],
+    // Social: News & Current (1.0)
+    ['Critical News Today',    'ytsearch10:breaking news today important',                               'social', 1.0],
+    ['US Politics Update',     'ytsearch10:US politics update this week',                                'social', 1.0],
+  ]
+  for (const row of rows) {
+    insert.run(...row)
+  }
+  logger.info('Seeded system_searches', { count: rows.length })
+}
+
 export function initDatabase() {
   // Ensure data directory exists
   const dataDir = dirname(DB_PATH)
@@ -329,6 +403,39 @@ export function initDatabase() {
     );
     CREATE INDEX IF NOT EXISTS idx_taste_profile_type ON taste_profile(signal_type, signal_value);
     CREATE INDEX IF NOT EXISTS idx_taste_profile_surface ON taste_profile(surface_key);
+
+    -- Persistent rows: sticky homepage shelves whose content never auto-purges.
+    -- Used for "My PornHub Likes", "From Your Subscriptions", and per-model rows.
+    CREATE TABLE IF NOT EXISTS persistent_rows (
+      key TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'nsfw',
+      source TEXT NOT NULL,
+      fetcher TEXT NOT NULL,
+      fetcher_arg TEXT,
+      sort_order INTEGER DEFAULT 0,
+      active INTEGER DEFAULT 1,
+      last_fetched DATETIME,
+      fetch_interval INTEGER DEFAULT 3600
+    );
+
+    CREATE TABLE IF NOT EXISTS persistent_row_items (
+      row_key TEXT NOT NULL,
+      video_url TEXT NOT NULL,
+      title TEXT,
+      thumbnail TEXT,
+      duration INTEGER DEFAULT 0,
+      uploader TEXT,
+      view_count INTEGER,
+      like_count INTEGER,
+      upload_date TEXT,
+      liked_at DATETIME,
+      added_at DATETIME DEFAULT (datetime('now')),
+      tags TEXT DEFAULT '[]',
+      PRIMARY KEY (row_key, video_url),
+      FOREIGN KEY (row_key) REFERENCES persistent_rows(key) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_persistent_items_row ON persistent_row_items(row_key, liked_at DESC, added_at DESC);
   `)
 
   // Seed default categories if empty
@@ -378,11 +485,56 @@ export function initDatabase() {
       ['spankbang.com',  'nsfw',   'SpankBang',         'https://spankbang.com/trending',       0.7],
       ['redgifs.com',    'nsfw',   'RedGifs',           'https://www.redgifs.com/trending',     0.9],
       ['fikfap.com',     'nsfw',   'FikFap',            'https://fikfap.com/trending',          0.7],
+      // RedTube/YouPorn/xHamster: scraper configs exist (sources/scraper.js), wire them up.
+      ['redtube.com',    'nsfw',   'RedTube',           'https://www.redtube.com/mostviewed?period=today', 0.7],
+      ['youporn.com',    'nsfw',   'YouPorn',           'https://www.youporn.com/most_viewed/?t=t',        0.7],
+      ['xhamster.com',   'nsfw',   'xHamster',          'https://xhamster.com/trending',                   0.7],
     ]
     for (const row of newSources) {
       insertSrc.run(...row)
     }
   } catch {}
+
+  // Migrate: add diversifying NSFW categories if missing (Phase 1.4)
+  try {
+    const insertCat = db.prepare('INSERT OR IGNORE INTO categories (key, label, query, mode, sort_order) VALUES (?, ?, ?, ?, ?)')
+    const extraCategories = [
+      ['nsfw_redgifs_pov',   'POV Clips',     'https://www.redgifs.com/search?query=pov&order=trending',  'nsfw', 25],
+      ['nsfw_redgifs_solo',  'RedGifs Solo',  'https://www.redgifs.com/search?query=solo&order=trending', 'nsfw', 26],
+      ['nsfw_xvideos_new',   'XVideos New',   'https://www.xvideos.com/new',                              'nsfw', 27],
+      ['nsfw_xvideos_hits',  'XVideos Hits',  'https://www.xvideos.com/hits',                             'nsfw', 28],
+      ['nsfw_spankbang_new', 'SpankBang New', 'https://spankbang.com/new_videos',                         'nsfw', 29],
+      ['nsfw_fikfap_new',    'FikFap New',    'https://fikfap.com/new',                                   'nsfw', 30],
+    ]
+    for (const row of extraCategories) {
+      insertCat.run(...row)
+    }
+  } catch (err) {
+    logger.error('Diversifying NSFW category seed failed:', { error: err.message })
+  }
+
+  // Seed system_searches if empty (Phase 1.3): saved searches that boost feed scoring (+10 pts via scoring.js).
+  // 22 NSFW + 28 social entries from CONTENT_QUERIES.md.
+  try {
+    const ssCount = db.prepare('SELECT COUNT(*) as n FROM system_searches').get()
+    if (ssCount.n === 0) {
+      _seedSystemSearches(db)
+    }
+  } catch (err) {
+    logger.error('system_searches seed failed:', { error: err.message })
+  }
+
+  // Seed persistent_rows: PH likes + PH subscriptions feed lead the NSFW homepage.
+  // Top-3 model rows are added dynamically by selectTopPHModels() during warm-cache.
+  try {
+    const insertPR = db.prepare(
+      'INSERT OR IGNORE INTO persistent_rows (key, label, mode, source, fetcher, sort_order) VALUES (?, ?, ?, ?, ?, ?)'
+    )
+    insertPR.run('ph_likes', 'My PornHub Likes',        'nsfw', 'pornhub.com', 'ph_likes',         0)
+    insertPR.run('ph_subs',  'From Your Subscriptions', 'nsfw', 'pornhub.com', 'ph_subscriptions', 1)
+  } catch (err) {
+    logger.error('persistent_rows seed failed:', { error: err.message })
+  }
 
   // Migrate: fix social source queries from feed URLs (need auth) to search queries
   try {

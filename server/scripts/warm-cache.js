@@ -150,6 +150,133 @@ for (const mode of modes) {
   }
 }
 
+// --- Phase 1.5: Persistent rows (sticky homepage shelves) ---
+// Refills "My PornHub Likes", "From Your Subscriptions", and per-model rows.
+// Items here never auto-expire; ph_likes never deletes; others cap at 50 newest.
+if (modes.includes('nsfw')) {
+  console.log('\n--- Phase 1.5: Persistent Rows (NSFW) ---')
+  try {
+    const { FETCHERS, selectTopPHModels } = await import('../sources/pornhub-personal.js')
+
+    // Auto-derive top-3 PH models from creator_boosts and upsert into persistent_rows.
+    // Removes any previously-derived ph_model_* rows that no longer qualify.
+    const topModels = selectTopPHModels({ limit: 3 })
+    const insertModelRow = db.prepare(`
+      INSERT OR REPLACE INTO persistent_rows
+        (key, label, mode, source, fetcher, fetcher_arg, sort_order, active, fetch_interval, last_fetched)
+      VALUES (?, ?, 'nsfw', 'pornhub.com', 'ph_model', ?, ?, 1, 3600,
+        (SELECT last_fetched FROM persistent_rows WHERE key = ?))
+    `)
+    const keepKeys = new Set(['ph_likes', 'ph_subs'])
+    let modelOrder = 2
+    for (const m of topModels) {
+      const handle = String(m.creator).trim()
+      if (!handle) continue
+      const slug = handle.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'unknown'
+      const key = `ph_model_${slug}`
+      keepKeys.add(key)
+      insertModelRow.run(key, `More from ${handle}`, handle, modelOrder++, key)
+    }
+    // Drop stale model rows that are no longer in the top-3
+    const allModelKeys = db.prepare("SELECT key FROM persistent_rows WHERE fetcher = 'ph_model'").all()
+    for (const r of allModelKeys) {
+      if (!keepKeys.has(r.key)) {
+        db.prepare('DELETE FROM persistent_rows WHERE key = ?').run(r.key)
+      }
+    }
+    console.log(`  Top PH models: ${topModels.length} (keys: ${[...keepKeys].filter(k => k.startsWith('ph_model_')).join(', ') || '(none)'})`)
+
+    // Refill each active persistent row whose fetch_interval has elapsed
+    const rows = db.prepare(`
+      SELECT key, label, fetcher, fetcher_arg, fetch_interval, last_fetched
+      FROM persistent_rows
+      WHERE active = 1 AND mode = 'nsfw'
+      ORDER BY sort_order
+    `).all()
+
+    const upsertItem = db.prepare(`
+      INSERT OR REPLACE INTO persistent_row_items
+        (row_key, video_url, title, thumbnail, duration, uploader,
+         view_count, like_count, upload_date, liked_at, tags)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    const trimNonLikes = db.prepare(`
+      DELETE FROM persistent_row_items
+      WHERE row_key = ? AND video_url NOT IN (
+        SELECT video_url FROM persistent_row_items
+        WHERE row_key = ?
+        ORDER BY COALESCE(liked_at, added_at) DESC
+        LIMIT 50
+      )
+    `)
+    const updateLastFetched = db.prepare(
+      "UPDATE persistent_rows SET last_fetched = datetime('now') WHERE key = ?"
+    )
+
+    for (const row of rows) {
+      const fetcher = FETCHERS[row.fetcher]
+      if (!fetcher) {
+        console.log(`    ⚠️ ${row.key}: no fetcher named "${row.fetcher}"`)
+        continue
+      }
+
+      // Skip if recently refreshed (and not first run).
+      // SQLite stores datetime('now') as UTC without a Z marker; JS would parse it
+      // as local time and produce a negative "age". Convert to ISO+Z first.
+      if (row.last_fetched) {
+        const iso = row.last_fetched.includes('T')
+          ? row.last_fetched
+          : row.last_fetched.replace(' ', 'T') + 'Z'
+        const ageSec = (Date.now() - new Date(iso).getTime()) / 1000
+        if (ageSec >= 0 && ageSec < (row.fetch_interval || 3600)) {
+          console.log(`    ⏭ ${row.key}: refreshed ${Math.round(ageSec/60)}m ago, skipping`)
+          continue
+        }
+      }
+
+      try {
+        console.log(`    🔄 ${row.key} (${row.label})...`)
+        const items = await fetcher({ fetcher_arg: row.fetcher_arg, limit: 50 })
+        let added = 0
+        for (const it of items) {
+          if (!it.url) continue
+          const tagsJson = Array.isArray(it.tags) ? JSON.stringify(it.tags) : (it.tags || '[]')
+          try {
+            upsertItem.run(
+              row.key, it.url, it.title || '', it.thumbnail || '',
+              it.duration || 0, it.uploader || '',
+              it.view_count ?? null, it.like_count ?? null,
+              it.upload_date ?? null, it.liked_at ?? null, tagsJson
+            )
+            added++
+          } catch (err) {
+            console.log(`      ⚠️ Insert failed: ${err.message.substring(0, 60)}`)
+          }
+        }
+        // ph_likes is sticky/unbounded; trim others to 50 newest
+        if (row.fetcher !== 'ph_likes') {
+          trimNonLikes.run(row.key, row.key)
+        }
+        // Only count this as a successful fetch if we actually got something.
+        // An empty result keeps last_fetched=NULL so the next warm-cache retries.
+        if (added > 0) updateLastFetched.run(row.key)
+        console.log(`    ${added > 0 ? '✅' : '⚠️ '} ${row.key}: +${added} items${added === 0 ? ' (will retry next run)' : ''}`)
+      } catch (err) {
+        console.log(`    ❌ ${row.key}: ${err.message.substring(0, 80)}`)
+        stats.errors++
+      }
+    }
+    // Close the personal-fetchers browser to free memory before Phase 2
+    try {
+      const { _closePornhubPersonalBrowser } = await import('../sources/pornhub-personal.js')
+      await _closePornhubPersonalBrowser()
+    } catch {}
+  } catch (err) {
+    console.log(`  ❌ Phase 1.5 failed to load: ${err.message}`)
+    stats.errors++
+  }
+}
+
 // --- Phase 2: Refill feed sources ---
 console.log('\n--- Phase 2: Feed Sources ---')
 for (const mode of modes) {

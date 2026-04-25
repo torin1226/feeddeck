@@ -167,24 +167,44 @@ const useHomeStore = create((set, get) => ({
       const data = await res.json()
       if (version !== _fetchVersion) return // Stale fetch
 
+      // Parse yt-dlp's upload_date — handles bare "YYYYMMDD" and ISO 8601.
+      // Returns ms timestamp, or 0 if missing/unparseable.
+      const parseUploadDate = (s) => {
+        if (!s) return 0
+        if (typeof s === 'string' && /^\d{8}$/.test(s)) {
+          const y = +s.slice(0, 4), m = +s.slice(4, 6), d = +s.slice(6, 8)
+          const t = Date.UTC(y, m - 1, d)
+          return Number.isNaN(t) ? 0 : t
+        }
+        const t = new Date(s).getTime()
+        return Number.isNaN(t) ? 0 : t
+      }
+
       // Map API videos to the shape components expect
-      const mapVideo = (v, _i) => ({
-        id: v.id,
-        title: v.title || 'Untitled',
-        thumbnail: v.thumbnail || `https://picsum.photos/seed/${v.id}/1280/720`,
-        thumbnailSm: v.thumbnail || `https://picsum.photos/seed/${v.id}/320/180`,
-        duration: v.durationFormatted || fmtDur(v.duration || 0),
-        durationSec: v.duration || 0,
-        views: fmtViews(v.view_count || 0),
-        uploader: v.uploader || v.source || 'Unknown',
-        daysAgo: Math.max(1, Math.floor((Date.now() - new Date(v.fetched_at || Date.now()).getTime()) / 86400000)),
-        desc: v.title || '',
-        genre: v.source || 'Video',
-        rating: v.rating != null ? Number(v.rating).toFixed(1) : null,
-        url: v.url,
-        tags: v.tags || [],
-        orient: (v.height && v.width && v.height > v.width) ? 'v' : 'h',
-      })
+      const mapVideo = (v, _i) => {
+        const uploadTs = parseUploadDate(v.upload_date)
+        const fetchedTs = v.fetched_at ? new Date(v.fetched_at).getTime() : 0
+        const effectiveTs = uploadTs || fetchedTs || Date.now()
+        return {
+          id: v.id,
+          title: v.title || 'Untitled',
+          thumbnail: v.thumbnail || `https://picsum.photos/seed/${v.id}/1280/720`,
+          thumbnailSm: v.thumbnail || `https://picsum.photos/seed/${v.id}/320/180`,
+          duration: v.durationFormatted || fmtDur(v.duration || 0),
+          durationSec: v.duration || 0,
+          views: fmtViews(v.view_count || 0),
+          uploader: v.uploader || v.source || 'Unknown',
+          daysAgo: Math.max(1, Math.floor((Date.now() - effectiveTs) / 86400000)),
+          desc: v.title || '',
+          genre: v.source || 'Video',
+          rating: v.rating != null ? Number(v.rating).toFixed(1) : null,
+          url: v.url,
+          tags: v.tags || [],
+          orient: (v.height && v.width && v.height > v.width) ? 'v' : 'h',
+          uploadTs,
+          fetchedTs,
+        }
+      }
 
       // Collect all videos from all categories for carousel/hero/featured
       const allVideos = data.categories.flatMap(cat =>
@@ -200,15 +220,34 @@ const useHomeStore = create((set, get) => ({
         return
       }
 
-      // Category rows from API groupings
+      // Hide stale-but-cached content (e.g. 2020 videos) from non-pinned shelves.
+      // Pinned shelves (subscriptions, liked videos) keep all items — the user
+      // opted into those. Drop categories that have no fresh content left.
+      const RECENT_MS = 180 * 86400000
+      const freshNow = Date.now()
+      const isFresh = (v) => v.uploadTs > 0 && (freshNow - v.uploadTs) <= RECENT_MS
+
+      // Category rows from API groupings. `pinned` flag flows from persistent_rows
+      // (see /api/homepage) and prevents re-sort from displacing them.
       let categories = data.categories
         .filter(cat => cat.videos.length > 0)
-        .map(cat => ({
-          label: cat.label,
-          items: cat.videos.map(mapVideo),
-        }))
+        .map(cat => {
+          const isPinned = !!cat.pinned
+          const mapped = cat.videos.map(mapVideo)
+          const items = isPinned ? mapped : mapped.filter(isFresh)
+          items.sort((a, b) => {
+            if (b.uploadTs !== a.uploadTs) return b.uploadTs - a.uploadTs
+            return b.fetchedTs - a.fetchedTs
+          })
+          return {
+            label: cat.label,
+            items,
+            _pinned: isPinned,
+          }
+        })
+        .filter(cat => cat.items.length > 0)
 
-      // Hero carousel: round-robin sample across categories for diversity
+      // Hero carousel: round-robin sample across categories for diversity.
       const carouselItems = []
       const carouselIds = new Set()
       const maxPerCat = Math.ceil(24 / (categories.length || 1))
@@ -248,7 +287,13 @@ const useHomeStore = create((set, get) => ({
                 }
               }
               return { ...cat, _score: score }
-            }).sort((a, b) => b._score - a._score)
+            }).sort((a, b) => {
+              // Pinned rows (persistent_rows: PH likes, subscriptions, top models)
+              // always lead, ordered by their server-side sort_order.
+              if (a._pinned && !b._pinned) return -1
+              if (b._pinned && !a._pinned) return 1
+              return b._score - a._score
+            })
           }
         }
       } catch { /* non-fatal — categories render in API order */ }
@@ -256,15 +301,18 @@ const useHomeStore = create((set, get) => ({
       // Personalize row titles based on content characteristics
       const usedLabels = new Set()
       categories = categories.map(cat => {
-        let label = personalizeLabel(cat.label, cat.items, likedTags)
+        // Pinned rows (persistent shelves) keep their authored label as-is.
+        let label = cat._pinned ? cat.label : personalizeLabel(cat.label, cat.items, likedTags)
         // Avoid duplicate personalized labels — fall back to original
         if (usedLabels.has(label) && label !== cat.label) label = cat.label
         usedLabels.add(label)
         return { ...cat, originalLabel: cat.label, label }
       })
 
-      // Build Top 10 with personalization: tag affinity + subscription boost + view count
+      // Build Top 10 with personalization: tag affinity + subscription boost + view count.
+      // Subscription content is exempt from the freshness filter — user opted in.
       const top10 = [...allVideos]
+        .filter(v => v._fromSubscriptions || isFresh(v))
         .map(v => {
           let score = parseViews(v.views)
           if (likedTags.size > 0) {
