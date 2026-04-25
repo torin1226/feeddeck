@@ -13,19 +13,9 @@
 // cron (Beelink). Does NOT start an Express server.
 // ============================================================
 
-import { dirname } from 'path'
-import { fileURLToPath } from 'url'
 import os from 'os'
+import { pathToFileURL } from 'url'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-
-// Parse CLI args
-const args = process.argv.slice(2)
-const modeArg = args.find(a => a.startsWith('--mode='))?.split('=')[1]
-  || (args.includes('--social') ? 'social' : null)
-  || (args.includes('--nsfw') ? 'nsfw' : null)
-  || 'all'
-const dryRun = args.includes('--dry-run')
 const isWindows = os.platform() === 'win32'
 const CONCURRENCY = isWindows ? 2 : 3
 const MAX_RETRIES = 2
@@ -44,50 +34,67 @@ async function withRetry(label, fn) {
   }
 }
 
-console.log(`\n🔥 FeedDeck Cache Warmer`)
-console.log(`   Mode: ${modeArg}`)
-console.log(`   Concurrency: ${CONCURRENCY}`)
-console.log(`   Platform: ${isWindows ? 'Windows (laptop)' : 'Linux (server)'}`)
-console.log(`   Dry run: ${dryRun}\n`)
+/**
+ * Run a full warm-cache pass. Safe to call from inside the Express
+ * server (pass `externalDb: true`) — multi-process SQLite writes
+ * corrupt the db on Windows, so anything wanting fresh content while
+ * the server is up MUST call this in-process rather than spawning
+ * `node warm-cache.js` as a child.
+ *
+ * @param {object} opts
+ * @param {'all'|'social'|'nsfw'} opts.mode
+ * @param {boolean} opts.dryRun
+ * @param {boolean} opts.externalDb - if true, skip initDatabase + closeAllSources
+ *                                    (the caller owns those lifecycles)
+ */
+export async function runWarmCache({ mode: modeArg = 'all', dryRun = false, externalDb = false } = {}) {
+  console.log(`\n🔥 FeedDeck Cache Warmer`)
+  console.log(`   Mode: ${modeArg}`)
+  console.log(`   Concurrency: ${CONCURRENCY}`)
+  console.log(`   Platform: ${isWindows ? 'Windows (laptop)' : 'Linux (server)'}`)
+  console.log(`   Dry run: ${dryRun}`)
+  console.log(`   In-process (server-owned db): ${externalDb}\n`)
 
-// Import project modules
-const { initDatabase } = await import('../database.js')
-const { registry, closeAllSources } = await import('../sources/index.js')
+  // Import project modules
+  const { initDatabase } = await import('../database.js')
+  const sourcesMod = await import('../sources/index.js')
+  const registry = sourcesMod.registry
+  const closeAllSources = sourcesMod.closeAllSources
 
-// Initialize database
-initDatabase()
+  // Initialize database (skip when caller already did)
+  if (!externalDb) initDatabase()
 
-// Dynamic import to get the live db reference after init
-const { db } = await import('../database.js')
+  // Dynamic import to get the live db reference after init
+  const { db } = await import('../database.js')
 
-// Cookie health check first
-console.log('--- Cookie Health Check ---')
-try {
-  const { checkCookieHealth } = await import('../cookie-health.js')
-  const health = await checkCookieHealth()
-  const skipDomains = []
-  for (const [domain, result] of Object.entries(health)) {
-    const icon = result.status === 'healthy' ? '🟢' : result.status === 'expired' ? '🟡' : result.status === 'missing' ? '⚪' : '🔴'
-    console.log(`  ${icon} ${result.message}`)
-    if (result.status === 'expired' || result.status === 'error') {
-      skipDomains.push(domain)
+  // Cookie health check first
+  console.log('--- Cookie Health Check ---')
+  try {
+    const { checkCookieHealth } = await import('../cookie-health.js')
+    const health = await checkCookieHealth()
+    const skipDomains = []
+    for (const [domain, result] of Object.entries(health)) {
+      const icon = result.status === 'healthy' ? '🟢' : result.status === 'expired' ? '🟡' : result.status === 'missing' ? '⚪' : '🔴'
+      console.log(`  ${icon} ${result.message}`)
+      if (result.status === 'expired' || result.status === 'error') {
+        skipDomains.push(domain)
+      }
     }
+    if (skipDomains.length > 0) {
+      console.log(`  ⚠️  Skipping domains with dead cookies: ${skipDomains.join(', ')}`)
+    }
+    console.log()
+  } catch (err) {
+    console.log(`  ⚠️  Cookie check failed: ${err.message}\n`)
   }
-  if (skipDomains.length > 0) {
-    console.log(`  ⚠️  Skipping domains with dead cookies: ${skipDomains.join(', ')}`)
+
+  if (dryRun) {
+    console.log('Dry run — exiting without fetching.\n')
+    return { categoriesRefilled: 0, feedRefilled: 0, streamUrlsResolved: 0, errors: 0, purged: 0, dryRun: true }
   }
-  console.log()
-} catch (err) {
-  console.log(`  ⚠️  Cookie check failed: ${err.message}\n`)
-}
 
-if (dryRun) {
-  console.log('Dry run — exiting without fetching.\n')
-  process.exit(0)
-}
-
-const stats = { categoriesRefilled: 0, feedRefilled: 0, streamUrlsResolved: 0, errors: 0 }
-const startTime = Date.now()
+  const stats = { categoriesRefilled: 0, feedRefilled: 0, streamUrlsResolved: 0, errors: 0, purged: 0 }
+  const startTime = Date.now()
 
 // --- Phase 0: Purge stale homepage entries ---
 // Must run before Phase 1 so INSERT OR IGNORE can add fresh content
@@ -267,10 +274,14 @@ if (modes.includes('nsfw')) {
         stats.errors++
       }
     }
-    // Close the personal-fetchers browser to free memory before Phase 2
+    // Close the personal-fetchers browsers to free memory before Phase 2
     try {
       const { _closePornhubPersonalBrowser } = await import('../sources/pornhub-personal.js')
       await _closePornhubPersonalBrowser()
+    } catch {}
+    try {
+      const { _closeBrowser } = await import('../sources/pornhub-subs-sync.js')
+      await _closeBrowser()
     } catch {}
   } catch (err) {
     console.log(`  ❌ Phase 1.5 failed to load: ${err.message}`)
@@ -394,6 +405,24 @@ console.log(`  Stale entries purged: ${stats.purged}`)
 console.log(`  Errors: ${stats.errors}`)
 console.log(`  Time: ${elapsed}s\n`)
 
-// Cleanup
-try { await closeAllSources() } catch {}
-process.exit(stats.errors > 0 ? 1 : 0)
+// Cleanup — when called from inside the server, the server owns the
+// source lifecycle; closing here would tear down shared Puppeteer /
+// scraper instances mid-request.
+if (!externalDb) {
+  try { await closeAllSources() } catch {}
+}
+return stats
+} // end runWarmCache
+
+// CLI bootstrap: only when invoked directly via `node warm-cache.js`
+const isMainModule = import.meta.url === pathToFileURL(process.argv[1]).href
+if (isMainModule) {
+  const args = process.argv.slice(2)
+  const cliMode = args.find(a => a.startsWith('--mode='))?.split('=')[1]
+    || (args.includes('--social') ? 'social' : null)
+    || (args.includes('--nsfw') ? 'nsfw' : null)
+    || 'all'
+  const cliDryRun = args.includes('--dry-run')
+  const stats = await runWarmCache({ mode: cliMode, dryRun: cliDryRun })
+  process.exit(stats.errors > 0 ? 1 : 0)
+}

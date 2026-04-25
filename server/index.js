@@ -18,6 +18,7 @@ import tiktokRoutes from './routes/tiktok.js'
 import creatorsRoutes from './routes/creators.js'
 import subscriptionBackupRoutes from './routes/subscription-backup.js'
 import ratingsRoutes from './routes/ratings.js'
+import { modeFirewall } from './firewall.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -38,6 +39,10 @@ const distPath = join(__dirname, '..', 'dist')
 if (existsSync(distPath)) {
   app.use(express.static(distPath))
 }
+
+// Mode firewall: final-stage filter that strips cross-mode items from
+// any /api response when ?mode= is declared. See firewall.js for rules.
+app.use('/api', modeFirewall)
 
 // Mount route modules
 app.use(streamRoutes)
@@ -345,4 +350,22 @@ app.listen(PORT, '0.0.0.0', () => {
       logger.info('  ✅ First boot: homepage cache population complete')
     })()
   }
+
+  // Warm-cache on every server start — refreshes subscriptions, fills
+  // homepage categories, and resolves stream URLs while the user is
+  // browsing. Runs in-process: spawning a second Node process to do
+  // this would corrupt the SQLite db on Windows (see
+  // _memory/errors/feeddeck-known-issues). Per-row cooldowns inside
+  // warm-cache (1hr persistent rows, INSERT OR IGNORE on cache tables)
+  // make repeated launches cheap.
+  ;(async () => {
+    try {
+      const { runWarmCache } = await import('./scripts/warm-cache.js')
+      logger.info('  🔥 Background warm-cache starting...')
+      const stats = await runWarmCache({ mode: 'all', externalDb: true })
+      logger.info('  🔥 Background warm-cache complete', stats)
+    } catch (err) {
+      logger.error('Background warm-cache failed:', { error: err.message })
+    }
+  })()
 })

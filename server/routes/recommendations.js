@@ -16,10 +16,16 @@ const router = Router()
 // Tag Preferences (3.2)
 // -----------------------------------------------------------
 
-// GET /api/tags/preferences — list all tag preferences
+// GET /api/tags/preferences — list tag preferences for the current mode.
+// Mode-scoped to prevent NSFW tag preferences from polluting social feed scoring.
 router.get('/api/tags/preferences', (req, res) => {
+  const mode = getMode(req)
   try {
-    const prefs = db.prepare('SELECT tag, preference FROM tag_preferences ORDER BY tag').all()
+    // Return rows that match this mode OR are legacy NULL (pre-firewall).
+    // Legacy NULL rows apply to both modes for backward compat.
+    const prefs = db.prepare(
+      'SELECT tag, preference FROM tag_preferences WHERE mode = ? OR mode IS NULL ORDER BY tag'
+    ).all(mode)
     res.json({ preferences: prefs })
   } catch (err) {
     logger.error('Tag preferences fetch error', { error: err.message })
@@ -27,21 +33,34 @@ router.get('/api/tags/preferences', (req, res) => {
   }
 })
 
-// PUT /api/tags/preferences — set preference for a tag (liked/disliked)
+// PUT /api/tags/preferences — set preference for a tag (liked/disliked) in current mode
 router.put('/api/tags/preferences', express.json(), (req, res) => {
   const { tag, preference } = req.body || {}
   if (!tag?.trim()) return res.status(400).json({ error: 'tag required' })
   if (!['liked', 'disliked'].includes(preference)) return res.status(400).json({ error: 'preference must be liked or disliked' })
+  const mode = getMode(req)
   try {
     const cleanTag = tag.trim().toLowerCase()
     const weight = preference === 'liked' ? 1.0 : -1.0
-    db.prepare('INSERT OR REPLACE INTO tag_preferences (tag, preference, updated_at) VALUES (?, ?, datetime(\'now\'))').run(cleanTag, preference)
-    // Keep taste_profile in sync so the feed scoring engine sees manual preferences immediately
-    const existing = db.prepare('SELECT id FROM taste_profile WHERE signal_type = ? AND signal_value = ? AND surface_key IS NULL').get('tag', cleanTag)
+    // tag_preferences PK is `tag` so we can't have separate (tag, mode) rows
+    // without a table rebuild. We update mode in place: a tag's preference is
+    // tied to whichever mode set it most recently. The taste_profile table
+    // (which actually drives scoring) IS mode-scoped.
+    db.prepare(
+      `INSERT OR REPLACE INTO tag_preferences (tag, preference, mode, updated_at)
+       VALUES (?, ?, ?, datetime('now'))`
+    ).run(cleanTag, preference, mode)
+    // Keep taste_profile in sync, mode-scoped
+    const existing = db.prepare(
+      'SELECT id FROM taste_profile WHERE signal_type = ? AND signal_value = ? AND surface_key IS NULL AND mode = ?'
+    ).get('tag', cleanTag, mode)
     if (existing) {
       db.prepare('UPDATE taste_profile SET weight = ?, updated_at = datetime(\'now\') WHERE id = ?').run(weight, existing.id)
     } else {
-      db.prepare('INSERT INTO taste_profile (signal_type, signal_value, weight, surface_key, updated_at) VALUES (?, ?, ?, NULL, datetime(\'now\'))').run('tag', cleanTag, weight)
+      db.prepare(
+        `INSERT INTO taste_profile (signal_type, signal_value, weight, surface_key, mode, updated_at)
+         VALUES (?, ?, ?, NULL, ?, datetime('now'))`
+      ).run('tag', cleanTag, weight, mode)
     }
     invalidateProfileCache()
     res.json({ ok: true })
@@ -51,13 +70,17 @@ router.put('/api/tags/preferences', express.json(), (req, res) => {
   }
 })
 
-// DELETE /api/tags/preferences/:tag — remove a tag preference
+// DELETE /api/tags/preferences/:tag — remove a tag preference (mode-scoped)
 router.delete('/api/tags/preferences/:tag', (req, res) => {
+  const mode = getMode(req)
   try {
     const cleanTag = req.params.tag.toLowerCase()
-    db.prepare('DELETE FROM tag_preferences WHERE tag = ?').run(cleanTag)
-    // Remove from taste_profile so the feed stops boosting/penalizing this tag
-    db.prepare('DELETE FROM taste_profile WHERE signal_type = ? AND signal_value = ? AND surface_key IS NULL').run('tag', cleanTag)
+    // Only delete the row if it belongs to the requesting mode (or is legacy NULL)
+    db.prepare('DELETE FROM tag_preferences WHERE tag = ? AND (mode = ? OR mode IS NULL)').run(cleanTag, mode)
+    // Remove only this mode's taste_profile row
+    db.prepare(
+      'DELETE FROM taste_profile WHERE signal_type = ? AND signal_value = ? AND surface_key IS NULL AND mode = ?'
+    ).run('tag', cleanTag, mode)
     invalidateProfileCache()
     res.json({ ok: true })
   } catch (err) {

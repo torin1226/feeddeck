@@ -2,7 +2,7 @@ import { Router } from 'express'
 import express from 'express'
 import { db } from '../database.js'
 import { logger } from '../logger.js'
-import { formatDuration } from '../utils.js'
+import { formatDuration, inferMode, getMode } from '../utils.js'
 import { scoreVideo, isDownvoted, MIN_VISIBLE_SCORE } from '../scoring.js'
 
 const router = Router()
@@ -24,14 +24,26 @@ function getStmts() {
       markWatched: db.prepare('UPDATE feed_cache SET watched = 1 WHERE id = ?'),
       hideSource: db.prepare('UPDATE sources SET active = 0 WHERE domain = ?'),
       boostSource: db.prepare('UPDATE sources SET weight = MIN(weight + 0.3, 3.0) WHERE domain = ?'),
-      getQueue: db.prepare('SELECT id, position, video_url, title, thumbnail, duration, duration_formatted, added_at FROM queue ORDER BY position ASC'),
-      getQueueIds: db.prepare('SELECT id FROM queue ORDER BY position ASC'),
+      // Queue queries are always mode-scoped: a queue entry's mode is fixed
+      // at insert time via inferMode(video_url). Cross-mode queue items
+      // are invisible to the opposite mode.
+      getQueueByMode: db.prepare(
+        `SELECT id, position, video_url, title, thumbnail, duration, duration_formatted, added_at, mode
+         FROM queue WHERE mode = ? OR (mode IS NULL AND video_url IS NOT NULL)
+         ORDER BY position ASC`
+      ),
+      getQueueIdsByMode: db.prepare('SELECT id FROM queue WHERE mode = ? ORDER BY position ASC'),
       updateQueuePos: db.prepare('UPDATE queue SET position = ? WHERE id = ?'),
-      maxQueuePos: db.prepare('SELECT COALESCE(MAX(position), -1) as maxPos FROM queue'),
-      shiftQueue: db.prepare('UPDATE queue SET position = position + 1 WHERE position >= ?'),
-      insertQueue: db.prepare('INSERT INTO queue (id, position, video_url, title, thumbnail, duration, duration_formatted) VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?, ?, ?)'),
+      maxQueuePosByMode: db.prepare('SELECT COALESCE(MAX(position), -1) as maxPos FROM queue WHERE mode = ?'),
+      shiftQueueByMode: db.prepare('UPDATE queue SET position = position + 1 WHERE position >= ? AND mode = ?'),
+      insertQueue: db.prepare(
+        `INSERT INTO queue (id, position, video_url, title, thumbnail, duration, duration_formatted, mode)
+         VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?, ?, ?, ?)`
+      ),
       deleteQueueItem: db.prepare('DELETE FROM queue WHERE id = ?'),
-      clearQueue: db.prepare('DELETE FROM queue'),
+      clearQueueByMode: db.prepare('DELETE FROM queue WHERE mode = ?'),
+      // Set mode on legacy NULL-mode rows lazily on first read
+      backfillQueueMode: db.prepare('UPDATE queue SET mode = ? WHERE id = ?'),
     }
   }
   return _stmts
@@ -224,44 +236,68 @@ router.post('/api/feed/source-feedback', (req, res) => {
 // All mutations return the full updated queue so clients stay in sync.
 // -----------------------------------------------------------
 
-function getFullQueue() {
-  return getStmts().getQueue.all()
-}
-
-function reindexQueue() {
+function reindexQueue(mode) {
   const s = getStmts()
-  const items = s.getQueueIds.all()
+  const items = s.getQueueIdsByMode.all(mode)
   items.forEach((item, i) => s.updateQueuePos.run(i, item.id))
 }
 
-// GET /api/queue — return ordered queue
+/** Mode-scoped fetch with lazy backfill of legacy NULL-mode rows. */
+function getQueueForMode(mode) {
+  const s = getStmts()
+  const rows = s.getQueueByMode.all(mode)
+  // Lazy backfill: classify legacy NULL-mode rows by URL on read.
+  // Drop ones whose inferred mode != requested mode.
+  const result = []
+  for (const r of rows) {
+    if (r.mode === mode) {
+      result.push(r)
+      continue
+    }
+    if (r.mode == null && r.video_url) {
+      const inferred = inferMode(r.video_url)
+      s.backfillQueueMode.run(inferred, r.id)
+      if (inferred === mode) {
+        result.push({ ...r, mode: inferred })
+      }
+    }
+  }
+  return result
+}
+
+// GET /api/queue — return ordered queue for the current mode
 router.get('/api/queue', (req, res) => {
+  const mode = getMode(req)
   try {
-    res.json({ queue: getFullQueue() })
+    res.json({ queue: getQueueForMode(mode) })
   } catch (err) {
     logger.error('Queue fetch error', { error: err.message })
     res.status(500).json({ error: 'Failed to fetch queue' })
   }
 })
 
-// POST /api/queue — add video to end (or at a specific position)
+// POST /api/queue — add video to end (or at a specific position).
+// Mode is derived from the URL itself, not from the request -- a pornhub URL
+// always lands in the nsfw queue regardless of which mode the client claims.
 router.post('/api/queue', express.json(), (req, res) => {
   const { video_url, title, thumbnail, duration, duration_formatted, position } = req.body || {}
   if (!video_url) return res.status(400).json({ error: 'video_url required' })
 
+  // Source-of-truth mode. The response queue is also filtered by this mode.
+  const itemMode = inferMode(video_url)
+
   try {
     const s = getStmts()
-    const maxPos = s.maxQueuePos.get().maxPos
+    const maxPos = s.maxQueuePosByMode.get(itemMode).maxPos
     const insertPos = position !== undefined ? position : maxPos + 1
 
-    // If inserting at a specific position, shift items down
     if (position !== undefined) {
-      s.shiftQueue.run(insertPos)
+      s.shiftQueueByMode.run(insertPos, itemMode)
     }
 
-    s.insertQueue.run(insertPos, video_url, title || '', thumbnail || '', duration || 0, duration_formatted || '0:00')
+    s.insertQueue.run(insertPos, video_url, title || '', thumbnail || '', duration || 0, duration_formatted || '0:00', itemMode)
 
-    res.json({ queue: getFullQueue() })
+    res.json({ queue: getQueueForMode(itemMode) })
   } catch (err) {
     logger.error('Queue add error', { error: err.message })
     res.status(500).json({ error: 'Failed to add to queue' })
@@ -272,10 +308,11 @@ router.post('/api/queue', express.json(), (req, res) => {
 router.put('/api/queue', express.json(), (req, res) => {
   const { order } = req.body || {}
   if (!Array.isArray(order)) return res.status(400).json({ error: 'order array required' })
+  const mode = getMode(req)
 
   try {
     order.forEach((id, i) => getStmts().updateQueuePos.run(i, id))
-    res.json({ queue: getFullQueue() })
+    res.json({ queue: getQueueForMode(mode) })
   } catch (err) {
     logger.error('Queue reorder error', { error: err.message })
     res.status(500).json({ error: 'Failed to reorder queue' })
@@ -284,20 +321,23 @@ router.put('/api/queue', express.json(), (req, res) => {
 
 // DELETE /api/queue/:id — remove single item, reindex
 router.delete('/api/queue/:id', (req, res) => {
+  const mode = getMode(req)
   try {
     getStmts().deleteQueueItem.run(req.params.id)
-    reindexQueue()
-    res.json({ queue: getFullQueue() })
+    reindexQueue(mode)
+    res.json({ queue: getQueueForMode(mode) })
   } catch (err) {
     logger.error('Queue remove error', { error: err.message })
     res.status(500).json({ error: 'Failed to remove from queue' })
   }
 })
 
-// DELETE /api/queue — clear all
+// DELETE /api/queue — clear queue for current mode only.
+// Cross-mode queue items survive an explicit clear in one mode.
 router.delete('/api/queue', (req, res) => {
+  const mode = getMode(req)
   try {
-    getStmts().clearQueue.run()
+    getStmts().clearQueueByMode.run(mode)
     res.json({ queue: [] })
   } catch (err) {
     logger.error('Queue clear error', { error: err.message })

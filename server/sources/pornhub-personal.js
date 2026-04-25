@@ -261,103 +261,20 @@ function parseViewCount(text) {
 }
 
 /**
- * Fetch the authenticated PH subscription feed. yt-dlp can't parse the
- * JS-rendered /subscriptions page reliably, so we try yt-dlp first and
- * fall back to a Puppeteer scrape using the same selectors as /favorites.
+ * Fetch the "From Your Subscriptions" feed. PH's /subscriptions URL is
+ * a recommender (videos similar to your subscriptions), not the real
+ * subscriptions list — so we sync the user's actual subscribed
+ * creators from /pornstar_subscriptions + /channel_subscriptions, then
+ * aggregate each creator's most-recent videos via yt-dlp on
+ * /{type}/{handle}/videos?o=mr. See pornhub-subs-sync.js.
  */
 export async function fetchSubscriptionsFeed({ limit = 50 } = {}) {
+  const { fetchSubscribedCreatorVideosWithSync } = await import('./pornhub-subs-sync.js')
   try {
-    const raws = await ytdlpJson('https://www.pornhub.com/subscriptions', { limit })
-    const ytItems = raws.map(normalize).filter(v => v.url)
-    if (ytItems.length > 0) return ytItems
+    return await fetchSubscribedCreatorVideosWithSync({ limit })
   } catch (err) {
-    logger.warn(`fetchSubscriptionsFeed yt-dlp leg failed: ${err.message}`)
-  }
-  // Fallback to Puppeteer scrape
-  return fetchAuthenticatedListPage('https://www.pornhub.com/subscriptions', { limit })
-}
-
-/**
- * Generic authenticated PH page scrape: loads cookies, navigates to URL,
- * extracts videoBox/pcVideoListItem cards. Used by /favorites and as the
- * /subscriptions fallback. Returns normalized items (no liked_at).
- */
-async function fetchAuthenticatedListPage(url, { limit = 50 } = {}) {
-  const browser = await getBrowser()
-  const page = await browser.newPage()
-  try {
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'
-    )
-    await page.setViewport({ width: 1920, height: 1080 })
-    const ok = await applyPornhubCookies(page)
-    if (!ok) return []
-
-    const resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 })
-    const finalUrl = page.url()
-    if (resp && resp.status() >= 400) {
-      logger.warn(`fetchAuthenticatedListPage(${url}): HTTP ${resp.status()} at ${finalUrl}`)
-      return []
-    }
-    if (/\/login/i.test(finalUrl) || /signin/i.test(finalUrl)) {
-      logger.warn(`fetchAuthenticatedListPage(${url}): redirected to login (${finalUrl})`)
-      return []
-    }
-
-    await page.waitForSelector('.pcVideoListItem, li.videoBox', { timeout: 8000 }).catch(() => {})
-
-    const items = await page.evaluate(() => {
-      // eslint-disable-next-line no-undef
-      const cards = document.querySelectorAll('.pcVideoListItem, li.videoBox')
-      const out = []
-      for (const card of cards) {
-        const linkEl = card.querySelector('.title a, a.linkVideoThumb')
-        const titleEl = card.querySelector('span.title a')
-        const thumbEl = card.querySelector('img.thumb, img[data-thumb_url]')
-        const durEl = card.querySelector('.duration, var.duration')
-        const viewsEl = card.querySelector('.views, span.views')
-        const uploaderEl = card.querySelector('.usernameWrap a')
-
-        const href = linkEl?.getAttribute('href') || ''
-        if (!href || !/\/view_video\.php\?viewkey=/.test(href)) continue
-
-        const u = href.startsWith('http') ? href : `https://www.pornhub.com${href}`
-        out.push({
-          url: u,
-          title: titleEl?.textContent?.trim() || '',
-          thumbnail:
-            thumbEl?.getAttribute('data-thumb_url') ||
-            thumbEl?.getAttribute('data-src') ||
-            thumbEl?.getAttribute('src') || '',
-          durationText: durEl?.textContent?.trim() || '',
-          viewsText: viewsEl?.textContent?.trim() || '',
-          uploader: uploaderEl?.textContent?.trim() || '',
-        })
-      }
-      return out
-    })
-
-    const dedup = new Map()
-    for (const it of items) if (!dedup.has(it.url)) dedup.set(it.url, it)
-
-    return Array.from(dedup.values()).slice(0, limit).map(it => ({
-      id: randomUUID(),
-      url: it.url,
-      title: it.title,
-      thumbnail: it.thumbnail,
-      duration: parseDuration(it.durationText),
-      uploader: it.uploader,
-      view_count: parseViewCount(it.viewsText),
-      like_count: null,
-      upload_date: null,
-      liked_at: null,
-      tags: [],
-    }))
-  } catch (err) {
-    logger.warn(`fetchAuthenticatedListPage(${url}) failed: ${err.message}`)
+    logger.warn(`fetchSubscriptionsFeed failed: ${err.message}`)
     return []
-  } finally {
-    await page.close().catch(() => {})
   }
 }
 

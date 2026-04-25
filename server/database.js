@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { logger } from './logger.js'
+import { inferMode } from './utils.js'
 
 // ============================================================
 // Database Setup
@@ -634,6 +635,79 @@ export function initDatabase() {
       db.exec("ALTER TABLE video_ratings ADD COLUMN thumbnail TEXT")
     }
   } catch {}
+
+  // ============================================================
+  // MODE FIREWALL MIGRATIONS (2026-04-25)
+  // Add mode columns to mode-blind tables so cross-mode content
+  // can be filtered at the query layer. Backfill via inferMode()
+  // on existing rows that have a URL.
+  // ============================================================
+
+  // video_ratings: add mode column + backfill from video_url
+  try {
+    const cols = db.prepare("PRAGMA table_info(video_ratings)").all()
+    if (cols.length > 0 && !cols.some(c => c.name === 'mode')) {
+      db.exec("ALTER TABLE video_ratings ADD COLUMN mode TEXT")
+      const rows = db.prepare("SELECT id, video_url FROM video_ratings WHERE mode IS NULL").all()
+      const upd = db.prepare("UPDATE video_ratings SET mode = ? WHERE id = ?")
+      for (const r of rows) {
+        upd.run(inferMode(r.video_url), r.id)
+      }
+      logger.info('Backfilled video_ratings.mode', { rows: rows.length })
+    }
+  } catch (err) {
+    logger.error('video_ratings mode migration failed:', { error: err.message })
+  }
+
+  // queue: add mode column + backfill from video_url
+  try {
+    const cols = db.prepare("PRAGMA table_info(queue)").all()
+    if (cols.length > 0 && !cols.some(c => c.name === 'mode')) {
+      db.exec("ALTER TABLE queue ADD COLUMN mode TEXT")
+      const rows = db.prepare("SELECT id, video_url FROM queue WHERE mode IS NULL").all()
+      const upd = db.prepare("UPDATE queue SET mode = ? WHERE id = ?")
+      for (const r of rows) {
+        upd.run(inferMode(r.video_url), r.id)
+      }
+      logger.info('Backfilled queue.mode', { rows: rows.length })
+    }
+  } catch (err) {
+    logger.error('queue mode migration failed:', { error: err.message })
+  }
+
+  // tag_preferences: add mode column. Existing rows stay NULL (legacy global).
+  // New writes must specify mode. Reads filter by mode OR mode IS NULL.
+  try {
+    const cols = db.prepare("PRAGMA table_info(tag_preferences)").all()
+    if (cols.length > 0 && !cols.some(c => c.name === 'mode')) {
+      db.exec("ALTER TABLE tag_preferences ADD COLUMN mode TEXT")
+      logger.info('Added tag_preferences.mode column (legacy rows remain NULL)')
+    }
+  } catch (err) {
+    logger.error('tag_preferences mode migration failed:', { error: err.message })
+  }
+
+  // taste_profile: add mode column.
+  try {
+    const cols = db.prepare("PRAGMA table_info(taste_profile)").all()
+    if (cols.length > 0 && !cols.some(c => c.name === 'mode')) {
+      db.exec("ALTER TABLE taste_profile ADD COLUMN mode TEXT")
+      logger.info('Added taste_profile.mode column (legacy rows remain NULL)')
+    }
+  } catch (err) {
+    logger.error('taste_profile mode migration failed:', { error: err.message })
+  }
+
+  // creator_boosts: add mode column.
+  try {
+    const cols = db.prepare("PRAGMA table_info(creator_boosts)").all()
+    if (cols.length > 0 && !cols.some(c => c.name === 'mode')) {
+      db.exec("ALTER TABLE creator_boosts ADD COLUMN mode TEXT")
+      logger.info('Added creator_boosts.mode column (legacy rows remain NULL)')
+    }
+  } catch (err) {
+    logger.error('creator_boosts mode migration failed:', { error: err.message })
+  }
 
   // Migrate: seed taste_profile from existing tag_preferences (one-time)
   try {

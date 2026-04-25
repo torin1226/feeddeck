@@ -3,6 +3,7 @@ import express from 'express'
 import { db } from '../database.js'
 import { logger } from '../logger.js'
 import { invalidateProfileCache, scoreVideos, getScoreBreakdown } from '../scoring.js'
+import { inferMode, getMode } from '../utils.js'
 
 const router = Router()
 
@@ -15,6 +16,10 @@ router.post('/api/ratings', express.json(), (req, res) => {
 
   if (!videoUrl) return res.status(400).json({ error: 'videoUrl required' })
   if (!['up', 'down'].includes(rating)) return res.status(400).json({ error: 'rating must be up or down' })
+
+  // Mode firewall: derive from URL (source of truth), not request context.
+  // A pornhub.com URL is always nsfw regardless of which mode the client claims.
+  const videoMode = inferMode(videoUrl)
 
   try {
     // 1. Check for existing rating on this video (idempotency guard)
@@ -35,9 +40,9 @@ router.post('/api/ratings', express.json(), (req, res) => {
     try {
     // Record the individual rating (includes title+thumbnail for Liked section display)
     db.prepare(
-      `INSERT INTO video_ratings (video_url, surface_type, surface_key, rating, tags, creator, title, thumbnail, rated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
-    ).run(videoUrl, surfaceType || 'home_row', surfaceKey || null, rating, tagsJson, creator || null, req.body.title || null, req.body.thumbnail || null)
+      `INSERT INTO video_ratings (video_url, surface_type, surface_key, rating, tags, creator, title, thumbnail, mode, rated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`
+    ).run(videoUrl, surfaceType || 'home_row', surfaceKey || null, rating, tagsJson, creator || null, req.body.title || null, req.body.thumbnail || null, videoMode)
 
     // 2. Update taste_profile for each tag
     const videoTags = Array.isArray(tags) ? tags : []
@@ -46,45 +51,50 @@ router.post('/api/ratings', express.json(), (req, res) => {
       const t = tag.toLowerCase().trim()
       if (!t) continue
 
-      // Try global update first
+      // Try global update first (mode-scoped to prevent cross-mode taste pollution)
       const existing = db.prepare(
-        'SELECT id, weight FROM taste_profile WHERE signal_type = ? AND signal_value = ? AND surface_key IS NULL'
-      ).get('tag', t)
+        'SELECT id, weight FROM taste_profile WHERE signal_type = ? AND signal_value = ? AND surface_key IS NULL AND mode = ?'
+      ).get('tag', t, videoMode)
 
       if (existing) {
         const newWeight = Math.max(-1, Math.min(1, existing.weight + tagWeight))
         db.prepare('UPDATE taste_profile SET weight = ?, updated_at = datetime(\'now\') WHERE id = ?').run(newWeight, existing.id)
       } else {
         db.prepare(
-          `INSERT INTO taste_profile (signal_type, signal_value, weight, surface_key, updated_at)
-           VALUES ('tag', ?, ?, NULL, datetime('now'))`
-        ).run(t, tagWeight)
+          `INSERT INTO taste_profile (signal_type, signal_value, weight, surface_key, mode, updated_at)
+           VALUES ('tag', ?, ?, NULL, ?, datetime('now'))`
+        ).run(t, tagWeight, videoMode)
       }
 
       // Surface-specific update
       if (surfaceKey) {
         const existingSurface = db.prepare(
-          'SELECT id, weight FROM taste_profile WHERE signal_type = ? AND signal_value = ? AND surface_key = ?'
-        ).get('tag', t, surfaceKey)
+          'SELECT id, weight FROM taste_profile WHERE signal_type = ? AND signal_value = ? AND surface_key = ? AND mode = ?'
+        ).get('tag', t, surfaceKey, videoMode)
 
         if (existingSurface) {
           const newWeight = Math.max(-1, Math.min(1, existingSurface.weight + tagWeight))
           db.prepare('UPDATE taste_profile SET weight = ?, updated_at = datetime(\'now\') WHERE id = ?').run(newWeight, existingSurface.id)
         } else {
           db.prepare(
-            `INSERT INTO taste_profile (signal_type, signal_value, weight, surface_key, updated_at)
-             VALUES ('tag', ?, ?, ?, datetime('now'))`
-          ).run(t, tagWeight, surfaceKey)
+            `INSERT INTO taste_profile (signal_type, signal_value, weight, surface_key, mode, updated_at)
+             VALUES ('tag', ?, ?, ?, ?, datetime('now'))`
+          ).run(t, tagWeight, surfaceKey, videoMode)
         }
       }
     }
 
-    // 3. Update creator_boosts
+    // 3. Update creator_boosts (mode-scoped)
+    // creator_boosts.creator was the PK so existing schemas can't add a (creator, mode) composite key
+    // without a table rebuild. Workaround: scope the lookup by mode and use the first match;
+    // creators with the same name across modes will be rare but tracked separately on next write.
     if (creator) {
       const creatorKey = creator.trim()
       if (creatorKey) {
         const boostDelta = rating === 'up' ? 0.25 : -0.15
-        const existing = db.prepare('SELECT boost_score, surface_boosts FROM creator_boosts WHERE creator = ?').get(creatorKey)
+        const existing = db.prepare(
+          'SELECT creator, boost_score, surface_boosts FROM creator_boosts WHERE creator = ? AND (mode IS NULL OR mode = ?)'
+        ).get(creatorKey, videoMode)
 
         if (existing) {
           const newScore = Math.max(-1, existing.boost_score + boostDelta)
@@ -94,24 +104,28 @@ router.post('/api/ratings', express.json(), (req, res) => {
             surfaceBoosts[surfaceKey] = (surfaceBoosts[surfaceKey] || 0) + boostDelta
           }
           db.prepare(
-            'UPDATE creator_boosts SET boost_score = ?, surface_boosts = ?, last_updated = datetime(\'now\') WHERE creator = ?'
-          ).run(newScore, JSON.stringify(surfaceBoosts), creatorKey)
+            'UPDATE creator_boosts SET boost_score = ?, surface_boosts = ?, mode = ?, last_updated = datetime(\'now\') WHERE creator = ?'
+          ).run(newScore, JSON.stringify(surfaceBoosts), videoMode, creatorKey)
         } else {
           const surfaceBoosts = surfaceKey ? { [surfaceKey]: boostDelta } : {}
           db.prepare(
-            'INSERT INTO creator_boosts (creator, boost_score, surface_boosts, last_updated) VALUES (?, ?, ?, datetime(\'now\'))'
-          ).run(creatorKey, Math.max(-1, boostDelta), JSON.stringify(surfaceBoosts))
+            'INSERT INTO creator_boosts (creator, boost_score, surface_boosts, mode, last_updated) VALUES (?, ?, ?, ?, datetime(\'now\'))'
+          ).run(creatorKey, Math.max(-1, boostDelta), JSON.stringify(surfaceBoosts), videoMode)
         }
       }
     }
 
-    // 4. If thumbs-up, also add to library as liked
+    // 4. If thumbs-up, also add to library as liked.
+    // Mode is derived from the URL itself (videoMode), NOT hardcoded.
+    // This was the smoking-gun cross-mode leak: every liked video used to be
+    // inserted as 'nsfw' regardless of source, so YouTube likes appeared in
+    // NSFW library and vice versa.
     if (rating === 'up') {
       db.prepare(
         `INSERT OR IGNORE INTO videos (url, title, thumbnail, duration, source, tags, mode, favorite, added_at)
-         VALUES (?, ?, ?, 0, ?, ?, 'nsfw', 1, datetime('now'))`
-      ).run(videoUrl, req.body.title || '', req.body.thumbnail || '', req.body.source || '', tagsJson)
-      // If already exists, just mark as favorite
+         VALUES (?, ?, ?, 0, ?, ?, ?, 1, datetime('now'))`
+      ).run(videoUrl, req.body.title || '', req.body.thumbnail || '', req.body.source || '', tagsJson, videoMode)
+      // If already exists, just mark as favorite (don't change mode -- inferMode is authoritative)
       db.prepare('UPDATE videos SET favorite = 1 WHERE url = ?').run(videoUrl)
     }
 
@@ -201,18 +215,31 @@ router.post('/api/ratings/row-preferences', express.json(), (req, res) => {
 router.get('/api/ratings/history', (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 50, 200)
   const ratingFilter = req.query.rating // optional: 'up' or 'down'
+  const mode = getMode(req)
 
   try {
-    let query = 'SELECT * FROM video_ratings'
-    const params = []
+    // Filter by mode: only return ratings whose mode matches request OR
+    // legacy ratings (mode IS NULL) whose URL infers to the requested mode.
+    // This prevents cross-mode liked videos from leaking into the wrong shelf.
+    const conditions = ['(mode = ? OR (mode IS NULL AND video_url IS NOT NULL))']
+    const params = [mode]
     if (ratingFilter && ['up', 'down'].includes(ratingFilter)) {
-      query += ' WHERE rating = ?'
+      conditions.push('rating = ?')
       params.push(ratingFilter)
     }
-    query += ' ORDER BY rated_at DESC LIMIT ?'
+    const query = `SELECT * FROM video_ratings WHERE ${conditions.join(' AND ')} ORDER BY rated_at DESC LIMIT ?`
     params.push(limit)
 
-    const ratings = db.prepare(query).all(...params)
+    const rows = db.prepare(query).all(...params)
+    // Final guard: filter legacy NULL-mode rows whose URL doesn't infer to the requested mode.
+    // The firewall middleware also catches this, but we filter here for correct count semantics.
+    const ratings = rows.filter(r => {
+      if (r.mode === mode) return true
+      if (r.mode == null && r.video_url) {
+        return inferMode(r.video_url) === mode
+      }
+      return false
+    })
     res.json({ ratings })
   } catch (err) {
     logger.error('Rating history error:', { error: err.message })
