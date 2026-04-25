@@ -135,7 +135,8 @@ for (const mode of modes) {
       let added = 0
       for (const v of videos) {
         try {
-          const result = insert.run(v.id, cat.key, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []))
+          const compositeId = `${cat.key}_${v.id}`
+          const result = insert.run(compositeId, cat.key, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []))
           if (result.changes > 0) added++
         } catch (err) {
           console.log(`      ⚠️ Insert failed for ${v.url?.substring(0, 60)}: ${err.message.substring(0, 60)}`)

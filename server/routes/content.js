@@ -628,7 +628,8 @@ async function refillCategory(categoryKey) {
     let added = 0
     for (const v of videos) {
       try {
-        const result = stmts.insert.run(v.id, categoryKey, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []))
+        const compositeId = `${categoryKey}_${v.id}`
+        const result = stmts.insert.run(compositeId, categoryKey, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []))
         if (result.changes > 0) added++
       } catch (err) {
         logger.warn(`  ⚠️ Insert failed for ${v.id} in ${categoryKey}:`, { error: err.message })

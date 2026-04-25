@@ -205,7 +205,8 @@ function startScheduledTrendingRefresh() {
       let added = 0
       for (const v of videos) {
         try {
-          const result = insert.run(v.id, 'nsfw_trending', v.url, v.title, v.thumbnail, v.duration, v.source || site, v.uploader, v.view_count, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []))
+          const compositeId = `nsfw_trending_${v.id}`
+          const result = insert.run(compositeId, 'nsfw_trending', v.url, v.title, v.thumbnail, v.duration, v.source || site, v.uploader, v.view_count, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []))
           if (result.changes > 0) added++
         } catch { /* skip on schema error */ }
       }

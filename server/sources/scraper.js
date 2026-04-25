@@ -482,17 +482,17 @@ export class ScraperAdapter extends SourceAdapter {
     if (query.includes('redgifs.com')) {
       try {
         const parsed = new URL(query)
+        const page = parsed.searchParams.get('page') || ''
         if (parsed.pathname.includes('/trending')) {
           const type = parsed.searchParams.get('type') || ''
-          apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=&order=trending&count=${limit}${type ? `&type=${type}` : ''}`
+          apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=&order=trending&count=${limit}${type ? `&type=${type}` : ''}${page ? `&page=${page}` : ''}`
         } else if (parsed.searchParams.has('query')) {
           const searchText = parsed.searchParams.get('query')
           const order = parsed.searchParams.get('order') || ''
-          apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=${encodeURIComponent(searchText)}&count=${limit}${order ? `&order=${order}` : ''}`
+          apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=${encodeURIComponent(searchText)}&count=${limit}${order ? `&order=${order}` : ''}${page ? `&page=${page}` : ''}`
         } else {
-          // Fall back to using the path segment as search text
           const pathSearch = parsed.pathname.split('/').filter(Boolean).pop() || query
-          apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=${encodeURIComponent(pathSearch)}&count=${limit}`
+          apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=${encodeURIComponent(pathSearch)}&count=${limit}${page ? `&page=${page}` : ''}`
         }
       } catch {
         apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=${encodeURIComponent(query)}&count=${limit}`
