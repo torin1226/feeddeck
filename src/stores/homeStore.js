@@ -223,9 +223,11 @@ const useHomeStore = create((set, get) => ({
       // Hide stale-but-cached content (e.g. 2020 videos) from non-pinned shelves.
       // Pinned shelves (subscriptions, liked videos) keep all items — the user
       // opted into those. Drop categories that have no fresh content left.
+      // Items with no upload_date (Puppeteer scrapers don't set it) pass through —
+      // we can't judge their age, and they were recently scraped so they're likely current.
       const RECENT_MS = 180 * 86400000
       const freshNow = Date.now()
-      const isFresh = (v) => v.uploadTs > 0 && (freshNow - v.uploadTs) <= RECENT_MS
+      const isFresh = (v) => v.uploadTs === 0 || (freshNow - v.uploadTs) <= RECENT_MS
 
       // Category rows from API groupings. `pinned` flag flows from persistent_rows
       // (see /api/homepage) and prevents re-sort from displacing them.

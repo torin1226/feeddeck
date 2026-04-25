@@ -26,7 +26,7 @@ export default function HeroSection() {
 
   const {
     autoplayVideoRef, autoplayReady, autoplayUrl,
-    muted: autoplayMuted, toggleMute: toggleAutoplayMute, reducedMotion: _reducedMotion,
+    muted: autoplayMuted, toggleMute: toggleAutoplayMute,
   } = useHeroAutoplay(heroItem, theatreMode)
 
   const [previewing, setPreviewing] = useState(false)
