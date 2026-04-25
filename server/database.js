@@ -47,9 +47,9 @@ function _seedCategories(database) {
     ['nsfw_redgifs_couple', 'RedGifs Couples',      'https://www.redgifs.com/search?query=couple&order=trending',                  'nsfw', 23],
     ['nsfw_fikfap_trend',   'FikFap Trending',      'https://fikfap.com/trending',                                                 'nsfw', 24],
     // Social categories (19)
-    ['social_trending',      'Trending',            'https://www.youtube.com/feed/trending',                                       'social', 0],
+    ['social_trending',      'Trending',            'ytsearch10:trending videos today',                                            'social', 0],
     ['social_subscriptions', 'My Subscriptions',    'https://www.youtube.com/feed/subscriptions',                                  'social', 1],
-    ['social_shorts',        'Shorts',              'https://www.youtube.com/shorts',                                              'social', 2],
+    ['social_shorts',        'Shorts',              'ytsearch10:youtube shorts trending today',                                    'social', 2],
     ['social_viral',         'Viral This Week',     'ytsearch10:viral videos this week',                                           'social', 3],
     ['social_tech',          'Tech & Gadgets',      'ytsearch10:best new tech gadgets',                                            'social', 4],
     ['social_design',        'Design',              'ytsearch10:UI UX design tips',                                                'social', 5],
@@ -617,6 +617,13 @@ export function initDatabase() {
   try {
     db.exec("UPDATE categories SET label = 'My Subscriptions' WHERE key = 'social_subscriptions' AND label = 'Your Subscriptions'")
     db.exec("UPDATE sources SET label = 'My Subscriptions' WHERE domain = 'subscriptions' AND label = 'Your Subscriptions'")
+  } catch {}
+
+  // Migrate: fix social_trending + social_shorts to ytsearch queries -- SPA pages can't be extracted by yt-dlp
+  try {
+    db.prepare("UPDATE categories SET query = 'ytsearch10:trending videos today' WHERE key = 'social_trending' AND query = 'https://www.youtube.com/feed/trending'").run()
+    db.prepare("UPDATE categories SET query = 'ytsearch10:youtube shorts trending today' WHERE key = 'social_shorts' AND query = 'https://www.youtube.com/shorts'").run()
+    db.prepare("DELETE FROM homepage_cache WHERE category_key IN ('social_trending', 'social_shorts') AND viewed = 0").run()
   } catch {}
 
   // Migrate: add title + thumbnail columns to video_ratings if missing
