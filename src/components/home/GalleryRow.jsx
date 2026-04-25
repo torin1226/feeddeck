@@ -1,7 +1,6 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
 import useHomeStore from '../../stores/homeStore'
 import PosterCard from './PosterCard'
-import PosterInfoPanel from './PosterInfoPanel'
 
 // ============================================================
 // GalleryRow
@@ -43,15 +42,9 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
   const endFired = useRef(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const activeIndexRef = useRef(0)
-  // Ref passed to PosterInfoPanel so it can compute panel position
-  const focusedCardRef = useRef(null)
-  // Outer row wrapper — PosterInfoPanel positions itself absolute within this
-  const trackWrapRef = useRef(null)
-
   // Keep refs in sync with activeIndex
   useEffect(() => {
     activeIndexRef.current = activeIndex
-    focusedCardRef.current = cardsRef.current[activeIndex] ?? null
   }, [activeIndex])
 
   // RAF-batched parallax + focus detection on scroll
@@ -166,7 +159,6 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
 
   return (
     <div
-      ref={trackWrapRef}
       className="mb-2 group/gallery relative"
       tabIndex={0}
       onKeyDown={handleRowKeyDown}
@@ -276,14 +268,6 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
         )}
       </div>
 
-      {/* Info panel — poster variant only, anchored to focused card */}
-      {variant !== 'landscape' && (
-        <PosterInfoPanel
-          item={items[activeIndex]}
-          cardRef={focusedCardRef}
-          trackWrapRef={trackWrapRef}
-        />
-      )}
     </div>
   )
 }

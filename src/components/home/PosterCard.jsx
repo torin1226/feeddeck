@@ -1,4 +1,8 @@
 import { forwardRef, memo, useState } from 'react'
+import useHomeStore from '../../stores/homeStore'
+import useQueueStore from '../../stores/queueStore'
+import useRatingsStore from '../../stores/ratingsStore'
+import useToastStore from '../../stores/toastStore'
 import ThumbsRating from '../ThumbsRating'
 
 // ============================================================
@@ -30,6 +34,14 @@ function distProps(dist) {
 const PosterCard = memo(
   forwardRef(function PosterCard({ item, dist, isFocused, onClick, loading = 'lazy', variant = 'poster', progressPercent, surfaceKey, onRated }, ref) {
     const [showThumbs, setShowThumbs] = useState(false)
+    const setHeroItem = useHomeStore((s) => s.setHeroItem)
+    const setTheatreMode = useHomeStore((s) => s.setTheatreMode)
+    const markViewed = useHomeStore((s) => s.markViewed)
+    const addToQueue = useQueueStore((s) => s.addToQueue)
+    const recordRating = useRatingsStore((s) => s.recordRating)
+    const existingRating = useRatingsStore((s) => s.ratedUrls[item?.url])
+    const isToastPaused = useRatingsStore((s) => s.isToastPaused)
+    const showToast = useToastStore((s) => s.showToast)
     const orient = item?.orient || 'h'
     const widths = WIDTH[orient] ?? WIDTH.h
     const width = isFocused ? widths.focused : widths.default
@@ -80,17 +92,47 @@ const PosterCard = memo(
       display: 'block',
     }
 
+    const handleRate = async (rating) => {
+      if (existingRating || !item?.url) return
+      recordRating(item.url, surfaceKey, rating)
+      try {
+        await fetch('/api/ratings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            videoUrl: item.url, surfaceType: 'home_row', surfaceKey,
+            rating, tags: item.tags || [], creator: item.uploader || '',
+            title: item.title || '', thumbnail: item.thumbnail || '', source: item.genre || '',
+          }),
+        })
+      } catch { /* silent */ }
+      if (!isToastPaused() && rating === 'up' && item?.uploader) {
+        showToast(`Saved. More from ${item.uploader} coming your way.`, 'success')
+      }
+    }
+
+    const isExpanded = isFocused && variant !== 'landscape'
+
+    // Gradient — stronger on expanded focused poster cards to back the richer content
     const overlayStyle = {
       position: 'absolute',
       inset: 0,
-      background: 'linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.55) 45%, transparent 100%)',
+      background: isExpanded
+        ? 'linear-gradient(to top, rgba(0,0,0,0.97) 0%, rgba(0,0,0,0.80) 50%, rgba(0,0,0,0.2) 75%, transparent 100%)'
+        : 'linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.55) 45%, transparent 100%)',
+      transition: `background 200ms ${EASE_OUT}`,
+      pointerEvents: 'none',
+    }
+
+    // Content layer — always visible; expanded when focused poster
+    const textOverlayStyle = {
+      position: 'absolute',
+      inset: 0,
       display: 'flex',
       flexDirection: 'column',
       justifyContent: 'flex-end',
-      padding: '20px 16px 16px',
-      opacity: isFocused ? 0 : 1,
-      transition: `opacity 200ms ${EASE_OUT}`,
-      pointerEvents: 'none',
+      padding: isExpanded ? '14px 16px 14px' : '20px 16px 16px',
+      pointerEvents: isExpanded ? 'auto' : 'none',
     }
 
     const durationBadgeStyle = {
@@ -129,15 +171,14 @@ const PosterCard = memo(
     const titleStyle = {
       fontFamily: 'var(--font-display, "Space Grotesk", system-ui, sans-serif)',
       color: 'var(--color-text-primary, #e5e5e5)',
-      fontSize: '14px',
+      fontSize: isExpanded ? '15px' : '14px',
       fontWeight: 700,
       lineHeight: 1.3,
-      // Two-line clamp
       display: '-webkit-box',
       WebkitLineClamp: 2,
       WebkitBoxOrient: 'vertical',
       overflow: 'hidden',
-      marginBottom: '6px',
+      marginBottom: '5px',
     }
 
     const metaStyle = {
@@ -157,11 +198,37 @@ const PosterCard = memo(
       flexShrink: 0,
     }
 
+    const pillStyle = {
+      fontSize: '10px',
+      fontWeight: 500,
+      color: 'rgba(255,255,255,0.75)',
+      backgroundColor: 'rgba(255,255,255,0.1)',
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)',
+      borderRadius: '999px',
+      padding: '2px 9px',
+      lineHeight: 1.5,
+      letterSpacing: '0.02em',
+    }
+
+    const btnBase = {
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: '8px',
+      fontSize: '12px',
+      fontWeight: 600,
+      cursor: 'pointer',
+      fontFamily: 'inherit',
+      letterSpacing: '0.01em',
+      border: 'none',
+    }
+
     return (
       <div ref={ref} style={containerStyle} className={isFocused ? 'poster-card-focused' : undefined}
         onClick={onClick} role="button" tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.() } }}
-        onMouseEnter={() => isFocused && setShowThumbs(true)}
+        onMouseEnter={() => isFocused && !isExpanded && setShowThumbs(true)}
         onMouseLeave={() => setShowThumbs(false)}>
 
         {/* Thumbnail */}
@@ -188,20 +255,99 @@ const PosterCard = memo(
           <div style={shortBadgeStyle}>Short</div>
         )}
 
-        {/* Overlay gradient with title + meta */}
-        <div style={overlayStyle}>
-          {item?.title && (
-            <div style={titleStyle}>{item.title}</div>
+        {/* Gradient */}
+        <div style={overlayStyle} />
+
+        {/* Content overlay — expands when focused poster */}
+        <div style={textOverlayStyle} onClick={isExpanded ? (e) => e.stopPropagation() : undefined}>
+          {isExpanded ? (
+            <>
+              {/* Genre + duration pills */}
+              {(item?.genre || item?.duration) && (
+                <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginBottom: '7px' }}>
+                  {item.genre && <span style={pillStyle}>{item.genre}</span>}
+                  {item.duration && <span style={pillStyle}>{item.duration}</span>}
+                </div>
+              )}
+              {/* Title */}
+              {item?.title && <div style={titleStyle}>{item.title}</div>}
+              {/* Meta */}
+              <div style={{ ...metaStyle, marginBottom: item?.desc ? '5px' : '9px' }}>
+                {item?.views && <span style={{ flexShrink: 0 }}>{item.views} views</span>}
+                {item?.views && item?.uploader && <span style={metaDotStyle} />}
+                {item?.uploader && (
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {item.uploader}
+                  </span>
+                )}
+              </div>
+              {/* Description */}
+              {item?.desc && (
+                <div style={{
+                  fontSize: '11px',
+                  lineHeight: 1.5,
+                  color: 'rgba(255,255,255,0.45)',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  marginBottom: '9px',
+                }}>
+                  {item.desc}
+                </div>
+              )}
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: '7px', alignItems: 'center' }}>
+                <button
+                  style={{ ...btnBase, backgroundColor: '#f43f5e', color: '#fff', padding: '7px 16px', gap: '5px' }}
+                  onClick={(e) => { e.stopPropagation(); markViewed(item.id); setHeroItem(item); window.scrollTo({ top: 0, behavior: 'smooth' }); setTheatreMode(true) }}
+                >
+                  ▶ Play
+                </button>
+                <button
+                  style={{ ...btnBase, backgroundColor: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.18)', padding: '7px 12px', gap: '5px' }}
+                  onClick={(e) => { e.stopPropagation(); addToQueue(item) }}
+                >
+                  ≡ + Queue
+                </button>
+                {existingRating ? (
+                  <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', paddingLeft: '2px' }}>
+                    {existingRating === 'up' ? '👍 Liked' : '👎 Not for me'}
+                  </span>
+                ) : (
+                  <>
+                    <button
+                      style={{ ...btnBase, backgroundColor: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.18)', padding: '7px 10px' }}
+                      onClick={(e) => { e.stopPropagation(); handleRate('down') }}
+                      aria-label="Not for me"
+                    >
+                      👎
+                    </button>
+                    <button
+                      style={{ ...btnBase, backgroundColor: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.18)', padding: '7px 10px' }}
+                      onClick={(e) => { e.stopPropagation(); handleRate('up') }}
+                      aria-label="Like this"
+                    >
+                      👍
+                    </button>
+                  </>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              {item?.title && <div style={titleStyle}>{item.title}</div>}
+              <div style={metaStyle}>
+                {item?.uploader && (
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>
+                    {item.uploader}
+                  </span>
+                )}
+                {item?.uploader && item?.views && <span style={metaDotStyle} />}
+                {item?.views && <span style={{ flexShrink: 0 }}>{item.views}</span>}
+              </div>
+            </>
           )}
-          <div style={metaStyle}>
-            {item?.uploader && (
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>
-                {item.uploader}
-              </span>
-            )}
-            {item?.uploader && item?.views && <span style={metaDotStyle} />}
-            {item?.views && <span style={{ flexShrink: 0 }}>{item.views}</span>}
-          </div>
         </div>
 
         {/* Watch progress bar — Continue Watching cards */}
@@ -214,8 +360,8 @@ const PosterCard = memo(
           </div>
         )}
 
-        {/* Thumbs rating overlay — focused card on hover only */}
-        {isFocused && item?.url && (
+        {/* Thumbs rating overlay — focused landscape cards on hover only (poster uses on-card buttons) */}
+        {isFocused && !isExpanded && item?.url && (
           <ThumbsRating
             videoUrl={item.url}
             surfaceType="home_row"
