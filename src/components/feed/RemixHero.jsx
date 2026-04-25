@@ -1,5 +1,4 @@
 import { useRef, useEffect, useState } from 'react'
-import Hls from 'hls.js'
 import useFeedStore from '../../stores/feedStore'
 
 export default function RemixHero({ video }) {
@@ -37,10 +36,14 @@ export default function RemixHero({ video }) {
       if (isHls) {
         if (vid.canPlayType('application/vnd.apple.mpegurl')) {
           vid.src = proxied
-        } else if (Hls.isSupported()) {
-          hlsRef.current = new Hls({ enableWorker: true })
-          hlsRef.current.loadSource(proxied)
-          hlsRef.current.attachMedia(vid)
+        } else {
+          // Load hls.js lazily -- only when an HLS stream is needed
+          const { default: Hls } = await import('hls.js')
+          if (Hls.isSupported()) {
+            hlsRef.current = new Hls({ enableWorker: true })
+            hlsRef.current.loadSource(proxied)
+            hlsRef.current.attachMedia(vid)
+          }
         }
       } else {
         vid.src = proxied

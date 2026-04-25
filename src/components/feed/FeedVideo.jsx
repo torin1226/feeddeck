@@ -1,5 +1,4 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
-import Hls from 'hls.js'
 import useFeedStore from '../../stores/feedStore'
 import ThumbsRating from '../ThumbsRating'
 
@@ -55,8 +54,7 @@ function _getPreloadWindow() {
 // and ensure correct Referer headers. iOS could play direct but proxying
 // keeps behavior consistent and avoids CORS issues.
 // Returns a Promise that resolves when the media is ready to play.
-function loadSource(vid, url) {
-  // Destroy previous hls.js instance
+async function loadSource(vid, url) {
   if (_sharedHls) {
     _sharedHls.destroy()
     _sharedHls = null
@@ -64,38 +62,39 @@ function loadSource(vid, url) {
 
   const isHls = url.includes('.m3u8')
 
-  if (isHls && Hls.isSupported()) {
-    // Desktop: use hls.js with proxied URL (same-origin, no ORB)
-    vid.removeAttribute('src')
-    const proxyUrl = `/api/hls-proxy?url=${encodeURIComponent(url)}`
-    return new Promise((resolve, reject) => {
-      _sharedHls = new Hls({ enableWorker: true, lowLatencyMode: false })
-      _sharedHls.on(Hls.Events.MANIFEST_PARSED, () => resolve())
-      _sharedHls.on(Hls.Events.ERROR, (_, data) => {
-        console.error('HLS error:', data.type, data.details, data.fatal)
-        if (data.fatal) {
-          // Fatal error — attempt recovery or reject
-          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            _sharedHls.startLoad() // try to recover network errors
-          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-            _sharedHls.recoverMediaError() // try to recover media errors
-          } else {
-            // Unrecoverable — destroy and reject
-            _sharedHls.destroy()
-            _sharedHls = null
-            reject(new Error(`HLS fatal: ${data.details}`))
-            return
+  if (isHls) {
+    // hls.js loaded lazily -- only when an HLS stream is encountered
+    const { default: Hls } = await import('hls.js')
+    if (Hls.isSupported()) {
+      // Desktop: use hls.js with proxied URL (same-origin, no ORB)
+      vid.removeAttribute('src')
+      const proxyUrl = `/api/hls-proxy?url=${encodeURIComponent(url)}`
+      return new Promise((resolve, reject) => {
+        _sharedHls = new Hls({ enableWorker: true, lowLatencyMode: false })
+        _sharedHls.on(Hls.Events.MANIFEST_PARSED, () => resolve())
+        _sharedHls.on(Hls.Events.ERROR, (_, data) => {
+          console.error('HLS error:', data.type, data.details, data.fatal)
+          if (data.fatal) {
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+              _sharedHls.startLoad()
+            } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+              _sharedHls.recoverMediaError()
+            } else {
+              _sharedHls.destroy()
+              _sharedHls = null
+              reject(new Error(`HLS fatal: ${data.details}`))
+              return
+            }
           }
-        }
-        // Non-fatal errors: resolve and let playback continue
-        // (hls.js handles recovery internally for non-fatal)
+        })
+        _sharedHls.loadSource(proxyUrl)
+        _sharedHls.attachMedia(vid)
       })
-      _sharedHls.loadSource(proxyUrl)
-      _sharedHls.attachMedia(vid)
-    })
+    }
+    // HLS not supported (iOS native HLS) -- fall through to proxy-stream
   }
 
-  // MP4 (or HLS on iOS) — proxy through our server to avoid ORB/CORS
+  // MP4 (or HLS on iOS via native) -- proxy through our server to avoid ORB/CORS
   const proxyUrl = `/api/proxy-stream?url=${encodeURIComponent(url)}`
   return new Promise((resolve) => {
     let done = false

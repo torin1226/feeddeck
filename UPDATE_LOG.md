@@ -1,5 +1,31 @@
 # FeedDeck Update Log
 
+## 2026-04-25 - Stores + Hooks Code Health (Scheduled Agent)
+
+### Focus Area: Area 3 -- src/stores/ + src/hooks/
+
+**Commits:** `82dc348`, `2cd9422`, `e334dda`
+
+**1 critical bug fixed:**
+
+**isFresh filter silently dropped all Puppeteer-scraped homepage content:** `homeStore.fetchHomepage()` introduced `isFresh = (v) => v.uploadTs > 0 && ...` to filter archived content. But Puppeteer scrapers (SpankBang, RedTube, xHamster, YouPorn, XVideos, FikFap) never set `upload_date`, so `uploadTs = 0` for all their content. The `> 0` check dropped all of it silently. Net effect: only YouTube and RedGifs showed in non-pinned NSFW categories. The 6 new NSFW categories added April 24 were all empty. Fixed to `uploadTs === 0 || (freshNow - uploadTs) <= RECENT_MS` -- items with no upload_date pass through.
+
+**2 cleanup fixes:**
+
+- **GalleryRow dead refs:** `focusedCardRef` and `trackWrapRef` (+ stale PosterInfoPanel comments) removed. Both were declared and written but never read after PosterInfoPanel was removed from GalleryRow.
+- **HeroSection unused destructuring:** `reducedMotion: _reducedMotion` removed from useHeroAutoplay destructuring -- nothing in HeroSection consumed it.
+
+**Pre-session housekeeping:** Committed + pushed the April 24 nsfw-rows session work that was sitting unstaged: persistent_rows tables, pornhub-personal.js, warm-cache Phase 1.5, system_searches seeding, UTC cooldown bug fix.
+
+**Audit findings (no changes needed):**
+
+- feedStore, ratingsStore, queueStore, playerStore, modeStore, toastStore: all clean.
+- useHeroAutoplay, useHoverPreview, useTheatreControls, useQueueSync, useKeyboard, useFeedGestures: all clean.
+
+**Next health focus:** Area 4 -- src/pages/ + routing + vite.config.js + build pipeline
+
+---
+
 ## 2026-04-24 (later) - PosterCard Refactor: On-Card Actions, PosterInfoPanel Removed
 
 ### Completed

@@ -14,13 +14,15 @@ export default defineConfig({
     }
   },
   build: {
+    // hls.js lazy chunk is 523kB -- expected, unavoidable, only loaded on HLS playback
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
         manualChunks: {
           // Split large vendor libs into their own chunks
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-hls': ['hls.js'],
           'vendor-zustand': ['zustand'],
+          // hls.js is loaded dynamically (only when HLS stream is played)
         }
       }
     }
