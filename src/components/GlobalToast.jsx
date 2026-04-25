@@ -56,14 +56,14 @@ export default function GlobalToast() {
     <div
       role="status"
       aria-live="polite"
-      className={`fixed top-6 left-1/2 z-toast rounded-full
+      className={`fixed ${toast.position === 'bottom' ? 'bottom-8' : 'top-6'} left-1/2 z-toast rounded-full
         backdrop-blur-lg border text-sm font-medium
         transition-all duration-300
         ${isAction ? 'pointer-events-auto border-l-2 border-l-accent px-5 py-2.5' : 'pointer-events-none px-4 py-2'}
         ${colorClasses}`}
       style={{
         opacity: visible ? 1 : 0,
-        transform: `translateX(-50%) translateY(${visible ? 0 : -10}px)`,
+        transform: `translateX(-50%) translateY(${visible ? 0 : (toast.position === 'bottom' ? 10 : -10)}px)`,
         maxWidth: isAction ? '420px' : '320px',
       }}
     >

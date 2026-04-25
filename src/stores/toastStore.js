@@ -22,8 +22,8 @@ const useToastStore = create((set) => ({
   }),
 
   // Tier 2 — action toast with CTA buttons
-  showActionToast: (message, { type = 'info', actions = [], timeout = 8000 } = {}) => set({
-    toast: { id: Date.now(), message, type, tier: 'action', actions, timeout },
+  showActionToast: (message, { type = 'info', actions = [], timeout = 8000, position = 'top' } = {}) => set({
+    toast: { id: Date.now(), message, type, tier: 'action', actions, timeout, position },
   }),
 
   clearToast: () => set({ toast: null }),

@@ -139,21 +139,9 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
     else if (e.key === 'ArrowRight') { e.preventDefault(); scrollByCard(1) }
   }, [scrollByCard])
 
-  // Vertical scroll wheel navigates card-by-card. Horizontal (trackpad swipe) scrolls natively.
-  // Must be attached via useEffect with { passive: false } -- React's onWheel is passive by default
-  // which makes preventDefault() a no-op for wheel events.
-  const handleWheel = useCallback((e) => {
-    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return
-    e.preventDefault()
-    scrollByCard(e.deltaY > 0 ? 1 : -1)
-  }, [scrollByCard])
-
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    el.addEventListener('wheel', handleWheel, { passive: false })
-    return () => el.removeEventListener('wheel', handleWheel)
-  }, [handleWheel])
+  // Scroll hijacking REMOVED — vertical wheel scrolls the page, not the row.
+  // Horizontal navigation: arrow buttons (mouse), ArrowLeft/Right (keyboard),
+  // native trackpad horizontal swipe, or snap-scroll drag.
 
   if (!items?.length) return null
 

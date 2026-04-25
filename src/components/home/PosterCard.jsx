@@ -311,8 +311,13 @@ const PosterCard = memo(
                   ≡ + Queue
                 </button>
                 {existingRating ? (
-                  <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', paddingLeft: '2px' }}>
-                    {existingRating === 'up' ? '👍 Liked' : '👎 Not for me'}
+                  <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.5)', paddingLeft: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      {existingRating === 'up'
+                        ? <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3" />
+                        : <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17" />}
+                    </svg>
+                    {existingRating === 'up' ? 'Liked' : 'Not for me'}
                   </span>
                 ) : (
                   <>
@@ -321,14 +326,18 @@ const PosterCard = memo(
                       onClick={(e) => { e.stopPropagation(); handleRate('down') }}
                       aria-label="Not for me"
                     >
-                      👎
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17" />
+                      </svg>
                     </button>
                     <button
                       style={{ ...btnBase, backgroundColor: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.18)', padding: '7px 10px' }}
                       onClick={(e) => { e.stopPropagation(); handleRate('up') }}
                       aria-label="Like this"
                     >
-                      👍
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3" />
+                      </svg>
                     </button>
                   </>
                 )}

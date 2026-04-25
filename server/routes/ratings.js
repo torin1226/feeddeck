@@ -145,6 +145,94 @@ router.post('/api/ratings', express.json(), (req, res) => {
 })
 
 // -----------------------------------------------------------
+// POST /api/ratings/undo — Reverse the most recent thumbs-down
+// Deletes the rating row and reverses taste_profile + creator_boosts deltas
+// -----------------------------------------------------------
+router.post('/api/ratings/undo', express.json(), (req, res) => {
+  const { videoUrl } = req.body || {}
+  if (!videoUrl) return res.status(400).json({ error: 'videoUrl required' })
+
+  const videoMode = inferMode(videoUrl)
+
+  try {
+    const row = db.prepare(
+      'SELECT id, rating, tags, creator, surface_key FROM video_ratings WHERE video_url = ? ORDER BY rated_at DESC LIMIT 1'
+    ).get(videoUrl)
+
+    if (!row || row.rating !== 'down') {
+      return res.status(404).json({ error: 'No down-rating found to undo' })
+    }
+
+    let tags = []
+    try { tags = JSON.parse(row.tags || '[]') } catch {}
+    const creator = row.creator
+    const surfaceKey = row.surface_key
+    const tagWeight = 0.3 // reverse of -0.3 applied on thumbs-down
+
+    db.exec('BEGIN')
+    try {
+      db.prepare('DELETE FROM video_ratings WHERE id = ?').run(row.id)
+
+      // Reverse taste_profile for each tag (global + surface-specific)
+      for (const tag of tags) {
+        const t = tag.toLowerCase().trim()
+        if (!t) continue
+
+        const globalRow = db.prepare(
+          'SELECT id, weight FROM taste_profile WHERE signal_type = ? AND signal_value = ? AND surface_key IS NULL AND mode = ?'
+        ).get('tag', t, videoMode)
+        if (globalRow) {
+          const newWeight = Math.max(-1, Math.min(1, globalRow.weight + tagWeight))
+          db.prepare('UPDATE taste_profile SET weight = ?, updated_at = datetime(\'now\') WHERE id = ?').run(newWeight, globalRow.id)
+        }
+
+        if (surfaceKey) {
+          const surfRow = db.prepare(
+            'SELECT id, weight FROM taste_profile WHERE signal_type = ? AND signal_value = ? AND surface_key = ? AND mode = ?'
+          ).get('tag', t, surfaceKey, videoMode)
+          if (surfRow) {
+            const newWeight = Math.max(-1, Math.min(1, surfRow.weight + tagWeight))
+            db.prepare('UPDATE taste_profile SET weight = ?, updated_at = datetime(\'now\') WHERE id = ?').run(newWeight, surfRow.id)
+          }
+        }
+      }
+
+      // Reverse creator_boosts (+0.15 to undo the -0.15 applied on thumbs-down)
+      if (creator) {
+        const creatorKey = creator.trim()
+        if (creatorKey) {
+          const boostRow = db.prepare(
+            'SELECT creator, boost_score, surface_boosts FROM creator_boosts WHERE creator = ? AND (mode IS NULL OR mode = ?)'
+          ).get(creatorKey, videoMode)
+          if (boostRow) {
+            const newScore = Math.max(-1, boostRow.boost_score + 0.15)
+            let surfaceBoosts = {}
+            try { surfaceBoosts = JSON.parse(boostRow.surface_boosts || '{}') } catch {}
+            if (surfaceKey) {
+              surfaceBoosts[surfaceKey] = (surfaceBoosts[surfaceKey] || 0) + 0.15
+            }
+            db.prepare(
+              'UPDATE creator_boosts SET boost_score = ?, surface_boosts = ?, last_updated = datetime(\'now\') WHERE creator = ?'
+            ).run(newScore, JSON.stringify(surfaceBoosts), creatorKey)
+          }
+        }
+      }
+
+      db.exec('COMMIT')
+    } catch (txErr) {
+      try { db.exec('ROLLBACK') } catch {}
+      throw txErr
+    }
+
+    invalidateProfileCache()
+    res.json({ ok: true })
+  } catch (err) {
+    logger.error('Undo rating error:', { error: err.message })
+    res.status(500).json({ error: 'Failed to undo rating' })
+  }
+})
+
+// -----------------------------------------------------------
 // POST /api/ratings/row-refresh — Get fresh videos for a row
 // Called after 4+ consecutive thumbs-down on a row
 // -----------------------------------------------------------

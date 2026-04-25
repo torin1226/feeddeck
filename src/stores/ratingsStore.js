@@ -79,6 +79,23 @@ const useRatingsStore = create((set, get) => ({
     return until && Date.now() < until
   },
 
+  // Undo the most recent rating for a video (optimistic revert)
+  undoRating: (videoUrl, surfaceKey) => {
+    const state = get()
+    const ratedUrls = { ...state.ratedUrls }
+    delete ratedUrls[videoUrl]
+
+    const trackers = { ...state.rowTrackers }
+    if (trackers[surfaceKey]) {
+      const t = { ...trackers[surfaceKey] }
+      t.consecutiveDowns = Math.max(0, t.consecutiveDowns - 1)
+      t.recentDownTimestamps = t.recentDownTimestamps.slice(0, -1)
+      trackers[surfaceKey] = t
+    }
+
+    set({ ratedUrls, rowTrackers: trackers })
+  },
+
   // Get rating for a video (for UI state)
   getRating: (videoUrl) => get().ratedUrls[videoUrl] || null,
 

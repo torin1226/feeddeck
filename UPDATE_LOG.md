@@ -1,5 +1,39 @@
 # FeedDeck Update Log
 
+## 2026-04-25 - Thumbs Rating Polish: Icon Fix, Undo Toast, Style Unification
+
+### Completed
+- **Thumbs-down icon bug fixed** — Both buttons were rendering as thumbs-up. Root cause: a `transform="rotate(180 12 12)"` attribute on the thumbs-down SVG was flipping the already-correct Feather path 180°. One-line fix in `ThumbsRating.jsx`.
+- **Bottom-pinned undo toast on thumbs-down** — Clicking thumbs-down now triggers a toast pinned 32px from the bottom of the viewport (vs. the existing top-center toasts) with a 10-second shrinking progress bar and an "Undo" CTA. Extended `toastStore.showActionToast` with a `position` field (default `'top'`); `GlobalToast` conditionally uses `bottom-8` and reverses its entrance slide direction. Undo bypasses the `isToastPaused()` guard — recovery paths must always be accessible.
+- **`undoRating()` in ratingsStore** — Synchronously reverts the optimistic `ratedUrls` map and decrements `consecutiveDowns` / trims `recentDownTimestamps` so the row tracker stays consistent.
+- **`POST /api/ratings/undo` backend endpoint** — Full transaction: deletes the `video_ratings` row, reverses `taste_profile` per-tag deltas (global + surface-specific), reverses `creator_boosts`. Reads tags/creator/surface_key from the stored DB row rather than the request body.
+- **PosterCard: emoji buttons → SVG** — Expanded-card thumbs-down/up buttons and the already-rated indicator replaced emoji characters with Feather SVG icons (width=16/12) to match ThumbsRating's visual language.
+- **HeroSection: heart → glass thumbs buttons** — The unwired `&#9825;` heart was replaced with two glass-pill SVG thumbs buttons (width=18, 42×42 touch targets, `bg-white/[0.08]` + `border-white/[0.12]`) wired to a full `handleHeroRate` useCallback (surfaceType=`'home_hero'`). When already rated, shows SVG icon + "Liked"/"Not for me" text inline.
+
+### Decisions Made
+- **Undo bypasses toast pause.** The `isToastPaused()` guard exists to reduce ambient feedback noise; undo is a recovery action, not feedback, so it's exempt. Down-toast outside guard; up-toast inside guard — asymmetric by design.
+- **`POST /api/ratings/undo` reads from DB row, not request body.** Prevents a stale or tampered client from reversing an unrelated rating's deltas. The stored row is the authoritative record.
+- **HeroSection uses inline rating logic, not ThumbsRating.** ThumbsRating uses `position: absolute` bottom-of-card overlay semantics that don't fit the hero's layout. ~20 lines of duplication is cleaner than fighting positioning.
+
+### Issues & Blockers
+- None. Build clean, 0 lint errors, all changed files verified.
+
+### Key Files Changed
+- `src/components/ThumbsRating.jsx` — icon fix, undo toast wired, `undoRating` + `showActionToast` selectors added
+- `src/stores/ratingsStore.js` — `undoRating(videoUrl, surfaceKey)` method added
+- `src/stores/toastStore.js` — `showActionToast` extended with `position` field
+- `src/components/GlobalToast.jsx` — conditional `bottom-8`/`top-6` positioning + reversed entrance animation
+- `server/routes/ratings.js` — `POST /api/ratings/undo` endpoint added
+- `src/components/home/PosterCard.jsx` — emoji buttons → SVG (both interactive + rated indicator)
+- `src/components/home/HeroSection.jsx` — heart → glass thumbs buttons with `handleHeroRate` logic
+
+### Next Session Should
+- Wire ThumbsRating (or equivalent) into `FeedVideo.jsx` (swipe feed) — currently the swipe feed has no thumbs rating UI
+- Implement rapid-dislike panel trigger: `recentDownTimestamps` tracking is in ratingsStore but the toast + keyword panel UI isn't wired
+- Consider "Liked" virtual shelf in library (Phase E) — `video_ratings WHERE rating='up'` rows are being written, just need the UI
+
+---
+
 ## 2026-04-25 - Stores + Hooks Code Health (Scheduled Agent)
 
 ### Focus Area: Area 3 -- src/stores/ + src/hooks/

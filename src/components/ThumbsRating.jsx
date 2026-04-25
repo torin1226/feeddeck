@@ -27,7 +27,18 @@ export default function ThumbsRating({
   const recordRating = useRatingsStore(s => s.recordRating)
   const existingRating = useRatingsStore(s => s.ratedUrls[videoUrl])
   const isToastPaused = useRatingsStore(s => s.isToastPaused)
+  const undoRating = useRatingsStore(s => s.undoRating)
   const showToast = useToastStore(s => s.showToast)
+  const showActionToast = useToastStore(s => s.showActionToast)
+
+  const handleUndo = useCallback(() => {
+    undoRating(videoUrl, surfaceKey || surfaceType)
+    fetch('/api/ratings/undo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoUrl }),
+    }).catch(err => console.warn('Undo rating failed:', err.message))
+  }, [videoUrl, surfaceKey, surfaceType, undoRating])
 
   const handleRate = useCallback(async (rating) => {
     if (animating || existingRating) return
@@ -58,8 +69,14 @@ export default function ThumbsRating({
       console.warn('Rating failed:', err.message)
     }
 
-    // Toast feedback
-    if (!isToastPaused()) {
+    // Toast feedback — down always shows undo toast (bypasses pause), up is ambient
+    if (rating === 'down') {
+      showActionToast("Got it. We'll show less like this.", {
+        position: 'bottom',
+        timeout: 10000,
+        actions: [{ label: 'Undo', primary: true, onClick: handleUndo }],
+      })
+    } else if (!isToastPaused()) {
       if (rating === 'up' && creator) {
         showToast(`Saved. More from ${creator} coming your way.`, 'success')
       }
@@ -70,7 +87,7 @@ export default function ThumbsRating({
 
     // Clear animation state after animation completes
     setTimeout(() => setAnimating(null), 350)
-  }, [videoUrl, surfaceType, surfaceKey, tags, creator, title, thumbnail, source, animating, existingRating, recordRating, isToastPaused, showToast, onRated])
+  }, [videoUrl, surfaceType, surfaceKey, tags, creator, title, thumbnail, source, animating, existingRating, recordRating, isToastPaused, showToast, showActionToast, handleUndo, onRated])
 
   if (!visible || !videoUrl) return null
 
@@ -85,8 +102,13 @@ export default function ThumbsRating({
           WebkitBackdropFilter: 'blur(12px)',
         }}
       >
-        <span className="text-xs text-white/60 font-medium">
-          {existingRating === 'up' ? '👍 Liked' : '👎 Not for me'}
+        <span className="text-xs text-white/60 font-medium flex items-center gap-1">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            {existingRating === 'up'
+              ? <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3" />
+              : <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17" />}
+          </svg>
+          {existingRating === 'up' ? 'Liked' : 'Not for me'}
         </span>
       </div>
     )
@@ -123,7 +145,7 @@ export default function ThumbsRating({
           }}
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/80">
-            <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17" transform="rotate(180 12 12)" />
+            <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17" />
           </svg>
         </button>
 
