@@ -81,6 +81,15 @@ const useRatingsStore = create((set, get) => ({
 
   // Get rating for a video (for UI state)
   getRating: (videoUrl) => get().ratedUrls[videoUrl] || null,
+
+  // Reset all in-memory ratings UI state. Called by nuclearFlush on mode switch
+  // so that hover/visited UI hints don't carry between modes.
+  reset: () => set({
+    rowTrackers: {},
+    actionToastCount: 0,
+    toastPausedUntil: null,
+    ratedUrls: {},
+  }),
 }))
 
 export default useRatingsStore

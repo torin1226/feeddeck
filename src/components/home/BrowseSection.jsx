@@ -3,32 +3,46 @@ import { useNavigate } from 'react-router-dom'
 import useHomeStore from '../../stores/homeStore'
 import useFeedStore from '../../stores/feedStore'
 import useLibraryStore from '../../stores/libraryStore'
+import useModeStore from '../../stores/modeStore'
+import { modeFromIsSFW, isVideoForMode } from '../../utils/mode'
 import GalleryRow from './GalleryRow'
 import Top10Row from './Top10Row'
 
-// Fetch liked videos for "Your Likes" row (appears after 3+ likes)
+// Fetch liked videos for "Your Likes" row, scoped to current mode.
+// Re-fetches when mode flips so we never display the previous mode's likes.
 function useLikedRow() {
   const [items, setItems] = useState([])
+  const isSFW = useModeStore((s) => s.isSFW)
+  const mode = modeFromIsSFW(isSFW)
   useEffect(() => {
-    fetch('/api/ratings/history?rating=up&limit=20')
+    let aborted = false
+    setItems([])
+    fetch(`/api/ratings/history?rating=up&limit=20&mode=${mode}`)
       .then(r => r.ok ? r.json() : { ratings: [] })
       .then(data => {
-        const mapped = (data.ratings || []).map(r => ({
-          id: `liked-${r.id}`,
-          title: r.title || (r.creator ? `From ${r.creator}` : 'Liked'),
-          thumbnail: r.thumbnail || '',
-          url: r.video_url,
-          uploader: r.creator || '',
-          tags: typeof r.tags === 'string' ? JSON.parse(r.tags || '[]') : (r.tags || []),
-          duration: '',
-          durationSec: 0,
-          views: '',
-          orient: 'h',
-        }))
+        if (aborted) return
+        const mapped = (data.ratings || [])
+          // Render-time guard: trust the URL's inferred mode in case the server
+          // response includes any legacy NULL-mode rows that slipped through.
+          .filter(r => isVideoForMode({ url: r.video_url, mode: r.mode }, mode))
+          .map(r => ({
+            id: `liked-${r.id}`,
+            title: r.title || (r.creator ? `From ${r.creator}` : 'Liked'),
+            thumbnail: r.thumbnail || '',
+            url: r.video_url,
+            mode: r.mode,
+            uploader: r.creator || '',
+            tags: typeof r.tags === 'string' ? JSON.parse(r.tags || '[]') : (r.tags || []),
+            duration: '',
+            durationSec: 0,
+            views: '',
+            orient: 'h',
+          }))
         setItems(mapped)
       })
       .catch(() => {})
-  }, [])
+    return () => { aborted = true }
+  }, [mode])
   return items
 }
 
@@ -47,6 +61,8 @@ export default function BrowseSection() {
   const { categories } = useHomeStore()
   const videos = useLibraryStore((s) => s.videos)
   const likedItems = useLikedRow()
+  const isSFW = useModeStore((s) => s.isSFW)
+  const currentMode = modeFromIsSFW(isSFW)
   const navigate = useNavigate()
   const rowRefs = useRef([])
   const [feedTransition, setFeedTransition] = useState(false)
@@ -55,8 +71,10 @@ export default function BrowseSection() {
   // GalleryShelf already renders categories.slice(0, 2), show the rest here
   const displayCategories = categories.slice(2)
 
-  // Continue Watching: in-progress videos sorted by most recently watched
+  // Continue Watching: in-progress videos sorted by most recently watched.
+  // Mode-scoped so a NSFW video in progress doesn't appear in social mode.
   const continueWatching = videos
+    .filter((v) => isVideoForMode(v, currentMode))
     .filter((v) => v.watchProgress > 0.05 && v.watchProgress < 0.95)
     .sort((a, b) => {
       const aTime = a.lastWatched ? new Date(a.lastWatched).getTime() : 0

@@ -7,6 +7,7 @@ import VideoCard from '../components/VideoCard'
 import VideoPlayer from '../components/VideoPlayer'
 import DebugPanel from '../components/DebugPanel'
 import { SkeletonLibrary } from '../components/Skeletons'
+import { modeFromIsSFW, isVideoForMode } from '../utils/mode'
 
 // ============================================================
 // LibraryPage
@@ -27,24 +28,38 @@ const TABS = [
 export default function LibraryPage() {
   const navigate = useNavigate()
   const isSFW = useModeStore((s) => s.isSFW)
+  const currentMode = modeFromIsSFW(isSFW)
   const { videos, loading, loadFromServer, seedDemoData } = useLibraryStore()
   const [activeTab, setActiveTab] = useState('all')
   const [activeVideo, setActiveVideo] = useState(null)
   const [debugOpen, setDebugOpen] = useState(false)
   const [likedVideos, setLikedVideos] = useState([])
 
-  // Fetch liked videos from ratings API
+  // Fetch liked videos from ratings API, scoped to current mode.
+  // Re-runs on mode change so the Liked tab never shows stale cross-mode rows.
   const fetchLiked = useCallback(async () => {
     try {
-      const res = await fetch('/api/ratings/history?rating=up&limit=100')
+      const res = await fetch(`/api/ratings/history?rating=up&limit=100&mode=${currentMode}`)
       if (res.ok) {
         const data = await res.json()
-        setLikedVideos(data.ratings || [])
+        // Render-time guard: filter any legacy rows that slipped through.
+        const filtered = (data.ratings || []).filter(r =>
+          isVideoForMode({ url: r.video_url, mode: r.mode }, currentMode)
+        )
+        setLikedVideos(filtered)
       }
     } catch { /* non-fatal */ }
-  }, [])
+  }, [currentMode])
 
   useEffect(() => { fetchLiked() }, [fetchLiked])
+
+  // Reload library when mode changes so videos array reflects only the
+  // current mode's content. nuclearFlush already clears the store; this
+  // pulls fresh server data.
+  useEffect(() => {
+    loadFromServer()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentMode])
 
   // Ctrl+Shift+D toggles debug panel
   useEffect(() => {
@@ -69,55 +84,68 @@ export default function LibraryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Mode firewall: every list of videos rendered on this page is filtered
+  // by the current mode at the source. Even if the store is stale or the
+  // server response is dirty, cross-mode items can't reach the screen.
+  const modeVideos = useMemo(
+    () => videos.filter((v) => isVideoForMode(v, currentMode)),
+    [videos, currentMode]
+  )
+
   // Continue Watching — videos with progress between 5% and 95%
   const continueWatching = useMemo(() => {
-    return videos
+    return modeVideos
       .filter((v) => v.watchProgress > 0.05 && v.watchProgress < 0.95)
       .sort((a, b) => new Date(b.lastWatched || 0) - new Date(a.lastWatched || 0))
       .slice(0, 20)
-  }, [videos])
+  }, [modeVideos])
 
   // Filtered videos based on active tab
   const filtered = useMemo(() => {
     switch (activeTab) {
       case 'liked':
-        // Show liked videos from ratings API, mapped to card-compatible shape
-        return likedVideos.map(r => ({
-          id: r.id,
-          url: r.video_url,
-          title: r.title || (r.creator ? `Liked from ${r.creator}` : 'Liked video'),
-          thumbnail: r.thumbnail || '',
-          source: r.surface_key || 'rated',
-          tags: r.tags ? (typeof r.tags === 'string' ? JSON.parse(r.tags) : r.tags) : [],
-          favorite: true,
-          addedAt: r.rated_at,
-        }))
+        // Show liked videos from ratings API, mapped to card-compatible shape.
+        // likedVideos is already mode-filtered in fetchLiked but applying again
+        // is the cheap final guard.
+        return likedVideos
+          .filter(r => isVideoForMode({ url: r.video_url, mode: r.mode }, currentMode))
+          .map(r => ({
+            id: r.id,
+            url: r.video_url,
+            title: r.title || (r.creator ? `Liked from ${r.creator}` : 'Liked video'),
+            thumbnail: r.thumbnail || '',
+            source: r.surface_key || 'rated',
+            mode: r.mode,
+            tags: r.tags ? (typeof r.tags === 'string' ? JSON.parse(r.tags) : r.tags) : [],
+            favorite: true,
+            addedAt: r.rated_at,
+          }))
       case 'favorites':
-        return videos.filter((v) => v.favorite)
+        return modeVideos.filter((v) => v.favorite)
       case 'history':
-        return videos
+        return modeVideos
           .filter((v) => v.lastWatched)
           .sort((a, b) => new Date(b.lastWatched) - new Date(a.lastWatched))
       case 'watchLater':
-        return videos.filter((v) => v.watchLater)
+        return modeVideos.filter((v) => v.watchLater)
       case 'rated':
-        return videos
+        return modeVideos
           .filter((v) => v.rating)
           .sort((a, b) => b.rating - a.rating)
       default:
-        return videos
+        return modeVideos
     }
-  }, [videos, activeTab, likedVideos])
+  }, [modeVideos, activeTab, likedVideos, currentMode])
 
   // Tab counts for badges
   const counts = useMemo(() => ({
-    all: videos.length,
+    all: modeVideos.length,
     liked: likedVideos.length,
-    favorites: videos.filter((v) => v.favorite).length,
-    history: videos.filter((v) => v.lastWatched).length,
-    watchLater: videos.filter((v) => v.watchLater).length,
-    rated: videos.filter((v) => v.rating).length,
-  }), [videos, likedVideos])
+    favorites: modeVideos.filter((v) => v.favorite).length,
+    history: modeVideos.filter((v) => v.lastWatched).length,
+    watchLater: modeVideos.filter((v) => v.watchLater).length,
+    rated: modeVideos.filter((v) => v.rating).length,
+  }), [modeVideos, likedVideos])
 
   return (
     <div className="min-h-screen bg-surface text-text-primary font-sans">
