@@ -569,7 +569,7 @@ _Claude Code adds tasks here as they come up during implementation. Move to the 
 
 _Open items from archived design review runs. Completed review items in [`BACKLOG-ARCHIVE.md`](BACKLOG-ARCHIVE.md)._
 
-- [ ] **Content-aware skeleton shapes** -- Match skeleton layout to actual component dimensions.
+- [~] **Content-aware skeleton shapes** -- Match skeleton layout to actual component dimensions. _2026-04-26: HomePage skeletons (`SkeletonHero` + `SkeletonGalleryShelf`) now mirror real dimensions — Hero `min-h-[600px]` to match `HeroSection`, title clamp height + extra "+" button placeholder; GalleryShelf restructured to mirror `GalleryRow` (left-aligned header with "See all" pill, 50vh card heights matching `PosterCard.WIDTH` + `'50vh'`, 35vw scroll padding, 4px-tall windowed dots) plus a `PosterPeekRow` placeholder strip below. **Remaining:** audit `SkeletonCard` (used in FeedPage feed-loading hint — currently 200×113px fixed via `w-card`/`h-card-thumb`, verify that's intended for a full-screen swipe surface) and `SkeletonLibrary` (Continue Watching `h-[124px]` row vs actual landscape card dimensions)._
 - [ ] **Ambient color extraction** -- Extract dominant thumbnail color for hero gradient overlay.
 - [ ] **Branded empty state SVGs** -- Replace emoji icons with custom illustrations.
 - [ ] **Noise/grain texture** -- Subtle film grain on dark surfaces for cinematic feel.
