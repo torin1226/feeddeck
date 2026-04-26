@@ -64,23 +64,42 @@ export function formatDuration(seconds) {
   return `${m}:${s}`
 }
 
+// Referer rules for CDN proxying.
+// Each rule: when the URL contains ANY of `match`, send `referer`.
+// Order matters -- first matching rule wins.
+// IMPORTANT: When adding a new NSFW source to COOKIE_MAP (server/cookies.js)
+// AND ALLOWED_CDN_DOMAINS above, also add a rule here. Without it, the CDN
+// will silently return 403 (it sees the wrong Referer). The server test
+// suite asserts every NSFW source in COOKIE_MAP has its own rule here.
+export const REFERER_RULES = [
+  { match: ['pornhub', 'phncdn'],            referer: 'https://www.pornhub.com/' },
+  { match: ['tiktok'],                        referer: 'https://www.tiktok.com/' },
+  { match: ['googlevideo', 'youtube'],        referer: 'https://www.youtube.com/' },
+  { match: ['redgifs'],                       referer: 'https://www.redgifs.com/' },
+  { match: ['b-cdn.net'],                     referer: 'https://fikfap.com/' },
+  { match: ['xhamster', 'xhms', 'hamster'],   referer: 'https://xhamster.com/' },
+  { match: ['xvideos', 'xv-cdn'],             referer: 'https://www.xvideos.com/' },
+  { match: ['spankbang'],                     referer: 'https://spankbang.com/' },
+  { match: ['redtube'],                       referer: 'https://www.redtube.com/' },
+  { match: ['youporn'],                       referer: 'https://www.youporn.com/' },
+  { match: ['fikfap'],                        referer: 'https://fikfap.com/' },
+  { match: ['xnxx'],                          referer: 'https://www.xnxx.com/' },
+]
+
+const DEFAULT_REFERER = 'https://www.youtube.com/'
+
 /**
  * Returns the Referer header value to use when proxying a CDN URL.
  * Prevents 403s from CDNs that check the Referer against the originating site.
  */
 export function getRefererForUrl(url) {
-  if (url.includes('pornhub') || url.includes('phncdn')) return 'https://www.pornhub.com/'
-  if (url.includes('tiktok')) return 'https://www.tiktok.com/'
-  if (url.includes('googlevideo') || url.includes('youtube')) return 'https://www.youtube.com/'
-  if (url.includes('redgifs')) return 'https://www.redgifs.com/'
-  if (url.includes('b-cdn.net')) return 'https://fikfap.com/'
-  if (url.includes('xhamster') || url.includes('xhms') || url.includes('hamster')) return 'https://xhamster.com/'
-  if (url.includes('xvideos') || url.includes('xv-cdn')) return 'https://www.xvideos.com/'
-  if (url.includes('spankbang')) return 'https://spankbang.com/'
-  if (url.includes('redtube')) return 'https://www.redtube.com/'
-  if (url.includes('youporn')) return 'https://www.youporn.com/'
-  if (url.includes('fikfap')) return 'https://fikfap.com/'
-  return 'https://www.youtube.com/'
+  if (!url) return DEFAULT_REFERER
+  for (const rule of REFERER_RULES) {
+    for (const m of rule.match) {
+      if (url.includes(m)) return rule.referer
+    }
+  }
+  return DEFAULT_REFERER
 }
 
 export function safeParse(str, fallback = null) {
