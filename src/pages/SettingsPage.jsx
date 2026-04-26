@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import useThemeStore from '../stores/themeStore'
 import useModeStore from '../stores/modeStore'
+import useHomeStore from '../stores/homeStore'
 import useToastStore from '../stores/toastStore'
 import useViewTransitionNavigate from '../hooks/useViewTransitionNavigate'
 import { getStorageUsage } from '../stores/safeStorage'
@@ -11,6 +12,10 @@ export default function SettingsPage() {
   const navigate = useViewTransitionNavigate()
   const { theme, toggleTheme } = useThemeStore()
   const { isSFW } = useModeStore()
+  const refreshing = useHomeStore(s => s.refreshing)
+  const shuffling = useHomeStore(s => s.shuffling)
+  const refreshHome = useHomeStore(s => s.refreshHome)
+  const shuffleHome = useHomeStore(s => s.shuffleHome)
   const showToast = useToastStore(s => s.showToast)
   const [sources, setSources] = useState([])
   const [adapterHealth, setAdapterHealth] = useState(null)
@@ -256,6 +261,33 @@ export default function SettingsPage() {
                 {theme === 'dark' ? '☀ Light' : '🌙 Dark'}
               </button>
             </div>
+          </div>
+        </section>
+
+        {/* Feed Controls */}
+        <section>
+          <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-3">Feed Controls</h2>
+          <div className="bg-surface-raised rounded-xl border border-surface-border p-4 space-y-3">
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={() => refreshHome(isSFW ? 'social' : 'nsfw')}
+                disabled={refreshing || shuffling}
+                className="px-4 py-2 rounded-lg text-sm bg-accent/90 text-white hover:bg-accent transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {refreshing ? 'Refreshing…' : 'Refresh feed'}
+              </button>
+              <button
+                onClick={() => shuffleHome(isSFW ? 'social' : 'nsfw')}
+                disabled={refreshing || shuffling}
+                className="px-4 py-2 rounded-lg text-sm bg-surface-overlay border border-surface-border text-text-primary hover:bg-surface-border transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {shuffling ? 'Shuffling…' : 'Shuffle feed'}
+              </button>
+            </div>
+            <p className="text-text-muted text-xs leading-relaxed">
+              <span className="text-text-secondary font-medium">Refresh</span> pulls fresh content from your subscriptions (this can take 30–60 s).{' '}
+              <span className="text-text-secondary font-medium">Shuffle</span> hides the cards you've seen and rotates in new ones from the cache. The first 5 cards in each row update instantly; the rest follow a moment later.
+            </p>
           </div>
         </section>
 

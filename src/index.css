@@ -231,6 +231,19 @@ html {
     animation: cardEntrance 250ms cubic-bezier(0.4, 0, 0.2, 1) both;
   }
 
+  /* 250ms fade-in used by GalleryRow header when the focused card crosses
+     a category boundary in the flat pool (5c.2b). Combined with `key={label}`
+     to force remount on label change, this yields a cross-fade between
+     the outgoing and incoming category headers. */
+  @keyframes headerFadeIn {
+    from { opacity: 0; transform: translateY(2px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .animate-fade-in {
+    animation: headerFadeIn 250ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+
   /* Border shimmer: single light sweep across focused card on mount.
      Used by PosterCard when isFocused becomes true. */
   @keyframes borderShimmer {

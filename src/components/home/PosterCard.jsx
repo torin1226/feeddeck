@@ -347,15 +347,6 @@ const PosterCard = memo(
           ) : (
             <>
               {item?.title && <div style={titleStyle}>{item.title}</div>}
-              <div style={metaStyle}>
-                {item?.uploader && (
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>
-                    {item.uploader}
-                  </span>
-                )}
-                {item?.uploader && item?.views && <span style={metaDotStyle} />}
-                {item?.views && <span style={{ flexShrink: 0 }}>{item.views}</span>}
-              </div>
             </>
           )}
         </div>

@@ -421,14 +421,18 @@ function getHomepageStmts() {
     _homepageCategoriesStmt = db.prepare(
       'SELECT key, label, query FROM categories WHERE mode = ? ORDER BY sort_order'
     )
+    // Primary: fresh AND unviewed. Filtering viewed=0 here is what
+    // makes Settings → Shuffle actually hide watched items.
     _homepageVideosStmt = db.prepare(
       `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, fetched_at, tags, viewed
        FROM homepage_cache
-       WHERE category_key = ? AND expires_at > datetime('now')
+       WHERE category_key = ? AND viewed = 0 AND expires_at > datetime('now')
        ORDER BY fetched_at DESC
        LIMIT 20`
     )
-    // Serves stale entries when warm-cache hasn't run and all entries are expired
+    // Fallback: unviewed but possibly expired. Serves stale entries
+    // when warm-cache hasn't run yet or every fresh entry was just
+    // marked viewed (e.g. immediately after a shuffle).
     _homepageVideosFallbackStmt = db.prepare(
       `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, fetched_at, tags, viewed
        FROM homepage_cache
@@ -520,7 +524,25 @@ router.get('/api/homepage', (req, res) => {
       }
     })
 
-    const result = [...persistent, ...categoryRows]
+    // Deduplicate: same video URL can land in multiple categories via
+    // different search queries. First category (higher sort_order priority) wins.
+    // Persistent rows are exempt — they're user-curated and take priority.
+    const claimedUrls = new Set()
+    for (const row of persistent) {
+      for (const v of row.videos) {
+        claimedUrls.add(v.url || v.id)
+      }
+    }
+    for (const row of categoryRows) {
+      row.videos = row.videos.filter(v => {
+        const key = v.url || v.id
+        if (claimedUrls.has(key)) return false
+        claimedUrls.add(key)
+        return true
+      })
+    }
+
+    const result = [...persistent, ...categoryRows.filter(r => r.videos.length > 0)]
 
     // Check if any category needs refill (below 8 videos). Persistent rows
     // refill on a different schedule (warm-cache Phase 1.5) and aren't included.
@@ -583,6 +605,32 @@ router.post('/api/homepage/viewed', (req, res) => {
   } catch (err) {
     logger.error('Mark viewed error:', { error: err.message })
     res.status(500).json({ error: 'Failed to mark as viewed' })
+  }
+})
+
+// -----------------------------------------------------------
+// POST /api/homepage/warm
+// Manually trigger a full warm-cache pass (subscription fetchers
+// across all sources). Single-flight: returns 429 if a pass is
+// already in progress. Runs in-process (externalDb: true) because
+// multi-process SQLite writes corrupt the db on Windows.
+// -----------------------------------------------------------
+let _warmInFlight = false
+router.post('/api/homepage/warm', async (req, res) => {
+  if (_warmInFlight) {
+    return res.status(429).json({ error: 'Warm-cache pass already in progress' })
+  }
+  _warmInFlight = true
+  try {
+    const mode = req.query.mode === 'nsfw' ? 'nsfw' : req.query.mode === 'social' ? 'social' : 'all'
+    const { runWarmCache } = await import('../scripts/warm-cache.js')
+    const stats = await runWarmCache({ mode, externalDb: true })
+    res.json({ ok: true, stats })
+  } catch (err) {
+    logger.error('Manual warm-cache failed:', { error: err.message })
+    res.status(500).json({ error: 'Warm-cache failed', detail: err.message })
+  } finally {
+    _warmInFlight = false
   }
 })
 

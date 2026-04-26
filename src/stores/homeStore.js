@@ -25,6 +25,45 @@ const fmtViews = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math
 
 let idCounter = 100
 let _fetchVersion = 0 // Guards against nuclearFlush/resetHome racing with fetchHomepage
+let _swapVersion = 0 // Guards against mode-change racing with refresh/shuffle swaps
+
+// Shared video-mapper used by fetchHomepage and the refresh/shuffle swap path.
+// Mirrors the mapVideo at fetchHomepage (kept inline there for locality).
+const _parseUploadDate = (s) => {
+  if (!s) return 0
+  if (typeof s === 'string' && /^\d{8}$/.test(s)) {
+    const y = +s.slice(0, 4), m = +s.slice(4, 6), d = +s.slice(6, 8)
+    const t = Date.UTC(y, m - 1, d)
+    return Number.isNaN(t) ? 0 : t
+  }
+  const t = new Date(s).getTime()
+  return Number.isNaN(t) ? 0 : t
+}
+
+function _mapApiVideo(v) {
+  const uploadTs = _parseUploadDate(v.upload_date)
+  const fetchedTs = v.fetched_at ? new Date(v.fetched_at).getTime() : 0
+  const effectiveTs = uploadTs || fetchedTs || Date.now()
+  return {
+    id: v.id,
+    title: v.title || 'Untitled',
+    thumbnail: v.thumbnail || `https://picsum.photos/seed/${v.id}/1280/720`,
+    thumbnailSm: v.thumbnail || `https://picsum.photos/seed/${v.id}/320/180`,
+    duration: v.durationFormatted || fmtDur(v.duration || 0),
+    durationSec: v.duration || 0,
+    views: fmtViews(v.view_count || 0),
+    uploader: v.uploader || v.source || 'Unknown',
+    daysAgo: Math.max(1, Math.floor((Date.now() - effectiveTs) / 86400000)),
+    desc: v.title || '',
+    genre: v.source || 'Video',
+    rating: v.rating != null ? Number(v.rating).toFixed(1) : null,
+    url: v.url,
+    tags: v.tags || [],
+    orient: (v.height && v.width && v.height > v.width) ? 'v' : 'h',
+    uploadTs,
+    fetchedTs,
+  }
+}
 
 
 // Parse formatted view strings ("4.2M", "850K", "1200") back to numbers
@@ -99,6 +138,9 @@ function genItems(n) {
   return Array.from({ length: n }, makeItem)
 }
 
+// Initial pool size on hydrate — first N categories tagged into the flat pool.
+const INITIAL_POOL_CATEGORIES = 2
+
 const useHomeStore = create((set, get) => ({
   // Hero
   heroItem: null,
@@ -111,8 +153,16 @@ const useHomeStore = create((set, get) => ({
   // Category rows
   categories: [],
 
+  // Indices of categories already merged into the flat carousel pool (5c.2b).
+  // Order in this array = order they appear in the carousel.
+  loadedCategoryIndices: [],
+
   // Top 10 (ranked by view count)
   top10: [],
+
+  // Transient flags for settings-page Refresh/Shuffle buttons.
+  refreshing: false,
+  shuffling: false,
 
   // Actions
   setHeroItem: (item) => set({ heroItem: item }),
@@ -140,6 +190,9 @@ const useHomeStore = create((set, get) => ({
       carouselItems,
       heroItem: carouselItems[0],
       categories,
+      loadedCategoryIndices: categories
+        .slice(0, INITIAL_POOL_CATEGORIES)
+        .map((_, i) => i),
     })
   },
 
@@ -151,15 +204,42 @@ const useHomeStore = create((set, get) => ({
       carouselItems: [],
       theatreMode: false,
       categories: [],
+      loadedCategoryIndices: [],
       top10: [],
     })
+  },
+
+  // Append the next unloaded category to the carousel pool (5c.2b).
+  // Called when the user nears the end of the current pool, or when
+  // they click the peek-row. Returns the appended category's index, or
+  // null if there's nothing left to load.
+  loadNextCategory: () => {
+    const { categories, loadedCategoryIndices } = get()
+    const loaded = new Set(loadedCategoryIndices)
+    for (let i = 0; i < categories.length; i++) {
+      if (!loaded.has(i)) {
+        set({ loadedCategoryIndices: [...loadedCategoryIndices, i] })
+        return i
+      }
+    }
+    return null
+  },
+
+  // Hydrate a specific category by index (used by peek-row click).
+  // Returns true if it was newly loaded, false if already in pool.
+  loadCategoryAt: (index) => {
+    const { categories, loadedCategoryIndices } = get()
+    if (index < 0 || index >= categories.length) return false
+    if (loadedCategoryIndices.includes(index)) return false
+    set({ loadedCategoryIndices: [...loadedCategoryIndices, index] })
+    return true
   },
 
   // Fetch real data from backend. Falls back to placeholders if empty.
   fetchHomepage: async (mode = 'social') => {
     const version = ++_fetchVersion
     // Clear stale content immediately so UI shows loading state
-    set({ heroItem: null, carouselItems: [], categories: [], top10: [], fetchError: null })
+    set({ heroItem: null, carouselItems: [], categories: [], loadedCategoryIndices: [], top10: [], fetchError: null })
     try {
       const res = await fetch(`/api/homepage?mode=${mode}`)
       if (version !== _fetchVersion) return // Stale fetch (mode changed or resetHome called)
@@ -249,23 +329,50 @@ const useHomeStore = create((set, get) => ({
         })
         .filter(cat => cat.items.length > 0)
 
+      // === Global URL-based dedup ===
+      // Videos can appear in multiple API categories with different IDs
+      // (e.g. RedGifs composite IDs). URL is the true unique key.
+      // First: deduplicate within/across category rows themselves so the
+      // same video only lives in the first category that contains it.
+      const seenInCats = new Set()
+      categories = categories.map(cat => ({
+        ...cat,
+        items: cat.items.filter(v => {
+          const key = v.url || v.id
+          if (seenInCats.has(key)) return false
+          seenInCats.add(key)
+          return true
+        }),
+      })).filter(cat => cat.items.length > 0)
+
+      // Each tier claims URLs in priority order; lower tiers get stripped.
+      const claimedUrls = new Set()
+      const claimUrl = (v) => {
+        const key = v.url || v.id
+        if (claimedUrls.has(key)) return false
+        claimedUrls.add(key)
+        return true
+      }
+      const isUnclaimed = (v) => !claimedUrls.has(v.url || v.id)
+
       // Hero carousel: round-robin sample across categories for diversity.
       const carouselItems = []
-      const carouselIds = new Set()
       const maxPerCat = Math.ceil(24 / (categories.length || 1))
       for (let round = 0; round < maxPerCat && carouselItems.length < 24; round++) {
         for (const cat of categories) {
           if (round < cat.items.length && carouselItems.length < 24) {
-            carouselItems.push(cat.items[round])
-            carouselIds.add(cat.items[round].id)
+            const v = cat.items[round]
+            if (claimUrl(v)) {
+              carouselItems.push(v)
+            }
           }
         }
       }
 
-      // Remove carousel videos from category rows to avoid duplicates
+      // Strip claimed URLs from category rows
       categories = categories.map(cat => ({
         ...cat,
-        items: cat.items.filter(v => !carouselIds.has(v.id)),
+        items: cat.items.filter(isUnclaimed),
       }))
 
       // Client-side recommendation scoring: boost categories with liked tags + personalize titles
@@ -313,8 +420,11 @@ const useHomeStore = create((set, get) => ({
 
       // Build Top 10 with personalization: tag affinity + subscription boost + view count.
       // Subscription content is exempt from the freshness filter — user opted in.
+      // Deduped against carousel (already claimed). Top10 claims its own URLs so
+      // they won't repeat in BrowseSection category rows.
       const top10 = [...allVideos]
         .filter(v => v._fromSubscriptions || isFresh(v))
+        .filter(isUnclaimed)
         .map(v => {
           let score = parseViews(v.views)
           if (likedTags.size > 0) {
@@ -326,12 +436,22 @@ const useHomeStore = create((set, get) => ({
         })
         .sort((a, b) => b._score - a._score)
         .slice(0, 10)
-        .map((v, i) => ({ ...v, rank: i + 1 }))
+        .map((v, i) => { claimUrl(v); return { ...v, rank: i + 1 } })
 
+      // Final pass: strip Top10-claimed URLs from category rows
+      categories = categories.map(cat => ({
+        ...cat,
+        items: cat.items.filter(isUnclaimed),
+      })).filter(cat => cat.items.length > 0)
+
+      const finalCategories = categories.length > 0 ? categories : get().categories
       set({
         carouselItems,
         heroItem: carouselItems[0],
-        categories: categories.length > 0 ? categories : get().categories,
+        categories: finalCategories,
+        loadedCategoryIndices: finalCategories
+          .slice(0, INITIAL_POOL_CATEGORIES)
+          .map((_, i) => i),
         top10: top10.length >= 3 ? top10 : [],
       })
     } catch (err) {
@@ -346,6 +466,156 @@ const useHomeStore = create((set, get) => ({
     try {
       await fetch(`/api/homepage/viewed?id=${encodeURIComponent(id)}`, { method: 'POST' })
     } catch { /* silent */ }
+  },
+
+  // ----------------------------------------------------------
+  // Refresh + Shuffle (settings-page controls)
+  //
+  // Both feed fresh content into the existing categories array
+  // in two phases: leftmost 5 cards per row swap immediately,
+  // remaining cards swap ~600 ms later. Pinned rows are left
+  // untouched in both phases.
+  // ----------------------------------------------------------
+
+  // Trigger a server-side warm-cache pass (subscription fetchers),
+  // then swap fresh content into the home feed.
+  refreshHome: async (mode = 'social') => {
+    if (get().refreshing || get().shuffling) return
+    set({ refreshing: true })
+    try {
+      const res = await fetch(`/api/homepage/warm?mode=${mode}`, { method: 'POST' })
+      if (!res.ok && res.status !== 429) {
+        // 429 = already in flight; treat as soft success and still swap in
+        // whatever the server has now.
+        throw new Error(`Warm failed: HTTP ${res.status}`)
+      }
+      await get()._swapInFreshContent(mode)
+    } catch (err) {
+      console.warn('[homeStore] refreshHome failed:', err.message)
+    } finally {
+      set({ refreshing: false })
+    }
+  },
+
+  // Mark the leftmost-5 cards of every non-pinned row as viewed,
+  // then swap in replacements from the existing homepage cache.
+  shuffleHome: async (mode = 'social') => {
+    if (get().refreshing || get().shuffling) return
+    set({ shuffling: true })
+    try {
+      const cats = get().categories || []
+      const idsToHide = []
+      for (const cat of cats) {
+        if (cat._pinned) continue
+        for (const item of (cat.items || []).slice(0, 5)) {
+          if (item && item.id) idsToHide.push(item.id)
+        }
+      }
+      // Mark all in parallel; failures are non-fatal.
+      await Promise.all(idsToHide.map(id =>
+        fetch(`/api/homepage/viewed?id=${encodeURIComponent(id)}`, { method: 'POST' })
+          .catch(() => {})
+      ))
+      await get()._swapInFreshContent(mode)
+    } catch (err) {
+      console.warn('[homeStore] shuffleHome failed:', err.message)
+    } finally {
+      set({ shuffling: false })
+    }
+  },
+
+  // Internal: refetch /api/homepage and stage-replace items in the
+  // existing categories. Phase 1 swaps items[0..4]; Phase 2 (600 ms
+  // later) swaps the tail. Pinned rows are skipped. Mode-change
+  // during fetch invalidates the swap (mirrors fetchHomepage's
+  // _fetchVersion guard).
+  _swapInFreshContent: async (mode = 'social') => {
+    const ver = ++_swapVersion
+    const fetchVer = _fetchVersion
+    let data
+    try {
+      const res = await fetch(`/api/homepage?mode=${mode}`)
+      if (ver !== _swapVersion || fetchVer !== _fetchVersion) return
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      data = await res.json()
+      if (ver !== _swapVersion || fetchVer !== _fetchVersion) return
+    } catch (err) {
+      console.warn('[homeStore] swap fetch failed:', err.message)
+      return
+    }
+
+    const RECENT_MS = 180 * 86400000
+    const now = Date.now()
+    const isFresh = (v) => v.uploadTs === 0 || (now - v.uploadTs) <= RECENT_MS
+
+    // Build fresh items per category, keyed by the API's raw label.
+    const freshByLabel = new Map()
+    for (const cat of (data.categories || [])) {
+      if (!cat.videos || cat.videos.length === 0) continue
+      const isPinned = !!cat.pinned
+      const mapped = cat.videos.map(_mapApiVideo)
+      const items = isPinned ? mapped : mapped.filter(isFresh)
+      items.sort((a, b) => {
+        if (b.uploadTs !== a.uploadTs) return b.uploadTs - a.uploadTs
+        return b.fetchedTs - a.fetchedTs
+      })
+      if (items.length > 0) freshByLabel.set(cat.label, items)
+    }
+
+    // Dedup combined arrays by id so a fresh head and an untouched
+    // old tail can't surface the same video twice (esp. on shuffle).
+    const dedupById = (items) => {
+      const seen = new Set()
+      return items.filter(it => {
+        if (!it || !it.id) return true
+        if (seen.has(it.id)) return false
+        seen.add(it.id)
+        return true
+      })
+    }
+
+    // Phase 1: replace leftmost-5 (or fewer if fresh is short),
+    // keep items[5..] intact.
+    const phase1 = () => {
+      const existing = get().categories || []
+      return existing.map(cat => {
+        if (cat._pinned) return cat
+        const fresh = freshByLabel.get(cat.originalLabel || cat.label)
+        if (!fresh || fresh.length === 0) return cat
+        const headLen = Math.min(5, fresh.length)
+        const combined = dedupById([
+          ...fresh.slice(0, headLen),
+          ...(cat.items || []).slice(5),
+        ])
+        return { ...cat, items: combined }
+      })
+    }
+
+    // Phase 2: replace the tail (items beyond index 5) with fresh[5..],
+    // preserving the phase-1 head. Skipped if fresh has <=5 items.
+    const phase2 = () => {
+      const existing = get().categories || []
+      return existing.map(cat => {
+        if (cat._pinned) return cat
+        const fresh = freshByLabel.get(cat.originalLabel || cat.label)
+        if (!fresh || fresh.length <= 5) return cat
+        const combined = dedupById([
+          ...(cat.items || []).slice(0, 5),
+          ...fresh.slice(5),
+        ])
+        return { ...cat, items: combined }
+      })
+    }
+
+    if (ver !== _swapVersion || fetchVer !== _fetchVersion) return
+    set({ categories: phase1() })
+
+    // Phase 2: replace the remainder ~600 ms later so the user sees
+    // visible cards update first; off-screen cards refresh after.
+    setTimeout(() => {
+      if (ver !== _swapVersion || fetchVer !== _fetchVersion) return
+      set({ categories: phase2() })
+    }, 600)
   },
 }))
 

@@ -1,23 +1,31 @@
-import { useRef, useEffect, useCallback, useState } from 'react'
+import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 import useHomeStore from '../../stores/homeStore'
 import PosterCard from './PosterCard'
+import CategoryDivider from './CategoryDivider'
 
 // ============================================================
 // GalleryRow
-// Unified horizontal gallery row. Merges TheatreRow's native
-// scroll-snap + parallax with PosterShelf's focus-scale behavior.
-// Replaces TheatreRow, PosterShelf, and ContinueWatchingRow.
+// Unified horizontal gallery row. Snap-scroll + parallax +
+// focus-scale. Operates on a flat "pool" — items can include
+// divider markers ({ _isDivider: true, label }) which act as
+// visual breaks between categories. Dividers are skipped during
+// keyboard / arrow navigation and excluded from the dots row.
 // ============================================================
 
 const GAP = 10
 const PARALLAX_FACTOR = 0.1
 const ASPECT_RATIO = { h: 16 / 9, v: 9 / 16 }
+const APPROACH_END_THRESHOLD = 3 // load next category when ≤3 cards from end
+const DOT_WINDOW = 15 // windowed dots — show ~this many centered on active
 
 // Arrow button hover CSS
 const ARROW_HOVER_CSS = `
 .gallery-row-arrows { pointer-events: auto; }
 div:has(> .gallery-row-arrows):hover .gallery-row-arrows { opacity: 1 !important; }
 .gallery-row-arrows:hover { background: rgba(255,255,255,0.12) !important; }
+.gallery-header-fade {
+  transition: opacity 250ms var(--ease-out, cubic-bezier(0.4,0,0.2,1));
+}
 `
 
 function getCardHeight(variant) {
@@ -34,12 +42,23 @@ function getCardWidth(item, variant) {
   return baseH * ar
 }
 
-export default function GalleryRow({ items, label, showProgress, isLast, onReachEnd, variant = 'poster', surfaceKey }) {
+export default function GalleryRow({
+  items,
+  label,
+  showProgress,
+  isLast,
+  onReachEnd,
+  onApproachEnd,
+  jumpRef,
+  variant = 'poster',
+  surfaceKey,
+}) {
   const { setHeroItem, setTheatreMode } = useHomeStore()
   const scrollRef = useRef(null)
   const cardsRef = useRef([])
   const rafRef = useRef(null)
   const endFired = useRef(false)
+  const approachFired = useRef(new Set()) // pool length values for which we already fired
   const [activeIndex, setActiveIndex] = useState(0)
   const activeIndexRef = useRef(0)
   // Keep refs in sync with activeIndex
@@ -47,7 +66,27 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
     activeIndexRef.current = activeIndex
   }, [activeIndex])
 
-  // RAF-batched parallax + focus detection on scroll
+  // Derived: card-only indices (skipping dividers) and the active card's
+  // ordinal among cards. Used for dots + approach-end logic.
+  const cardOrdinals = useMemo(() => {
+    const map = new Map() // pool index -> card ordinal
+    let n = 0
+    items.forEach((it, i) => {
+      if (!it?._isDivider) {
+        map.set(i, n)
+        n++
+      }
+    })
+    return { map, total: n }
+  }, [items])
+
+  const activeCardOrdinal = cardOrdinals.map.get(activeIndex) ?? 0
+
+  // The active item's category label drives the dynamic header.
+  const activeCatLabel = items[activeIndex]?._catLabel || label
+
+  // RAF-batched parallax + focus detection on scroll.
+  // Skip dividers when finding the closest-to-center card.
   const updateParallax = useCallback(() => {
     const container = scrollRef.current
     if (!container) return
@@ -65,25 +104,48 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
       const offsetFromCenter = cardCenterX - centerX
       const absDist = Math.abs(offsetFromCenter)
 
-      // Track closest to center
-      if (absDist < closestDist) { closestDist = absDist; closestIdx = i }
+      // Track closest to center, but only among non-divider items.
+      const it = items[i]
+      if (!it?._isDivider && absDist < closestDist) {
+        closestDist = absDist
+        closestIdx = i
+      }
 
       // Parallax: image shifts opposite to card's offset from center
-      const img = card.querySelector('[data-parallax-img]')
-      if (img) {
-        const shift = -offsetFromCenter * PARALLAX_FACTOR
-        img.style.transform = `translateX(${shift}px) scale(1.1)`
+      // (skip dividers — they have no parallax img)
+      if (!it?._isDivider) {
+        const img = card.querySelector('[data-parallax-img]')
+        if (img) {
+          const shift = -offsetFromCenter * PARALLAX_FACTOR
+          img.style.transform = `translateX(${shift}px) scale(1.1)`
+        }
       }
     })
 
     setActiveIndex(closestIdx)
 
-    // End-of-row detection for feed transition
+    // End-of-row detection for feed transition (legacy onReachEnd)
     if (isLast && !endFired.current && onReachEnd) {
       const atEnd = container.scrollLeft + container.clientWidth >= container.scrollWidth - 30
       if (atEnd) { endFired.current = true; onReachEnd() }
     }
-  }, [isLast, onReachEnd])
+
+    // Approach-end detection — fire onApproachEnd when active card is
+    // within APPROACH_END_THRESHOLD of the end. Use cardsRemaining keyed
+    // on current pool length so we don't refire for the same pool.
+    if (onApproachEnd) {
+      const total = cardOrdinals.total
+      const ord = cardOrdinals.map.get(closestIdx)
+      if (ord != null && total - 1 - ord <= APPROACH_END_THRESHOLD) {
+        // Key by current pool length so each new hydration round can fire once
+        const key = items.length
+        if (!approachFired.current.has(key)) {
+          approachFired.current.add(key)
+          onApproachEnd()
+        }
+      }
+    }
+  }, [isLast, onReachEnd, onApproachEnd, items, cardOrdinals])
 
   useEffect(() => {
     const container = scrollRef.current
@@ -108,7 +170,7 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
 
   const handleCardClick = useCallback((index) => {
     const item = items?.[index]
-    if (!item) return
+    if (!item || item._isDivider) return
     if (index === activeIndexRef.current) {
       // Theatre mode: set hero + scroll to top
       setHeroItem(item)
@@ -123,25 +185,75 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
     }
   }, [items, setHeroItem, setTheatreMode])
 
-  // Scroll by one card width
+  // Scroll by one card width — skips dividers so arrow nav advances to
+  // the next non-divider neighbor.
   const scrollByCard = useCallback((direction) => {
     const container = scrollRef.current
     if (!container) return
-    const cardWidth = getCardWidth(items?.[activeIndexRef.current], variant)
-    container.scrollBy({ left: direction * (cardWidth + GAP), behavior: 'smooth' })
+    const currentIdx = activeIndexRef.current
+    let targetIdx = currentIdx + direction
+    while (
+      targetIdx >= 0 &&
+      targetIdx < items.length &&
+      items[targetIdx]?._isDivider
+    ) {
+      targetIdx += direction
+    }
+    if (targetIdx < 0 || targetIdx >= items.length) {
+      // Fallback: simple scroll-by-width if at boundary
+      const cardWidth = getCardWidth(items?.[currentIdx], variant)
+      container.scrollBy({ left: direction * (cardWidth + GAP), behavior: 'smooth' })
+      return
+    }
+    const card = cardsRef.current[targetIdx]
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+    }
   }, [items, variant])
 
+  // Imperative jump-to-id handle for parent-driven navigation
+  // (peek-row hydrates a category and jumps to its first item).
+  useEffect(() => {
+    if (!jumpRef) return
+    jumpRef.current = (id) => {
+      const idx = items.findIndex((it) => it?.id === id)
+      if (idx === -1) return false
+      const card = cardsRef.current[idx]
+      if (card) {
+        card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+        return true
+      }
+      return false
+    }
+    return () => {
+      if (jumpRef) jumpRef.current = null
+    }
+  }, [items, jumpRef])
+
   // Compute distance from center for each card based on activeIndex
-  const getCardDist = useCallback((index) => Math.abs(index - activeIndex), [activeIndex])
+  const getCardDist = useCallback(
+    (index) => Math.abs(index - activeIndex),
+    [activeIndex]
+  )
 
   const handleRowKeyDown = useCallback((e) => {
     if (e.key === 'ArrowLeft') { e.preventDefault(); scrollByCard(-1) }
     else if (e.key === 'ArrowRight') { e.preventDefault(); scrollByCard(1) }
   }, [scrollByCard])
 
-  // Scroll hijacking REMOVED — vertical wheel scrolls the page, not the row.
-  // Horizontal navigation: arrow buttons (mouse), ArrowLeft/Right (keyboard),
-  // native trackpad horizontal swipe, or snap-scroll drag.
+  // Windowed dots — show DOT_WINDOW dots centered on active card.
+  // Dot list is over CARDS only (dividers excluded). Far dots fade.
+  const dotConfig = useMemo(() => {
+    const total = cardOrdinals.total
+    if (total === 0) return { start: 0, end: 0, total: 0 }
+    const half = Math.floor(DOT_WINDOW / 2)
+    let start = activeCardOrdinal - half
+    let end = activeCardOrdinal + half
+    if (start < 0) { end -= start; start = 0 }
+    if (end >= total) { start -= (end - (total - 1)); end = total - 1 }
+    if (start < 0) start = 0
+    return { start, end, total }
+  }, [activeCardOrdinal, cardOrdinals.total])
 
   if (!items?.length) return null
 
@@ -154,10 +266,13 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
     >
       <style>{ARROW_HOVER_CSS}</style>
 
-      {/* Row header */}
+      {/* Row header — label cross-fades when active card crosses a category boundary */}
       <div className="px-10 mb-4 flex items-baseline justify-between">
-        <h3 className="font-display text-title font-bold tracking-[-0.3px]">
-          {label}
+        <h3
+          key={activeCatLabel /* remount triggers fade-in via animation */}
+          className="font-display text-title font-bold tracking-[-0.3px] gallery-header-fade animate-fade-in"
+        >
+          {activeCatLabel}
         </h3>
         <span className="text-caption font-semibold text-accent uppercase tracking-wider cursor-pointer opacity-75 hover:opacity-100 transition-opacity">
           See all &rarr;
@@ -180,6 +295,20 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
           }}
         >
           {items.map((item, i) => {
+            // Divider rendering — visually distinct, never the focus target.
+            if (item?._isDivider) {
+              return (
+                <div
+                  key={item.id || `divider-${i}`}
+                  ref={(el) => (cardsRef.current[i] = el)}
+                  className="flex-none"
+                  style={{ height: `${getCardHeight(variant)}px`, scrollSnapAlign: 'none' }}
+                >
+                  <CategoryDivider label={item.label} />
+                </div>
+              )
+            }
+
             const dist = getCardDist(i)
             const isFocused = i === activeIndex
 
@@ -197,7 +326,7 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
                   onClick={() => handleCardClick(i)}
                   loading={dist <= 3 ? 'eager' : 'lazy'}
                   variant={variant}
-                  surfaceKey={surfaceKey || label}
+                  surfaceKey={surfaceKey || item._catKey || label}
                   progressPercent={showProgress && item.watchProgress != null
                     ? Math.round(item.watchProgress * 100)
                     : undefined}
@@ -239,20 +368,32 @@ export default function GalleryRow({ items, label, showProgress, isLast, onReach
 
       </div>
 
-      {/* Dot indicators */}
-      <div className="flex justify-center gap-1.5 mt-3 px-10">
-        {items.slice(0, Math.min(items.length, 14)).map((_, i) => (
-          <div
-            key={i}
-            className={`h-[4px] rounded-full transition-all duration-300 ${
-              i === activeIndex
-                ? 'w-5 bg-accent'
-                : 'w-[4px] bg-white/15'
-            }`}
-          />
-        ))}
-        {items.length > 14 && (
-          <span className="text-micro text-text-muted ml-1">+{items.length - 14}</span>
+      {/* Windowed progress dots — DOT_WINDOW centered on active card.
+          Far edges fade and shrink to hint at off-window items. */}
+      <div className="flex justify-center items-center gap-1.5 mt-3 px-10">
+        {dotConfig.total === 0 ? null : (
+          Array.from({ length: dotConfig.end - dotConfig.start + 1 }, (_, k) => {
+            const ord = dotConfig.start + k
+            const isActive = ord === activeCardOrdinal
+            const distFromActive = Math.abs(ord - activeCardOrdinal)
+            const half = Math.floor(DOT_WINDOW / 2)
+            // Fade outermost ring; mid-distance dots get partial fade
+            let opacity = 1
+            let scale = 1
+            if (!isActive) {
+              if (distFromActive >= half - 1) { opacity = 0.35; scale = 0.7 }
+              else if (distFromActive >= half - 3) { opacity = 0.6; scale = 0.85 }
+            }
+            return (
+              <div
+                key={ord}
+                className={`h-[4px] rounded-full transition-all duration-300 ${
+                  isActive ? 'w-5 bg-accent' : 'w-[4px] bg-white/15'
+                }`}
+                style={{ opacity, transform: `scale(${scale})` }}
+              />
+            )
+          })
         )}
       </div>
 
