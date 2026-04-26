@@ -173,13 +173,13 @@ function CarouselCard({ item, isActive, onClick }) {
       className={`flex-none w-card-lg h-card-thumb-lg rounded-lg overflow-hidden cursor-pointer
         relative transition-all duration-250 ease-out border-2 bg-overlay
         ${isActive ? 'border-accent shadow-glow-accent' : 'border-transparent'}
-        hover:scale-[1.03] hover:-translate-y-0.5 hover:shadow-card-hover`}
+        hover:scale-[var(--hover-scale)] hover:-translate-y-0.5 hover:shadow-card-hover`}
     >
       <img
         src={item.thumbnailSm || item.thumbnail}
         alt={item.title}
         loading="lazy"
-        className="w-full h-full object-cover transition-transform duration-300 hover:scale-[1.03]"
+        className="w-full h-full object-cover transition-transform duration-300 hover:scale-[var(--hover-scale)]"
       />
       {/* Overlay with title */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/[0.75] via-transparent to-transparent flex flex-col justify-end p-2">

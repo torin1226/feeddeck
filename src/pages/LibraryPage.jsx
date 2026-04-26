@@ -296,7 +296,7 @@ function ContinueWatchingCard({ item, onClick }) {
       onClick={onClick}
       className="flex-none w-card rounded-[10px] overflow-hidden bg-raised
         cursor-pointer relative transition-all duration-[220ms] ease-out
-        hover:scale-[1.03] hover:-translate-y-0.5 hover:shadow-card-hover"
+        hover:scale-[var(--hover-scale)] hover:-translate-y-0.5 hover:shadow-card-hover"
     >
       {/* Thumbnail */}
       <div className="relative">

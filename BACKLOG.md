@@ -29,7 +29,7 @@ For backlog management protocol, see `.claude/skills/backlog/SKILL.md`.
 | M4: Deploy & Advanced | Waiting | 23/35 (66%) | Social pipeline, AI recs, extension |
 | M5: Design Polish | Active | 47/52 (90%) | Color tokens, glass materials, logo |
 | M5a: Playback | Blocked | 10/18 (56%) | Needs manual browser testing (8 [?]) |
-| Discovered Tasks | Mixed | 35/50 (70%) | Editorial design polish, deferred items |
+| Discovered Tasks | Mixed | 37/50 (74%) | Editorial design polish, deferred items |
 
 > **Archive:** 135+ completed tasks moved to [`BACKLOG-ARCHIVE.md`](BACKLOG-ARCHIVE.md) on 2026-04-25.
 
@@ -538,7 +538,6 @@ _Claude Code adds tasks here as they come up during implementation. Move to the 
 - [ ] (2026-04-24) Phase 3 of NSFW homepage plan: taste-driven row engine ("Because you liked POV", "More from {creator}", "Tonight's Picks"). Stored as dynamic `persistent_rows` entries with a `dynamic_query` field, regenerated nightly. Sketched in `~/.claude/plans/refactored-swimming-cocoa.md`. Defer until current shelves are validated in real use.
 - [ ] (2026-04-24) Top-3 PH model rows are wired but currently empty (`creator_boosts` table has no PH creators with positive boost yet). Will auto-appear once enough thumbs-up ratings accrue on PH content. No code action needed — just usage time.
 - [ ] (2026-04-24) `0 new videos` runs on `nsfw_redgifs_amatr/couple/pov/solo` and `nsfw_xvideos_hits` — likely scraper selectors are stale or those queries return mostly already-cached URLs. Investigate if rows stay thin after a week of warm-cache runs.
-- [ ] (2026-04-24) Cookie-health probe failing for `pornhub.com` is cosmetic — yt-dlp's PH probe is finicky but actual scraper + Phase 1.5 fetchers work. Could be silenced or replaced with a Puppeteer-based probe to avoid the scary 🔴 in cookie-health output.
 - [x] (2026-04-24) NSFW homepage thinness — landed in this session. See "## Completed" for full details. Net +12 category rows + 2 sticky personalized shelves leading the page.
 - [x] Reduce CDN URL cache TTL from 4 hours to 2 hours (PornHub URLs expire in ~2hr)
 - [x] Wire source adapter system (`server/sources/`) into `server/index.js` — completed in 3.0 Integration
@@ -574,7 +573,6 @@ _Open items from archived design review runs. Completed review items in [`BACKLO
 - [ ] **Ambient color extraction** -- Extract dominant thumbnail color for hero gradient overlay.
 - [ ] **Branded empty state SVGs** -- Replace emoji icons with custom illustrations.
 - [ ] **Noise/grain texture** -- Subtle film grain on dark surfaces for cinematic feel.
-- [ ] **Unified hover scale token** -- Single `--hover-scale: 1.03` used everywhere.
 - [ ] **Content-aware hero gradient** -- Extract dominant color from hero thumbnail for gradient overlay.
 - [ ] **Lightweight detail card on hover** -- Expanded card with synopsis and action buttons before committing to Theatre (Netflix signature pattern).
 - [ ] **Editorial row variety** -- Increase from 3-5 to 8-10 rows: "Fresh Today", "Long Watches", "Quick Hits", "Most Viewed", source highlights.
@@ -588,6 +586,8 @@ _Open items from archived design review runs. Completed review items in [`BACKLO
 
 > Full history: [`BACKLOG-ARCHIVE.md`](BACKLOG-ARCHIVE.md)
 
+- [x] (2026-04-26) **Discovered: Unified hover scale token** — Added `--hover-scale: 1.03` to motion-token block in `index.css`. Replaced six `hover:scale-[1.0X]` literals with `hover:scale-[var(--hover-scale)]` across `VideoCard.jsx`, `LibraryPage.jsx`, `VideoDetailPage.jsx` (was an inconsistent `1.02`), `HeroCarousel.jsx` (×2), `Top10Row.jsx`. Nav-arrow `hover:scale-105` in `GalleryRow.jsx` left alone — different element class, intentionally larger lift. Verified compiled CSS contains `--tw-scale-x: var(--hover-scale)`.
+- [x] (2026-04-26) **Discovered: Cookie-health PornHub probe — already fixed** — Stale backlog item. Commit `63b5dd9` (2026-04-25) replaced the dead probe URL (`view_video.php?viewkey=ph5f8b3c7a21a28`) with `/video?o=tr` (trending page) and surfaces yt-dlp's `ERROR:` line up to 250 chars. Probe now returns 'healthy', the scary 🔴 is gone. Marked complete.
 - [x] (2026-04-25) **Discovered: Vertical scroll hijack — already fixed** — Stale backlog item. `GalleryRow.jsx:142` already says "Scroll hijacking REMOVED — vertical wheel scrolls the page, not the row." Resolved in commit `2cd9422`. Marked complete.
 - [x] (2026-04-25) **Discovered: "Viral This Week" landscape rows scaled up** — `PosterCard.jsx` landscape cap bumped `min(50vh, 360px)` → `min(50vh, 420px)`. On 1080p the landscape cards now render at 420px (was 360px), narrowing the visual-weight gap with poster shelves at 540px.
 - [x] (2026-04-25) **Discovered: Top 10 row scaled up** — `Top10Row.jsx` switched from fixed `w-[130px]/h-[185px]/text-[80px]` to clamp-based responsive sizing. On 1080p: card 189×270 (was 130×185), rank 156px (was 80px). Aspect ratio 0.703 preserved across all viewport sizes.
@@ -595,6 +595,3 @@ _Open items from archived design review runs. Completed review items in [`BACKLO
 - [x] (2026-04-25) **Discovered: `PosterInfoPanel.jsx` deleted** — Verified zero imports in `src/` and `server/` before removing.
 - [x] (2026-03-22) 4.1 Deployment, 4.3 Theme, 4.8 Source Management (committed from previous session)
 - [x] (2026-03-22) 5.9 Library Page Upgrade: font-display headers, tab bar (All/Favorites/History/Watch Later/Top Rated) with count badges, Continue Watching horizontal row with progress bars, per-tab empty states with CTAs, watchProgress tracking in libraryStore
-- [x] (2026-03-22) 5a.1 Playback Audit & Fixes: HLS.js fatal error recovery (reject instead of resolve), HeroSection onEnded queue autoadvance, proxy-stream 15s timeout, stream URL expires_at check, proactive TTL monitor (re-resolves URLs expiring within 15min)
-- [x] (2026-03-22) 2.8 Tier 3: Stream URL TTL monitoring with proactive re-resolution, /api/stream-url now checks expires_at
-- [x] (2026-03-22) Homepage playback fix: all CDN stream URLs now routed through /api/proxy-stream (HeroSection theatre mode + FeaturedSection previews were using raw CDN URLs that failed due to CORS/Referer requirements)

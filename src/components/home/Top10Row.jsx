@@ -75,7 +75,7 @@ export default function Top10Row() {
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(item) } }}
               className="flex-none flex items-end cursor-pointer group/card
                 transition-all duration-[220ms] ease-out
-                hover:scale-[1.03] hover:-translate-y-0.5"
+                hover:scale-[var(--hover-scale)] hover:-translate-y-0.5"
             >
               {/* Rank number */}
               <span

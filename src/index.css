@@ -60,6 +60,9 @@
   --stagger-card: 40ms;
   --stagger-content: 60ms;
 
+  /* Single hover-scale token: every card-style hover lift uses this. */
+  --hover-scale: 1.03;
+
   /* Focus ring token: surface gap + rose outer ring */
   --focus-ring: 0 0 0 2px var(--color-surface), 0 0 0 4px rgba(244, 63, 94, 0.55);
 }
