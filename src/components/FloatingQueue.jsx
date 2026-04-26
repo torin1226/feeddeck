@@ -119,8 +119,7 @@ export default function FloatingQueue() {
       <button
         onClick={() => setExpanded(true)}
         className={`fixed bottom-6 right-6 z-toast flex items-center gap-2 px-4 py-2.5
-          bg-gray-900/90 backdrop-blur-sm rounded-full shadow-float
-          border border-white/10 hover:border-white/20
+          glass rounded-full
           transition-all duration-200 cursor-pointer
           ${pulsing ? 'animate-queue-pulse' : ''}`}
       >
@@ -157,7 +156,7 @@ export default function FloatingQueue() {
     <div
       ref={panelRef}
       className="fixed bottom-6 right-6 z-toast w-80 max-h-[60vh] flex flex-col
-        bg-gray-900/95 backdrop-blur-md rounded-xl border border-white/10 shadow-modal
+        glass-elevated rounded-xl
         animate-fade-slide-in"
     >
       {/* Header */}
@@ -256,7 +255,7 @@ function QueueRow({
       onDragEnd={onDragEnd}
       className={`group relative flex items-center gap-3 px-4 py-2 cursor-grab
         active:cursor-grabbing transition-colors
-        ${isCurrent ? 'bg-white/10 border-l-2 border-l-accent' : 'hover:bg-white/5 border-l-2 border-l-transparent'}
+        ${isCurrent ? 'bg-accent/[0.04] border-l-2 border-l-accent/40' : 'hover:bg-white/5 border-l-2 border-l-transparent'}
         ${showDropIndicator ? 'border-t-2 border-t-accent' : ''}`}
     >
       {/* Small thumbnail (56x36, roughly 16:9) */}
