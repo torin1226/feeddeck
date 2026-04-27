@@ -728,6 +728,8 @@ function getRefillStmts() {
   if (!_refillStmts) {
     _refillStmts = {
       getCat: db.prepare('SELECT query, mode FROM categories WHERE key = ?'),
+      countUnviewed: db.prepare('SELECT COUNT(*) as n FROM homepage_cache WHERE category_key = ? AND viewed = 0'),
+      purgeViewed: db.prepare('DELETE FROM homepage_cache WHERE category_key = ? AND viewed = 1'),
       insert: db.prepare(`
         INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, fetched_at, expires_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
@@ -741,6 +743,17 @@ async function refillCategory(categoryKey) {
   const stmts = getRefillStmts()
   const cat = stmts.getCat.get(categoryKey)
   if (!cat) return
+
+  // Purge viewed entries so stable search queries (ytsearch10:) can re-insert
+  // the same composite IDs with fresh metadata instead of being blocked by
+  // INSERT OR IGNORE on already-viewed rows.
+  const { n: unviewed } = stmts.countUnviewed.get(categoryKey)
+  if (unviewed < 8) {
+    const purged = stmts.purgeViewed.run(categoryKey)
+    if (purged.changes > 0) {
+      logger.info(`  🧹 Purged ${purged.changes} viewed entries from ${categoryKey}`)
+    }
+  }
 
   const query = cat.query
 
