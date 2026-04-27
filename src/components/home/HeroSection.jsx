@@ -5,6 +5,7 @@ import useQueueStore from '../../stores/queueStore'
 import useRatingsStore from '../../stores/ratingsStore'
 import useToastStore from '../../stores/toastStore'
 import useHeroAutoplay from '../../hooks/useHeroAutoplay'
+import useAmbientColor from '../../hooks/useAmbientColor'
 import HeroCarousel from './HeroCarousel'
 
 // ============================================================
@@ -30,6 +31,9 @@ export default function HeroSection() {
     autoplayVideoRef, autoplayReady, autoplayUrl,
     muted: autoplayMuted, toggleMute: toggleAutoplayMute,
   } = useHeroAutoplay(heroItem, theatreMode)
+
+  const ambient = useAmbientColor(heroItem?.thumbnail)
+  const ambientRgb = ambient ? `${ambient[0]}, ${ambient[1]}, ${ambient[2]}` : null
 
   const recordRating = useRatingsStore(s => s.recordRating)
   const undoRating = useRatingsStore(s => s.undoRating)
@@ -216,7 +220,10 @@ export default function HeroSection() {
       className={`relative overflow-hidden transition-[height] duration-500 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] ${
         theatreMode ? 'h-screen min-h-screen' : ''
       }`}
-      style={theatreMode ? {} : { height: '100vh', minHeight: '600px' }}
+      style={{
+        ...(theatreMode ? {} : { height: '100vh', minHeight: '600px' }),
+        ...(ambientRgb ? { '--hero-ambient-rgb': ambientRgb } : {}),
+      }}
     >
       {/* Background image with Ken Burns + autoplay video overlay */}
       {/* Hero thumbnail — uses object-contain to avoid cropping + blurred fill behind for letterbox */}
@@ -319,6 +326,21 @@ export default function HeroSection() {
           opacity: theatreMode ? 0.2 : 1,
         }}
       />
+      {/* Ambient tint — sampled from hero thumbnail; soft glow at the top
+          edge that bleeds the image's dominant color into the gradient stack.
+          Hidden when no ambient color resolved (CORS-tainted CDNs) so we
+          fall back cleanly to the neutral dark gradients above. */}
+      {ambientRgb && (
+        <div
+          className="absolute inset-0 transition-opacity duration-700 pointer-events-none"
+          style={{
+            background:
+              'linear-gradient(to top, transparent 0%, rgba(var(--hero-ambient-rgb), 0.10) 55%, rgba(var(--hero-ambient-rgb), 0.22) 100%)',
+            opacity: theatreMode ? 0 : 1,
+            mixBlendMode: 'screen',
+          }}
+        />
+      )}
 
       {/* Preview badge */}
       <div

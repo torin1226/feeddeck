@@ -6,6 +6,7 @@
 
 ## Completed Tasks
 
+- [x] (2026-03-22) 5.9 Library Page Upgrade: font-display headers, tab bar (All/Favorites/History/Watch Later/Top Rated) with count badges, Continue Watching horizontal row with progress bars, per-tab empty states with CTAs, watchProgress tracking in libraryStore
 - [x] (2026-03-22) 5a.1 Playback Audit & Fixes: HLS.js fatal error recovery (reject instead of resolve), HeroSection onEnded queue autoadvance, proxy-stream 15s timeout, stream URL expires_at check, proactive TTL monitor (re-resolves URLs expiring within 15min)
 - [x] (2026-03-22) 2.8 Tier 3: Stream URL TTL monitoring with proactive re-resolution, /api/stream-url now checks expires_at
 - [x] (2026-03-22) Homepage playback fix: all CDN stream URLs now routed through /api/proxy-stream (HeroSection theatre mode + FeaturedSection previews were using raw CDN URLs that failed due to CORS/Referer requirements)

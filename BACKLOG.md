@@ -29,7 +29,7 @@ For backlog management protocol, see `.claude/skills/backlog/SKILL.md`.
 | M4: Deploy & Advanced | Waiting | 23/35 (66%) | Social pipeline, AI recs, extension |
 | M5: Design Polish | Active | 47/52 (90%) | Color tokens, glass materials, logo |
 | M5a: Playback | Blocked | 10/18 (56%) | Needs manual browser testing (8 [?]) |
-| Discovered Tasks | Mixed | 37/50 (74%) | Editorial design polish, deferred items |
+| Discovered Tasks | Mixed | 38/50 (76%) | Editorial design polish, deferred items |
 
 > **Archive:** 135+ completed tasks moved to [`BACKLOG-ARCHIVE.md`](BACKLOG-ARCHIVE.md) on 2026-04-25.
 
@@ -570,7 +570,6 @@ _Claude Code adds tasks here as they come up during implementation. Move to the 
 _Open items from archived design review runs. Completed review items in [`BACKLOG-ARCHIVE.md`](BACKLOG-ARCHIVE.md)._
 
 - [~] **Content-aware skeleton shapes** -- Match skeleton layout to actual component dimensions. _2026-04-26: HomePage skeletons (`SkeletonHero` + `SkeletonGalleryShelf`) now mirror real dimensions — Hero `min-h-[600px]` to match `HeroSection`, title clamp height + extra "+" button placeholder; GalleryShelf restructured to mirror `GalleryRow` (left-aligned header with "See all" pill, 50vh card heights matching `PosterCard.WIDTH` + `'50vh'`, 35vw scroll padding, 4px-tall windowed dots) plus a `PosterPeekRow` placeholder strip below. **Remaining:** audit `SkeletonCard` (used in FeedPage feed-loading hint — currently 200×113px fixed via `w-card`/`h-card-thumb`, verify that's intended for a full-screen swipe surface) and `SkeletonLibrary` (Continue Watching `h-[124px]` row vs actual landscape card dimensions)._
-- [ ] **Ambient color extraction** -- Extract dominant thumbnail color for hero gradient overlay.
 - [ ] **Branded empty state SVGs** -- Replace emoji icons with custom illustrations.
 - [ ] **Noise/grain texture** -- Subtle film grain on dark surfaces for cinematic feel.
 - [ ] **Content-aware hero gradient** -- Extract dominant color from hero thumbnail for gradient overlay.
@@ -586,6 +585,7 @@ _Open items from archived design review runs. Completed review items in [`BACKLO
 
 > Full history: [`BACKLOG-ARCHIVE.md`](BACKLOG-ARCHIVE.md)
 
+- [x] (2026-04-26) **Discovered: Ambient color extraction for hero gradient** — New `useAmbientColor` hook samples a 24×24 canvas of `heroItem.thumbnail`, weighting saturated mid-luminance pixels and caching the result by URL. `HeroSection` exposes the sampled RGB as `--hero-ambient-rgb` on the root and renders a new screen-blend overlay (`linear-gradient(to top, transparent → rgba(ambient, 0.10) → 0.22)`) above the existing dark gradients, fading to 0 in theatre mode. CORS-tainted CDNs return null and the overlay is skipped — falls back cleanly to the neutral gradient stack.
 - [x] (2026-04-26) **Discovered: Unified hover scale token** — Added `--hover-scale: 1.03` to motion-token block in `index.css`. Replaced six `hover:scale-[1.0X]` literals with `hover:scale-[var(--hover-scale)]` across `VideoCard.jsx`, `LibraryPage.jsx`, `VideoDetailPage.jsx` (was an inconsistent `1.02`), `HeroCarousel.jsx` (×2), `Top10Row.jsx`. Nav-arrow `hover:scale-105` in `GalleryRow.jsx` left alone — different element class, intentionally larger lift. Verified compiled CSS contains `--tw-scale-x: var(--hover-scale)`.
 - [x] (2026-04-26) **Discovered: Cookie-health PornHub probe — already fixed** — Stale backlog item. Commit `63b5dd9` (2026-04-25) replaced the dead probe URL (`view_video.php?viewkey=ph5f8b3c7a21a28`) with `/video?o=tr` (trending page) and surfaces yt-dlp's `ERROR:` line up to 250 chars. Probe now returns 'healthy', the scary 🔴 is gone. Marked complete.
 - [x] (2026-04-26) **Feed Controls: Refresh + Shuffle buttons in Settings** — `POST /api/homepage/warm` endpoint (single-flight 429 guard) triggers `runWarmCache`; `refreshHome` + `shuffleHome` + `_swapInFreshContent` added to `homeStore`; staged replacement swaps leftmost-5 cards immediately, tail at +600ms; pinned rows untouched; `_swapVersion` race guard cancels stale swaps on mode toggle. Also fixed `_homepageVideosStmt` missing `AND viewed = 0` (shuffle-marked items were re-appearing on next GET).
@@ -595,4 +595,3 @@ _Open items from archived design review runs. Completed review items in [`BACKLO
 - [x] (2026-04-25) **Discovered: `/api/homepage/more` dead code removed** — Ripped out the IntersectionObserver, sentinel ref, and `loadingMore` state from `HeroCarousel.jsx`. Endpoint was never implemented; silent-404 fetch is gone.
 - [x] (2026-04-25) **Discovered: `PosterInfoPanel.jsx` deleted** — Verified zero imports in `src/` and `server/` before removing.
 - [x] (2026-03-22) 4.1 Deployment, 4.3 Theme, 4.8 Source Management (committed from previous session)
-- [x] (2026-03-22) 5.9 Library Page Upgrade: font-display headers, tab bar (All/Favorites/History/Watch Later/Top Rated) with count badges, Continue Watching horizontal row with progress bars, per-tab empty states with CTAs, watchProgress tracking in libraryStore
