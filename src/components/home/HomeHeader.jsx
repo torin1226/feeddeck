@@ -25,6 +25,7 @@ export default function HomeHeader() {
   const [results, setResults] = useState(null)
   const [searching, setSearching] = useState(false)
   const [noResults, setNoResults] = useState(false)
+  const [searchError, setSearchError] = useState(null)
 
   const inputRef = useRef(null)
   const searchTimer = useRef(null)
@@ -67,6 +68,7 @@ export default function HomeHeader() {
     setQuery('')
     setResults(null)
     setNoResults(false)
+    setSearchError(null)
     setSearching(false)
     clearTimeout(searchTimer.current)
   }, [])
@@ -75,10 +77,19 @@ export default function HomeHeader() {
     if (!q.trim()) return
     setSearching(true)
     setNoResults(false)
+    setSearchError(null)
     try {
       const mode = useModeStore.getState().isSFW ? 'social' : 'nsfw'
-      const res = await fetch(`/api/search/multi?q=${encodeURIComponent(q)}&limit=12&mode=${mode}`)
-      const data = await res.json()
+      // Search fans out to all sources server-side; YouTube via yt-dlp can take ~30-60s
+      const signal = AbortSignal.timeout(90_000)
+      const res = await fetch(`/api/search/multi?q=${encodeURIComponent(q)}&limit=12&mode=${mode}`, { signal })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setResults(null)
+        setNoResults(false)
+        setSearchError(data.error || `Search failed (HTTP ${res.status})`)
+        return
+      }
       const videos = (data.videos || data.results || []).map(v => ({
         id: v.id || v.url,
         url: v.url,
@@ -96,9 +107,13 @@ export default function HomeHeader() {
         setResults(null)
         setNoResults(true)
       }
-    } catch {
+    } catch (err) {
       setResults(null)
-      setNoResults(true)
+      setNoResults(false)
+      const msg = err?.name === 'TimeoutError' || err?.name === 'AbortError'
+        ? 'Search timed out — try again or a more specific query'
+        : err?.message || 'Search request failed'
+      setSearchError(msg)
     } finally {
       setSearching(false)
     }
@@ -110,6 +125,7 @@ export default function HomeHeader() {
     if (!value.trim()) {
       setResults(null)
       setNoResults(false)
+      setSearchError(null)
       return
     }
     searchTimer.current = setTimeout(() => doSearch(value.trim()), 300)
@@ -167,13 +183,13 @@ export default function HomeHeader() {
       </nav>
 
       {/* Right side */}
-      <div className="flex items-center gap-3.5">
+      <div className="flex items-center gap-5">
         {/* Search */}
         <div ref={containerRef} className="relative">
           <div className="flex items-center">
             {/* Search input — expands from the icon */}
             <div
-              className={`flex items-center overflow-hidden transition-all duration-200 ease-out rounded-full
+              className={`relative flex items-center overflow-hidden transition-all duration-200 ease-out rounded-full
                 ${searchOpen
                   ? 'w-64 sm:w-80 bg-white/[0.07] border border-white/10 backdrop-blur-lg'
                   : 'w-0'
@@ -197,8 +213,8 @@ export default function HomeHeader() {
               )}
               {searchOpen && query && (
                 <button
-                  onClick={() => { setQuery(''); setResults(null); setNoResults(false); inputRef.current?.focus() }}
-                  className="absolute right-10 text-text-muted hover:text-text-primary transition-colors text-xs px-1"
+                  onClick={() => { setQuery(''); setResults(null); setNoResults(false); setSearchError(null); inputRef.current?.focus() }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary transition-colors text-xs px-1"
                 >
                   &#10005;
                 </button>
@@ -220,9 +236,9 @@ export default function HomeHeader() {
           </div>
 
           {/* Search results dropdown */}
-          {searchOpen && (results || searching || noResults) && (
+          {searchOpen && (results || searching || noResults || searchError) && (
             <div
-              className="absolute right-0 top-full mt-2 w-[400px] max-h-[70vh] overflow-y-auto
+              className="absolute right-0 top-full mt-2 w-[400px] max-h-[60vh] overflow-y-auto
                 bg-surface/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl
                 scrollbar-none"
               style={{ scrollbarWidth: 'none' }}
@@ -235,8 +251,16 @@ export default function HomeHeader() {
                 </div>
               )}
 
+              {/* Error */}
+              {searchError && !searching && (
+                <div className="px-4 py-5 text-center">
+                  <div className="text-rose-400 text-sm font-medium">Search failed</div>
+                  <div className="text-text-muted/70 text-xs mt-1 break-words">{searchError}</div>
+                </div>
+              )}
+
               {/* No results */}
-              {noResults && !searching && (
+              {noResults && !searching && !searchError && (
                 <div className="px-4 py-6 text-center">
                   <div className="text-text-muted text-sm">No results for &ldquo;{query}&rdquo;</div>
                   <div className="text-text-muted/50 text-xs mt-1">Try a different term</div>
@@ -298,6 +322,8 @@ export default function HomeHeader() {
             </div>
           )}
         </div>
+
+        <div className="w-px h-5 bg-white/10" aria-hidden="true" />
 
         <button
           onClick={() => navigate('/settings')}

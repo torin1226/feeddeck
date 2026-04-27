@@ -5,6 +5,7 @@ import { db } from '../database.js'
 import { registry, ytdlp as ytdlpAdapter, scraper as scraperAdapter } from '../sources/index.js'
 import { logger } from '../logger.js'
 import { getMode, formatDuration } from '../utils.js'
+import { scoreVideos } from '../scoring.js'
 
 const router = Router()
 
@@ -154,28 +155,66 @@ router.get('/api/search', (req, res) => {
 router.get('/api/search/multi', async (req, res) => {
   const { q, limit = 10 } = req.query
   const mode = getMode(req)
+  const finalLimit = parseInt(limit, 10)
   if (!q) return res.status(400).json({ error: 'Search query required' })
 
   try {
-    let videos
+    // Fan out to every relevant search-capable adapter for the current mode,
+    // in parallel, tolerating individual source failures.
+    // Each source over-fetches modestly so the reranker has a richer pool.
+    const sourceCalls = []
     if (mode === 'nsfw') {
-      // NSFW: hit all scraper sites in parallel
-      videos = await scraperAdapter.searchAll(q, { limit: parseInt(limit, 10) })
+      // All NSFW scraper sites in parallel (each gets a healthy pool of its own)
+      sourceCalls.push(
+        scraperAdapter.searchAll(q, { limit: Math.max(finalLimit, 10) })
+          .then(vs => ({ source: 'scraper', videos: vs }))
+          .catch(err => ({ source: 'scraper', videos: [], error: err.message }))
+      )
     } else {
-      // Social: use yt-dlp YouTube search (scraper only has NSFW sites)
-      videos = await registry.search(q, { site: 'youtube.com', limit: parseInt(limit, 10) })
+      // SFW: yt-dlp YouTube search (only keyword-search-capable SFW adapter today)
+      sourceCalls.push(
+        registry.search(q, { adapter: 'yt-dlp', limit: finalLimit })
+          .then(vs => ({ source: 'yt-dlp', videos: vs }))
+          .catch(err => ({ source: 'yt-dlp', videos: [], error: err.message }))
+      )
     }
+
+    const settled = await Promise.all(sourceCalls)
+
+    // Merge, dedupe by URL (keep first occurrence)
+    const seen = new Set()
+    const merged = []
+    const errors = []
+    for (const r of settled) {
+      if (r.error) errors.push(`${r.source}: ${r.error}`)
+      for (const v of r.videos) {
+        if (!v?.url || seen.has(v.url)) continue
+        seen.add(v.url)
+        merged.push(v)
+      }
+    }
+
+    if (merged.length === 0 && errors.length > 0) {
+      logger.error('Multi-site search: all sources failed', { errors })
+      return res.status(502).json({ error: `All sources failed: ${errors.join('; ')}` })
+    }
+
+    // Rerank by taste: liked tags, subscriptions, recency, etc.
+    // excludeDownvoted is on by default — never surface downvoted items.
+    const ranked = scoreVideos(merged, 'search').slice(0, finalLimit)
+
     res.json({
       query: q,
-      count: videos.length,
-      videos: videos.map(v => ({
+      count: ranked.length,
+      videos: ranked.map(v => ({
         ...v,
         durationFormatted: formatDuration(v.duration),
       })),
+      ...(errors.length > 0 ? { partialErrors: errors } : {}),
     })
   } catch (err) {
     logger.error('Multi-site search error:', { error: err.message })
-    res.status(500).json({ error: 'Multi-site search failed' })
+    res.status(500).json({ error: err.message || 'Multi-site search failed' })
   }
 })
 
