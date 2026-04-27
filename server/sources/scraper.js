@@ -149,11 +149,21 @@ const SITE_CONFIGS = {
   },
 }
 
+// Sites with first-party JSON APIs. These bypass Puppeteer entirely.
+// Each entry tells fetchTrending what query to pass to the API method
+// so trending requests don't have to crash through the Puppeteer codepath.
+// Adding a new API site requires: an entry here, a search method, and
+// a route case in _searchApiSite. The drift-guard test catches missing wiring.
+const API_SITES = {
+  'redgifs.com': { trendingQuery: 'https://www.redgifs.com/trending' },
+  'fikfap.com':  { trendingQuery: 'https://fikfap.com/trending' },
+}
+
 export class ScraperAdapter extends SourceAdapter {
   constructor() {
     super({
       name: 'scraper',
-      supportedDomains: [...Object.keys(SITE_CONFIGS), 'redgifs.com', 'fikfap.com'],
+      supportedDomains: [...Object.keys(SITE_CONFIGS), ...Object.keys(API_SITES)],
       capabilities: {
         search: true,
         categories: true,
@@ -165,6 +175,18 @@ export class ScraperAdapter extends SourceAdapter {
     this.browser = null
     this._consecutiveFailures = 0
     this._idleTimer = null
+  }
+
+  // Single source of truth: is this site a JSON-API site or a Puppeteer site?
+  _isApiSite(siteKey) {
+    return siteKey in API_SITES
+  }
+
+  // Dispatch to the right API method. Adding a new API site means adding a case here.
+  _searchApiSite(siteKey, query, options) {
+    if (siteKey === 'redgifs.com') return this.searchRedGifs(query, options)
+    if (siteKey === 'fikfap.com') return this.searchFikFap(query, options)
+    throw new Error(`No API adapter wired for ${siteKey}`)
   }
 
   async _getBrowser() {
@@ -441,16 +463,15 @@ export class ScraperAdapter extends SourceAdapter {
   _getSiteKey(siteOrDomain) {
     // Normalize "www.pornhub.com" -> "pornhub.com"
     const clean = siteOrDomain.replace(/^www\./, '')
-    if (SITE_CONFIGS[clean]) return clean
-    if (clean === 'redgifs.com') return 'redgifs.com'
-    if (clean === 'fikfap.com') return 'fikfap.com'
+    const allKeys = [...Object.keys(SITE_CONFIGS), ...Object.keys(API_SITES)]
 
-    // Try partial match
-    for (const key of Object.keys(SITE_CONFIGS)) {
-      if (clean.includes(key) || key.includes(clean)) return key
+    // Exact match first
+    if (allKeys.includes(clean)) return clean
+
+    // Then substring (handles "foo.spankbang.com" or full URLs passed in)
+    for (const key of allKeys) {
+      if (clean.includes(key)) return key
     }
-    if (clean.includes('redgifs') || 'redgifs.com'.includes(clean)) return 'redgifs.com'
-    if (clean.includes('fikfap') || 'fikfap.com'.includes(clean)) return 'fikfap.com'
     return null
   }
 
@@ -596,12 +617,8 @@ export class ScraperAdapter extends SourceAdapter {
     const siteKey = this._getSiteKey(site)
     if (!siteKey) throw new Error(`Scraper doesn't support ${site}`)
 
-    // RedGifs and FikFap use JSON APIs, not Puppeteer scraping
-    if (siteKey === 'redgifs.com') {
-      return this.searchRedGifs(query, { limit })
-    }
-    if (siteKey === 'fikfap.com') {
-      return this.searchFikFap(query, { limit })
+    if (this._isApiSite(siteKey)) {
+      return this._searchApiSite(siteKey, query, { limit })
     }
 
     // If the query is already a URL (e.g. category page passed from refillCategory),
@@ -619,22 +636,12 @@ export class ScraperAdapter extends SourceAdapter {
   async fetchCategory(categoryUrl, options = {}) {
     const { limit = 20 } = options
 
-    // FikFap uses its own JSON API
-    if (categoryUrl.includes('fikfap.com')) {
-      return this.searchFikFap(categoryUrl, { limit })
-    }
-
-    // RedGifs uses its own JSON API
-    if (categoryUrl.includes('redgifs.com')) {
-      return this.searchRedGifs(categoryUrl, { limit })
-    }
-
-    // Figure out which site from the URL
-    let siteKey = null
-    for (const key of Object.keys(SITE_CONFIGS)) {
-      if (categoryUrl.includes(key)) { siteKey = key; break }
-    }
+    const siteKey = this._getSiteKey(categoryUrl)
     if (!siteKey) throw new Error(`Can't determine site from URL: ${categoryUrl}`)
+
+    if (this._isApiSite(siteKey)) {
+      return this._searchApiSite(siteKey, categoryUrl, { limit })
+    }
 
     return this._scrapeVideoList(categoryUrl, siteKey, { limit })
   }
@@ -644,14 +651,20 @@ export class ScraperAdapter extends SourceAdapter {
     const siteKey = this._getSiteKey(site)
     if (!siteKey) throw new Error(`Scraper doesn't support ${site}`)
 
+    if (this._isApiSite(siteKey)) {
+      return this._searchApiSite(siteKey, API_SITES[siteKey].trendingQuery, { limit })
+    }
+
     const config = SITE_CONFIGS[siteKey]
     return this._scrapeVideoList(config.trendingUrl, siteKey, { limit })
   }
 
-  // Multi-site search: hit all configured sites + RedGifs in parallel
+  // Multi-site search: hit every supported site in parallel.
+  // Sources are derived from supportedDomains so adding a new site
+  // (Puppeteer or API) auto-includes it without a second edit here.
   async searchAll(query, options = {}) {
     const { limit = 10 } = options
-    const sites = [...Object.keys(SITE_CONFIGS), 'redgifs.com']
+    const sites = this.supportedDomains
 
     const results = await Promise.allSettled(
       sites.map(site => this.search(query, { site, limit }))
@@ -680,4 +693,4 @@ export class ScraperAdapter extends SourceAdapter {
 }
 
 // Export supported sites for use in UI/config
-export const SUPPORTED_SITES = [...Object.keys(SITE_CONFIGS), 'redgifs.com', 'fikfap.com']
+export const SUPPORTED_SITES = [...Object.keys(SITE_CONFIGS), ...Object.keys(API_SITES)]
