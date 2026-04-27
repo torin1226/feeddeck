@@ -604,6 +604,53 @@ router.get('/api/homepage', (req, res) => {
 })
 
 // -----------------------------------------------------------
+// GET /api/homepage/status?mode=social|nsfw
+// Per-category hydration counts. fresh_unviewed mirrors what
+// GET /api/homepage actually surfaces; the other counts help
+// distinguish "nothing cached" from "everything is stale" or
+// "everything is marked viewed".
+// -----------------------------------------------------------
+let _homepageStatusStmt
+function getHomepageStatusStmt() {
+  if (!_homepageStatusStmt) {
+    _homepageStatusStmt = db.prepare(`
+      SELECT
+        c.key,
+        c.label,
+        COALESCE(SUM(CASE WHEN hc.viewed = 0 AND hc.expires_at > datetime('now') THEN 1 ELSE 0 END), 0) AS fresh_unviewed,
+        COALESCE(SUM(CASE WHEN hc.viewed = 0 THEN 1 ELSE 0 END), 0) AS unviewed_total,
+        COUNT(hc.id) AS total
+      FROM categories c
+      LEFT JOIN homepage_cache hc ON hc.category_key = c.key
+      WHERE c.mode = ?
+      GROUP BY c.key, c.label
+      ORDER BY c.sort_order
+    `)
+  }
+  return _homepageStatusStmt
+}
+
+router.get('/api/homepage/status', (req, res) => {
+  const mode = req.query.mode === 'nsfw' ? 'nsfw' : 'social'
+  try {
+    const rows = getHomepageStatusStmt().all(mode)
+    res.json({
+      mode,
+      categories: rows.map(r => ({
+        key: r.key,
+        label: r.label,
+        fresh_unviewed: r.fresh_unviewed,
+        unviewed_total: r.unviewed_total,
+        total: r.total,
+      })),
+    })
+  } catch (err) {
+    logger.error('Homepage status error:', { error: err.message })
+    res.status(500).json({ error: 'Failed to load homepage status' })
+  }
+})
+
+// -----------------------------------------------------------
 // POST /api/homepage/viewed
 // Marks a homepage_cache video as viewed. Triggers async refill
 // if the category drops below the threshold.
