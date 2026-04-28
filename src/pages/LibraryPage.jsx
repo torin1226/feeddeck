@@ -7,6 +7,7 @@ import VideoCard from '../components/VideoCard'
 import VideoPlayer from '../components/VideoPlayer'
 import DebugPanel from '../components/DebugPanel'
 import { SkeletonLibrary } from '../components/Skeletons'
+import EmptyIllustration from '../components/EmptyIllustration'
 import { modeFromIsSFW, isVideoForMode } from '../utils/mode'
 
 // ============================================================
@@ -345,40 +346,40 @@ function ContinueWatchingCard({ item, onClick }) {
 function LibraryEmptyState({ tab, onNavigate }) {
   const states = {
     all: {
-      icon: '📂',
+      illustration: 'library',
       title: 'Start building your library',
       desc: 'Add videos from the feed, search, or paste URLs directly.',
       cta: 'Browse Feed',
       action: () => onNavigate('/feed'),
     },
     liked: {
-      icon: '👍',
+      illustration: 'liked',
       title: 'No liked videos yet',
       desc: 'Thumbs up videos you enjoy and they\'ll appear here.',
       cta: 'Browse Feed',
       action: () => onNavigate('/feed'),
     },
     favorites: {
-      icon: '♡',
+      illustration: 'favorites',
       title: 'No favorites yet',
       desc: 'Heart videos you love and they\'ll show up here.',
       cta: null,
     },
     history: {
-      icon: '⏱',
+      illustration: 'history',
       title: 'No watch history',
       desc: 'Videos you watch will appear here so you can pick up where you left off.',
       cta: 'Browse Feed',
       action: () => onNavigate('/feed'),
     },
     watchLater: {
-      icon: '🔖',
+      illustration: 'watchLater',
       title: 'Watch Later is empty',
       desc: 'Save videos to watch later and find them all in one place.',
       cta: null,
     },
     rated: {
-      icon: '★',
+      illustration: 'rated',
       title: 'No rated videos',
       desc: 'Rate videos to build your personal rankings.',
       cta: null,
@@ -389,7 +390,10 @@ function LibraryEmptyState({ tab, onNavigate }) {
 
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
-      <span className="text-5xl mb-4 opacity-60">{s.icon}</span>
+      <EmptyIllustration
+        variant={s.illustration}
+        className="w-20 h-20 mb-4 text-text-muted opacity-70"
+      />
       <h3 className="font-display text-lg font-semibold text-text-primary mb-2">
         {s.title}
       </h3>

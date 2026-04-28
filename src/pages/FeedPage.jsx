@@ -12,6 +12,7 @@ import FeedBottomNav from '../components/feed/FeedBottomNav'
 import FeedFilterSheet from '../components/feed/FeedFilterSheet'
 import CookieFallbackBanner from '../components/feed/CookieFallbackBanner'
 import { SkeletonCard } from '../components/Skeletons'
+import EmptyIllustration from '../components/EmptyIllustration'
 // QueueSwipeAnimation removed — swipe-to-queue gesture replaced by explicit button
 
 const ForYouFeed = lazy(() => import('../components/feed/ForYouFeed'))
@@ -362,7 +363,7 @@ export default function FeedPage() {
   if (initialized && feedError && buffer.length === 0) {
     return (
       <div className="h-dvh w-full bg-black flex flex-col items-center justify-center gap-3">
-        <div className="text-2xl">⚠</div>
+        <EmptyIllustration variant="error" className="w-20 h-20 text-text-muted opacity-70" />
         <div className="text-text-muted text-sm font-medium">{feedError}</div>
         <button
           onClick={() => { resetFeed(); setTimeout(() => initFeed(), 100) }}
@@ -378,7 +379,10 @@ export default function FeedPage() {
     const noSources = sourcesCount !== null && sourcesCount === 0
     return (
       <div className="h-dvh w-full bg-black flex flex-col items-center justify-center gap-3">
-        <div className="text-2xl">{noSources ? '⚙' : '📡'}</div>
+        <EmptyIllustration
+          variant={noSources ? 'sources' : 'feed'}
+          className="w-20 h-20 text-text-muted opacity-70"
+        />
         <div className="text-text-muted text-sm font-medium">
           {noSources
             ? 'Add sources in Settings to start your feed'
@@ -447,7 +451,7 @@ export default function FeedPage() {
 
         {exhausted && (
           <div className="h-dvh w-full snap-start flex flex-col items-center justify-center bg-black gap-3">
-            <div className="text-2xl">✓</div>
+            <EmptyIllustration variant="allCaughtUp" className="w-20 h-20 text-text-muted opacity-70" />
             <div className="text-text-muted text-sm">You're all caught up</div>
           </div>
         )}
