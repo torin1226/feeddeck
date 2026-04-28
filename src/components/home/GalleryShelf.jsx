@@ -100,6 +100,7 @@ export default function GalleryShelf() {
         label={pool[0]?._catLabel ?? ''}
         onApproachEnd={handleApproachEnd}
         jumpRef={galleryJumpRef}
+        surface="gallery-shelf"
       />
       {peekCategory && (
         <PosterPeekRow

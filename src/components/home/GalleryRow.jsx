@@ -52,8 +52,9 @@ export default function GalleryRow({
   jumpRef,
   variant = 'poster',
   surfaceKey,
+  surface,
 }) {
-  const { setHeroItem, setTheatreMode } = useHomeStore()
+  const { setHeroItem, setTheatreMode, setFocusedItem } = useHomeStore()
   const scrollRef = useRef(null)
   const cardsRef = useRef([])
   const rafRef = useRef(null)
@@ -61,10 +62,27 @@ export default function GalleryRow({
   const approachFired = useRef(new Set()) // pool length values for which we already fired
   const [activeIndex, setActiveIndex] = useState(0)
   const activeIndexRef = useRef(0)
+  // True once the user has interacted with this row (scrolled, clicked, or
+  // focused a card). Until then we suppress focus broadcasts so multiple
+  // rows on the page don't fight for `focusedItem` on initial mount —
+  // hero claims focus by default.
+  const interactedRef = useRef(false)
   // Keep refs in sync with activeIndex
   useEffect(() => {
     activeIndexRef.current = activeIndex
   }, [activeIndex])
+
+  // Broadcast focus to homeStore when activeIndex changes after user
+  // interaction. The rowSurface name is stable across renders so the
+  // store's setFocusedItem dedupe (item.id + surface) prevents redundant
+  // writes during a steady scroll.
+  const rowSurface = surface || (surfaceKey ? `browse-row:${surfaceKey}` : `browse-row:${label || 'row'}`)
+  useEffect(() => {
+    if (!interactedRef.current) return
+    const item = items?.[activeIndex]
+    if (!item || item._isDivider) return
+    setFocusedItem(item, rowSurface)
+  }, [activeIndex, items, rowSurface, setFocusedItem])
 
   // Derived: card-only indices (skipping dividers) and the active card's
   // ordinal among cards. Used for dots + approach-end logic.
@@ -152,6 +170,7 @@ export default function GalleryRow({
     if (!container) return
 
     const onScroll = () => {
+      interactedRef.current = true
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
       rafRef.current = requestAnimationFrame(updateParallax)
     }
@@ -171,6 +190,8 @@ export default function GalleryRow({
   const handleCardClick = useCallback((index) => {
     const item = items?.[index]
     if (!item || item._isDivider) return
+    interactedRef.current = true
+    setFocusedItem(item, rowSurface)
     if (index === activeIndexRef.current) {
       // Theatre mode: set hero + scroll to top
       setHeroItem(item)
@@ -183,7 +204,7 @@ export default function GalleryRow({
         card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
       }
     }
-  }, [items, setHeroItem, setTheatreMode])
+  }, [items, setHeroItem, setTheatreMode, setFocusedItem, rowSurface])
 
   // Scroll by one card width — skips dividers so arrow nav advances to
   // the next non-divider neighbor.
@@ -318,6 +339,14 @@ export default function GalleryRow({
                 ref={(el) => (cardsRef.current[i] = el)}
                 className="flex-none snap-center animate-card-entrance"
                 style={{ animationDelay: `${i * 40}ms` }}
+                onMouseEnter={() => {
+                  interactedRef.current = true
+                  setFocusedItem(item, rowSurface)
+                }}
+                onFocus={() => {
+                  interactedRef.current = true
+                  setFocusedItem(item, rowSurface)
+                }}
               >
                 <PosterCard
                   item={item}

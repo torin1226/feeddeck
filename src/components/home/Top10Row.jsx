@@ -8,7 +8,7 @@ import useHomeStore from '../../stores/homeStore'
 // ============================================================
 
 export default function Top10Row() {
-  const { top10, setHeroItem, setTheatreMode } = useHomeStore()
+  const { top10, setHeroItem, setTheatreMode, setFocusedItem } = useHomeStore()
   const rowRef = useRef(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(false)
@@ -73,6 +73,8 @@ export default function Top10Row() {
               tabIndex={0}
               onClick={() => handleClick(item)}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(item) } }}
+              onMouseEnter={() => setFocusedItem(item, 'top10')}
+              onFocus={() => setFocusedItem(item, 'top10')}
               className="flex-none flex items-end cursor-pointer group/card
                 transition-all duration-[220ms] ease-out
                 hover:scale-[var(--hover-scale)] hover:-translate-y-0.5"

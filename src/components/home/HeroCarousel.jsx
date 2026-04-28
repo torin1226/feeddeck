@@ -9,7 +9,7 @@ import useModeStore from '../../stores/modeStore'
 // ============================================================
 
 export default function HeroCarousel() {
-  const { carouselItems, heroItem, setHeroItem } = useHomeStore()
+  const { carouselItems, heroItem, setHeroItem, setFocusedItem } = useHomeStore()
   const scrollRef = useRef(null)
   const [query, setQuery] = useState('')
   const [searchResults, setSearchResults] = useState(null)
@@ -158,6 +158,7 @@ export default function HeroCarousel() {
             item={item}
             isActive={item.id === activeId}
             onClick={() => setHeroItem(item)}
+            onHover={() => setFocusedItem(item, 'hero-carousel')}
           />
         ))}
       </div>
@@ -165,11 +166,14 @@ export default function HeroCarousel() {
   )
 }
 
-function CarouselCard({ item, isActive, onClick }) {
+function CarouselCard({ item, isActive, onClick, onHover }) {
   return (
     <div
       data-card-id={item.id}
       onClick={onClick}
+      onMouseEnter={onHover}
+      onFocus={onHover}
+      tabIndex={0}
       className={`flex-none w-card-lg h-card-thumb-lg rounded-lg overflow-hidden cursor-pointer
         relative transition-all duration-250 ease-out border-2 bg-overlay
         ${isActive ? 'border-accent shadow-glow-accent' : 'border-transparent'}

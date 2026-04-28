@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { inferMode, urlOf } from '../utils/mode'
 
 // ============================================================
 // Home Store
@@ -150,6 +151,13 @@ const useHomeStore = create((set, get) => ({
   // Error from last failed homepage fetch (null = no error)
   fetchError: null,
 
+  // Single source of truth for "what card is the user looking at right now."
+  // Owned by whichever surface most recently took focus (hero, gallery row,
+  // top10, etc.). Consumers (preview hooks, feed dedup) subscribe here
+  // instead of taking explicit start/cancel calls per card. Cleared on
+  // resetHome and on fetchHomepage start.
+  focusedItem: null,
+
   // Category rows
   categories: [],
 
@@ -170,6 +178,33 @@ const useHomeStore = create((set, get) => ({
   toggleTheatre: () => set((s) => ({ theatreMode: !s.theatreMode, inlinePlay: false })),
   startInlinePlay: () => set({ inlinePlay: true, theatreMode: false }),
   stopInlinePlay: () => set({ inlinePlay: false }),
+
+  // Set focusedItem to the given content object on the given surface.
+  // Pass `item = null` to clear focus. Surface examples:
+  //   'hero' | 'hero-carousel' | 'gallery-shelf' | 'browse-row:<key>'
+  //   | 'top10' | 'continue-watching' | 'liked'
+  // The setter is a no-op when the same item+surface is already focused,
+  // so subscribers don't get woken on duplicate calls during scroll.
+  setFocusedItem: (item, surface) => {
+    if (!item) {
+      if (get().focusedItem === null) return
+      return set({ focusedItem: null })
+    }
+    const url = urlOf(item)
+    const id = item.id ?? url ?? null
+    if (id == null) return
+    const next = {
+      id,
+      url,
+      surface: surface || 'unknown',
+      mode: item.mode === 'social' || item.mode === 'nsfw'
+        ? item.mode
+        : inferMode(url || ''),
+    }
+    const prev = get().focusedItem
+    if (prev && prev.id === next.id && prev.surface === next.surface) return
+    set({ focusedItem: next })
+  },
 
   // Generate placeholder data (fallback when API has no cached content)
   generateData: () => {
@@ -206,6 +241,7 @@ const useHomeStore = create((set, get) => ({
       categories: [],
       loadedCategoryIndices: [],
       top10: [],
+      focusedItem: null,
     })
   },
 
@@ -239,7 +275,7 @@ const useHomeStore = create((set, get) => ({
   fetchHomepage: async (mode = 'social') => {
     const version = ++_fetchVersion
     // Clear stale content immediately so UI shows loading state
-    set({ heroItem: null, carouselItems: [], categories: [], loadedCategoryIndices: [], top10: [], fetchError: null })
+    set({ heroItem: null, carouselItems: [], categories: [], loadedCategoryIndices: [], top10: [], fetchError: null, focusedItem: null })
     try {
       const res = await fetch(`/api/homepage?mode=${mode}`)
       if (version !== _fetchVersion) return // Stale fetch (mode changed or resetHome called)

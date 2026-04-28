@@ -146,6 +146,7 @@ export default function BrowseSection() {
             label="Continue Watching"
             showProgress
             variant="landscape"
+            surface="continue-watching"
           />
         </div>
       )}
@@ -163,6 +164,7 @@ export default function BrowseSection() {
             label="Your Likes"
             surfaceKey="liked"
             variant="landscape"
+            surface="liked"
           />
         </div>
       )}
@@ -179,6 +181,7 @@ export default function BrowseSection() {
             isLast={i === displayCategories.length - 1}
             onReachEnd={i === displayCategories.length - 1 ? handleLastRowEnd : undefined}
             variant="landscape"
+            surface={`browse-row:${cat.originalLabel || cat.label}`}
           />
         </div>
       ))}

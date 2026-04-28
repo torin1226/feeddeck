@@ -18,7 +18,7 @@ import HeroCarousel from './HeroCarousel'
 // ============================================================
 
 export default function HeroSection() {
-  const { heroItem, theatreMode, toggleTheatre } = useHomeStore()
+  const { heroItem, theatreMode, toggleTheatre, setFocusedItem } = useHomeStore()
   const { addToQueue, advance, queue } = useQueueStore()
   const {
     setActiveVideo, isPlaying, setPlaying,
@@ -86,9 +86,12 @@ export default function HeroSection() {
     // Pre-warm the stream URL so Play is instant (covers reduced motion / HLS cases
     // where useHeroAutoplay doesn't resolve a URL)
     if (heroItem?.url) prewarmStream(heroItem.url)
+    // Hero is the default focused surface — claim focus when the hero
+    // card changes and theatre mode is off.
+    if (heroItem && !theatreMode) setFocusedItem(heroItem, 'hero')
     return () => clearTimeout(badgeTimer.current)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [heroItem?.id])
+  }, [heroItem?.id, theatreMode])
 
   // When theatre mode activates, set active video and resolve stream.
   // Priority: autoplay URL > prewarmed URL > fresh resolve
