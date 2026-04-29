@@ -1,8 +1,9 @@
-import { forwardRef, memo, useState } from 'react'
+import { forwardRef, memo, useEffect, useRef, useState } from 'react'
 import useHomeStore from '../../stores/homeStore'
 import useQueueStore from '../../stores/queueStore'
 import useRatingsStore from '../../stores/ratingsStore'
 import useToastStore from '../../stores/toastStore'
+import { registerPreviewTarget, prefetchStreamUrl } from '../../hooks/useFocusPreview'
 import ThumbsRating from '../ThumbsRating'
 
 // ============================================================
@@ -42,6 +43,45 @@ const PosterCard = memo(
     const existingRating = useRatingsStore((s) => s.ratedUrls[item?.url])
     const isToastPaused = useRatingsStore((s) => s.isToastPaused)
     const showToast = useToastStore((s) => s.showToast)
+    const previewVideoRef = useRef(null)
+    const containerRef = useRef(null)
+
+    useEffect(() => {
+      const id = item?.id
+      const el = previewVideoRef.current
+      if (!id || !el) return undefined
+      return registerPreviewTarget(id, el)
+    }, [item?.id])
+
+    // Prefetch the stream URL when this card scrolls within ~1 viewport
+    // of being visible. By the time the user hovers, /api/stream-url has
+    // resolved and the cached entry attaches in <300ms instead of waiting
+    // 5-8s on yt-dlp. The 60s URL cache TTL means a single observation is
+    // enough — no need to refetch on each scroll-by.
+    useEffect(() => {
+      const id = item?.id
+      const url = item?.url
+      const container = containerRef.current
+      if (!id || !url || !container) return undefined
+      if (typeof IntersectionObserver === 'undefined') return undefined
+      let prefetched = false
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting && !prefetched) {
+              prefetched = true
+              prefetchStreamUrl(id, url)
+              io.disconnect()
+              break
+            }
+          }
+        },
+        { rootMargin: '200px 600px', threshold: 0.01 }
+      )
+      io.observe(container)
+      return () => io.disconnect()
+    }, [item?.id, item?.url])
+
     const orient = item?.orient || 'h'
     const widths = WIDTH[orient] ?? WIDTH.h
     const width = isFocused ? widths.focused : widths.default
@@ -225,8 +265,17 @@ const PosterCard = memo(
       border: 'none',
     }
 
+    // Compose forwarded ref + local container ref for IntersectionObserver.
+    // The forwarded ref is used by GalleryRow / Top10Row for scroll math;
+    // the local ref drives the prefetch observer.
+    const setContainerRef = (el) => {
+      containerRef.current = el
+      if (typeof ref === 'function') ref(el)
+      else if (ref) ref.current = el
+    }
+
     return (
-      <div ref={ref} style={containerStyle} className={isFocused ? 'poster-card-focused' : undefined}
+      <div ref={setContainerRef} style={containerStyle} className={isFocused ? 'poster-card-focused' : undefined}
         onClick={onClick} role="button" tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.() } }}
         onMouseEnter={() => isFocused && !isExpanded && setShowThumbs(true)}
@@ -245,6 +294,29 @@ const PosterCard = memo(
         ) : (
           <div style={{ ...imgStyle, backgroundColor: 'rgba(255,255,255,0.05)' }} />
         )}
+
+        {/* Hover preview video — opacity flipped to 1 by useFocusPreview when ready.
+            No explicit z-index: source order keeps it above the thumbnail img but
+            below the badges, gradient, text overlay, and progress bar (which all
+            paint after this element in document order). */}
+        <video
+          ref={previewVideoRef}
+          muted
+          playsInline
+          loop
+          preload="none"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            objectPosition: 'center',
+            opacity: 0,
+            transition: `opacity 250ms ${EASE_OUT}`,
+            pointerEvents: 'none',
+          }}
+        />
 
         {/* Duration badge — top-right */}
         {item?.duration && (

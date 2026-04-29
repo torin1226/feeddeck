@@ -87,8 +87,10 @@ export default function HeroSection() {
     // where useHeroAutoplay doesn't resolve a URL)
     if (heroItem?.url) prewarmStream(heroItem.url)
     // Hero is the default focused surface — claim focus when the hero
-    // card changes and theatre mode is off.
-    if (heroItem && !theatreMode) setFocusedItem(heroItem, 'hero')
+    // card changes and theatre mode is off. inputKind 'auto' marks this
+    // as a non-user-driven claim so debounce-aware consumers can treat
+    // it as background state rather than intentional hover/keyboard.
+    if (heroItem && !theatreMode) setFocusedItem(heroItem, 'hero', { inputKind: 'auto' })
     return () => clearTimeout(badgeTimer.current)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [heroItem?.id, theatreMode])

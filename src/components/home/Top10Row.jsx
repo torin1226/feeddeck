@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import useHomeStore from '../../stores/homeStore'
+import { registerPreviewTarget, prefetchStreamUrl } from '../../hooks/useFocusPreview'
 
 // ============================================================
 // Top10Row
@@ -39,6 +40,23 @@ export default function Top10Row() {
     el.scrollBy({ left: direction * el.clientWidth * 0.85, behavior: 'smooth' })
   }
 
+  // Pre-compute neighbor lookup so each card can hand useFocusPreview a
+  // pair of adjacent {id, url} pairs without re-scanning the array.
+  // Computed before the early return so hook order stays stable.
+  const adjacentByIndex = useMemo(() => {
+    if (!top10 || top10.length === 0) return []
+    const arr = []
+    for (let i = 0; i < top10.length; i++) {
+      const adj = []
+      const prev = top10[i - 1]
+      const next = top10[i + 1]
+      if (prev?.id && prev?.url) adj.push({ id: prev.id, url: prev.url })
+      if (next?.id && next?.url) adj.push({ id: next.id, url: next.url })
+      arr.push(adj)
+    }
+    return arr
+  }, [top10])
+
   if (!top10 || top10.length === 0) return null
 
   const handleClick = (item) => {
@@ -66,47 +84,17 @@ export default function Top10Row() {
             maskImage: 'linear-gradient(to right, black 90%, transparent 100%)',
           }}
         >
-          {top10.map((item) => (
-            <div
+          {top10.map((item, i) => (
+            <Top10Card
               key={item.id}
-              role="button"
-              tabIndex={0}
+              item={item}
+              adjacentItems={adjacentByIndex[i]}
               onClick={() => handleClick(item)}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick(item) } }}
-              onMouseEnter={() => setFocusedItem(item, 'top10')}
-              onFocus={() => setFocusedItem(item, 'top10')}
-              className="flex-none flex items-end cursor-pointer group/card
-                transition-all duration-[220ms] ease-out
-                hover:scale-[var(--hover-scale)] hover:-translate-y-0.5"
-            >
-              {/* Rank number */}
-              <span
-                className="text-[clamp(80px,17vh,180px)] font-display font-black leading-none text-transparent select-none shrink-0 -mr-3 relative z-10"
-                style={{
-                  WebkitTextStroke: '2px rgba(244,63,94,0.5)',
-                }}
-              >
-                {item.rank}
-              </span>
-
-              {/* Card */}
-              <div className="w-[clamp(130px,27.4vh,295px)] rounded-lg overflow-hidden bg-raised shadow-card-hover">
-                <img
-                  src={item.thumbnailSm || item.thumbnail}
-                  alt={item.title}
-                  loading="lazy"
-                  className="w-full h-[clamp(185px,39vh,420px)] object-cover block bg-overlay"
-                />
-                <div className="p-2">
-                  <div className="text-[11px] font-semibold leading-tight line-clamp-2">
-                    {item.title}
-                  </div>
-                  <div className="text-[10px] text-text-muted mt-0.5">
-                    {item.views} views
-                  </div>
-                </div>
-              </div>
-            </div>
+              onFocus={() => setFocusedItem(item, 'top10', {
+                inputKind: 'mouse',
+                adjacentItems: adjacentByIndex[i],
+              })}
+            />
           ))}
         </div>
 
@@ -139,6 +127,106 @@ export default function Top10Row() {
         >
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M7.5 15L12.5 10L7.5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
         </button>
+      </div>
+    </div>
+  )
+}
+
+// Single Top 10 entry: rank number + thumbnail card + hidden preview video.
+// Extracted so the per-card useRef + registerPreviewTarget can run without
+// useRef inside a map callback.
+function Top10Card({ item, onClick, onFocus }) {
+  const previewVideoRef = useRef(null)
+  const containerRef = useRef(null)
+
+  useEffect(() => {
+    const id = item?.id
+    const el = previewVideoRef.current
+    if (!id || !el) return undefined
+    return registerPreviewTarget(id, el)
+  }, [item?.id])
+
+  // Prefetch stream URL on viewport entry — see PosterCard for rationale.
+  useEffect(() => {
+    const id = item?.id
+    const url = item?.url
+    const container = containerRef.current
+    if (!id || !url || !container) return undefined
+    if (typeof IntersectionObserver === 'undefined') return undefined
+    let prefetched = false
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && !prefetched) {
+            prefetched = true
+            prefetchStreamUrl(id, url)
+            io.disconnect()
+            break
+          }
+        }
+      },
+      { rootMargin: '200px 600px', threshold: 0.01 }
+    )
+    io.observe(container)
+    return () => io.disconnect()
+  }, [item?.id, item?.url])
+
+  return (
+    <div
+      ref={containerRef}
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onClick?.()
+        }
+      }}
+      onMouseEnter={onFocus}
+      onFocus={onFocus}
+      className="flex-none flex items-end cursor-pointer group/card
+        transition-all duration-[220ms] ease-out
+        hover:scale-[var(--hover-scale)] hover:-translate-y-0.5"
+    >
+      {/* Rank number */}
+      <span
+        className="text-[clamp(80px,17vh,180px)] font-display font-black leading-none text-transparent select-none shrink-0 -mr-3 relative z-10"
+        style={{
+          WebkitTextStroke: '2px rgba(244,63,94,0.5)',
+        }}
+      >
+        {item.rank}
+      </span>
+
+      {/* Card */}
+      <div className="w-[clamp(130px,27.4vh,295px)] rounded-lg overflow-hidden bg-raised shadow-card-hover relative">
+        <div className="relative w-full h-[clamp(185px,39vh,420px)]">
+          <img
+            src={item.thumbnailSm || item.thumbnail}
+            alt={item.title}
+            loading="lazy"
+            className="absolute inset-0 w-full h-full object-cover bg-overlay"
+          />
+          {/* Hover preview video — driven by useFocusPreview */}
+          <video
+            ref={previewVideoRef}
+            muted
+            playsInline
+            loop
+            preload="none"
+            className="absolute inset-0 w-full h-full object-cover pointer-events-none transition-opacity duration-[250ms]"
+            style={{ opacity: 0 }}
+          />
+        </div>
+        <div className="p-2">
+          <div className="text-[11px] font-semibold leading-tight line-clamp-2">
+            {item.title}
+          </div>
+          <div className="text-[10px] text-text-muted mt-0.5">
+            {item.views} views
+          </div>
+        </div>
       </div>
     </div>
   )

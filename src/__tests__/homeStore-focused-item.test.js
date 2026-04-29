@@ -53,6 +53,8 @@ describe('homeStore focusedItem', () => {
       url: 'https://youtube.com/watch?v=abc',
       surface: 'hero',
       mode: 'social',
+      inputKind: 'mouse',
+      adjacentItems: [],
     })
   })
 
@@ -136,5 +138,34 @@ describe('homeStore focusedItem', () => {
   it('default surface label when omitted', () => {
     useHomeStore.getState().setFocusedItem(ytItem)
     expect(useHomeStore.getState().focusedItem.surface).toBe('unknown')
+  })
+
+  it('captures opts.inputKind when explicitly keyboard', () => {
+    useHomeStore.getState().setFocusedItem(ytItem, 'gallery-shelf', { inputKind: 'keyboard' })
+    expect(useHomeStore.getState().focusedItem.inputKind).toBe('keyboard')
+  })
+
+  it('rejects unknown inputKind values and falls back to mouse', () => {
+    useHomeStore.getState().setFocusedItem(ytItem, 'gallery-shelf', { inputKind: 'banana' })
+    expect(useHomeStore.getState().focusedItem.inputKind).toBe('mouse')
+  })
+
+  it('accepts auto inputKind for non-user-driven focus claims', () => {
+    useHomeStore.getState().setFocusedItem(ytItem, 'hero', { inputKind: 'auto' })
+    expect(useHomeStore.getState().focusedItem.inputKind).toBe('auto')
+  })
+
+  it('captures adjacentItems for eager prefetch', () => {
+    const adj = [
+      { id: 'next-1', url: 'https://youtube.com/watch?v=next1' },
+      { id: 'next-2', url: 'https://youtube.com/watch?v=next2' },
+    ]
+    useHomeStore.getState().setFocusedItem(ytItem, 'gallery-shelf', { adjacentItems: adj })
+    expect(useHomeStore.getState().focusedItem.adjacentItems).toEqual(adj)
+  })
+
+  it('non-array adjacentItems defaults to empty list', () => {
+    useHomeStore.getState().setFocusedItem(ytItem, 'gallery-shelf', { adjacentItems: 'not-an-array' })
+    expect(useHomeStore.getState().focusedItem.adjacentItems).toEqual([])
   })
 })

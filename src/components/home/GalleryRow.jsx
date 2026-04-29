@@ -67,10 +67,37 @@ export default function GalleryRow({
   // rows on the page don't fight for `focusedItem` on initial mount —
   // hero claims focus by default.
   const interactedRef = useRef(false)
+  // Tracks the input kind for the next focus broadcast triggered by the
+  // activeIndex effect. Keyboard arrow nav sets this to 'keyboard'; mouse
+  // hover and scroll-based focus changes leave it as the default 'mouse'.
+  // Reset to 'mouse' after each consumption so a stray scroll later doesn't
+  // accidentally claim 'keyboard' latency.
+  const pendingInputKindRef = useRef('mouse')
   // Keep refs in sync with activeIndex
   useEffect(() => {
     activeIndexRef.current = activeIndex
   }, [activeIndex])
+
+  // Build a list of adjacent (next + prev) {id, url} pairs around the
+  // given index, skipping dividers and items lacking a URL. Used to
+  // hint useFocusPreview to eager-prefetch the user's likely next step.
+  const buildAdjacentItems = useCallback((centerIdx) => {
+    if (!items || items.length === 0) return []
+    const out = []
+    for (const dir of [-1, 1]) {
+      let scan = centerIdx + dir
+      let collected = 0
+      while (scan >= 0 && scan < items.length && collected < 1) {
+        const it = items[scan]
+        if (!it?._isDivider && it?.url && it?.id) {
+          out.push({ id: it.id, url: it.url })
+          collected++
+        }
+        scan += dir
+      }
+    }
+    return out
+  }, [items])
 
   // Broadcast focus to homeStore when activeIndex changes after user
   // interaction. The rowSurface name is stable across renders so the
@@ -81,8 +108,15 @@ export default function GalleryRow({
     if (!interactedRef.current) return
     const item = items?.[activeIndex]
     if (!item || item._isDivider) return
-    setFocusedItem(item, rowSurface)
-  }, [activeIndex, items, rowSurface, setFocusedItem])
+    const inputKind = pendingInputKindRef.current
+    setFocusedItem(item, rowSurface, {
+      inputKind,
+      adjacentItems: buildAdjacentItems(activeIndex),
+    })
+    // Reset for the next change so a stray scroll doesn't inherit the
+    // keyboard-fast-path latency.
+    pendingInputKindRef.current = 'mouse'
+  }, [activeIndex, items, rowSurface, setFocusedItem, buildAdjacentItems])
 
   // Derived: card-only indices (skipping dividers) and the active card's
   // ordinal among cards. Used for dots + approach-end logic.
@@ -191,7 +225,10 @@ export default function GalleryRow({
     const item = items?.[index]
     if (!item || item._isDivider) return
     interactedRef.current = true
-    setFocusedItem(item, rowSurface)
+    setFocusedItem(item, rowSurface, {
+      inputKind: 'mouse',
+      adjacentItems: buildAdjacentItems(index),
+    })
     if (index === activeIndexRef.current) {
       // Theatre mode: set hero + scroll to top
       setHeroItem(item)
@@ -204,7 +241,7 @@ export default function GalleryRow({
         card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
       }
     }
-  }, [items, setHeroItem, setTheatreMode, setFocusedItem, rowSurface])
+  }, [items, setHeroItem, setTheatreMode, setFocusedItem, rowSurface, buildAdjacentItems])
 
   // Scroll by one card width — skips dividers so arrow nav advances to
   // the next non-divider neighbor.
@@ -258,8 +295,16 @@ export default function GalleryRow({
   )
 
   const handleRowKeyDown = useCallback((e) => {
-    if (e.key === 'ArrowLeft') { e.preventDefault(); scrollByCard(-1) }
-    else if (e.key === 'ArrowRight') { e.preventDefault(); scrollByCard(1) }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault()
+      // Flag the next activeIndex broadcast as keyboard-driven so
+      // useFocusPreview uses the 150ms keyboard window instead of
+      // the 200ms mouse window. The flag is consumed and reset
+      // inside the broadcast effect.
+      pendingInputKindRef.current = 'keyboard'
+      interactedRef.current = true
+      scrollByCard(e.key === 'ArrowLeft' ? -1 : 1)
+    }
   }, [scrollByCard])
 
   // Windowed dots — show DOT_WINDOW dots centered on active card.
@@ -341,11 +386,17 @@ export default function GalleryRow({
                 style={{ animationDelay: `${i * 40}ms` }}
                 onMouseEnter={() => {
                   interactedRef.current = true
-                  setFocusedItem(item, rowSurface)
+                  setFocusedItem(item, rowSurface, {
+                    inputKind: 'mouse',
+                    adjacentItems: buildAdjacentItems(i),
+                  })
                 }}
                 onFocus={() => {
                   interactedRef.current = true
-                  setFocusedItem(item, rowSurface)
+                  setFocusedItem(item, rowSurface, {
+                    inputKind: 'mouse',
+                    adjacentItems: buildAdjacentItems(i),
+                  })
                 }}
               >
                 <PosterCard

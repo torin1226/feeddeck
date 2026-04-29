@@ -19,6 +19,23 @@ export function SkeletonCard() {
   )
 }
 
+// Full-screen swipe-feed slide placeholder. Mirrors FeedVideo's shape:
+// h-dvh black surface, full-bleed thumbnail shimmer, centered play affordance,
+// bottom-aligned title + meta bars. Used by FeedPage's loading state so the
+// shimmer reads as "next slide loading" instead of a tiny card in a black void.
+export function SkeletonFeedSlide() {
+  return (
+    <div className="h-dvh w-full snap-start snap-always relative bg-black flex items-center justify-center overflow-hidden">
+      <div className={`absolute inset-0 ${shimmer} rounded-none`} />
+      <div className="relative w-16 h-16 rounded-full bg-white/10 z-content" />
+      <div className="absolute left-4 right-16 bottom-20 z-content">
+        <div className={`${shimmer} h-3.5 w-2/3 mb-2`} />
+        <div className={`${shimmer} h-2.5 w-1/3`} />
+      </div>
+    </div>
+  )
+}
+
 export function SkeletonCategoryRow() {
   return (
     <div className="mb-9">

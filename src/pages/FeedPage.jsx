@@ -11,7 +11,7 @@ import SourceControlSheet from '../components/feed/SourceControlSheet'
 import FeedBottomNav from '../components/feed/FeedBottomNav'
 import FeedFilterSheet from '../components/feed/FeedFilterSheet'
 import CookieFallbackBanner from '../components/feed/CookieFallbackBanner'
-import { SkeletonCard } from '../components/Skeletons'
+import { SkeletonFeedSlide } from '../components/Skeletons'
 import EmptyIllustration from '../components/EmptyIllustration'
 // QueueSwipeAnimation removed — swipe-to-queue gesture replaced by explicit button
 
@@ -439,15 +439,7 @@ export default function FeedPage() {
           />
         ))}
 
-        {loading && (
-          <div className="h-dvh w-full snap-start flex flex-col items-center justify-center bg-black gap-6 px-8">
-            {[0, 1].map(i => (
-              <div key={i} className="w-full max-w-sm">
-                <SkeletonCard />
-              </div>
-            ))}
-          </div>
-        )}
+        {loading && <SkeletonFeedSlide />}
 
         {exhausted && (
           <div className="h-dvh w-full snap-start flex flex-col items-center justify-center bg-black gap-3">
