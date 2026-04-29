@@ -32,8 +32,12 @@ const POINTS = {
 const LIKE_CAP = 25
 const VIEW_CAP = 15
 const SUBSCRIBER_COUNT_CAP = 5
-const CREATOR_BOOST_MULTIPLIER = 40
-const CREATOR_BOOST_CAP = 30
+// Reserved for an upcoming creator-boost component in scoreVideo.
+// _loadProfile already returns a creatorBoosts Map; the scoring
+// path has not been wired yet. Prefixed `_` to silence unused-var
+// while keeping the planned shape visible.
+const _CREATOR_BOOST_MULTIPLIER = 40
+const _CREATOR_BOOST_CAP = 30
 const AGE_PENALTY_MIN_YEARS = 2
 const MS_PER_DAY = 86_400_000
 const MS_PER_YEAR = 365.25 * MS_PER_DAY
