@@ -109,3 +109,13 @@
 - **Build status:** pass
 - **Master merge note:** Sprint branch is now 59 commits ahead of master — well past the 50-commit threshold. Recommend merging to master when Torin confirms current state is stable.
 - **Action needed from Torin:** Consider merging sprint/2026-04-16 to master (59 commits ahead). Untracked artifacts still on disk: `DAILY_DISCOVERED_TASKS_PROMPT.md`, `docs/specs/`, `public/`.
+
+### 2026-04-29 (automated)
+- **Branch:** sprint/2026-04-16
+- **Status:** clean push
+- **Commits pushed:** 1 (`01b5959` — sync: commit uncommitted work from prior session)
+- **Uncommitted work found:** yes — 14 files (+2292/-65): poster card focus preview hook, gallery/top10 row improvements, hero autoplay updates, skeleton loading states, search page spec, poster shelf comparison HTML. All lint/build checks passed before commit.
+- **Remote divergence:** no — local was 1 ahead after commit, remote had no new commits
+- **Build status:** pass
+- **Master merge note:** Sprint branch is now 64 commits ahead of master — well past the 50-commit threshold. Recommend merging to master when Torin confirms current state is stable.
+- **Action needed from Torin:** Consider merging sprint/2026-04-16 to master (64 commits ahead).
