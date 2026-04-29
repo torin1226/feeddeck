@@ -196,9 +196,15 @@ const useHomeStore = create((set, get) => ({
   // Pass `item = null` to clear focus. Surface examples:
   //   'hero' | 'hero-carousel' | 'gallery-shelf' | 'browse-row:<key>'
   //   | 'top10' | 'continue-watching' | 'liked'
+  // opts.inputKind ('mouse' | 'keyboard') drives preview debounce in
+  // useFocusPreview — keyboard nav uses a shorter 150ms window vs the
+  // 200ms mouse-hover window, since intentional arrow-keying shouldn't
+  // wait for accidental-hover protection.
+  // opts.adjacentItems is a list of {id, url} pairs the hook can eager-
+  // prefetch into its 60s URL cache so the next arrow-key feels instant.
   // The setter is a no-op when the same item+surface is already focused,
   // so subscribers don't get woken on duplicate calls during scroll.
-  setFocusedItem: (item, surface) => {
+  setFocusedItem: (item, surface, opts = {}) => {
     if (!item) {
       if (get().focusedItem === null) return
       return set({ focusedItem: null })
@@ -206,6 +212,10 @@ const useHomeStore = create((set, get) => ({
     const url = urlOf(item)
     const id = item.id ?? url ?? null
     if (id == null) return
+    const inputKind = opts.inputKind === 'keyboard' || opts.inputKind === 'auto'
+      ? opts.inputKind
+      : 'mouse'
+    const adjacentItems = Array.isArray(opts.adjacentItems) ? opts.adjacentItems : []
     const next = {
       id,
       url,
@@ -213,6 +223,8 @@ const useHomeStore = create((set, get) => ({
       mode: item.mode === 'social' || item.mode === 'nsfw'
         ? item.mode
         : inferMode(url || ''),
+      inputKind,
+      adjacentItems,
     }
     const prev = get().focusedItem
     if (prev && prev.id === next.id && prev.surface === next.surface) return
@@ -561,11 +573,15 @@ const useHomeStore = create((set, get) => ({
     }
 
     // Phase 2: background warm-cache pass + toast based on result.
-    // Detached promise: the click handler returns immediately after shuffle.
-    fetch(`/api/homepage/warm?mode=${mode}`, { method: 'POST' })
-      .then(async res => {
+    // Detached: the click handler returns immediately after shuffle.
+    // Wrapped in async IIFE so a sync throw (e.g. fetch returning a
+    // non-promise in tests) can't leak past refreshHome's await.
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/homepage/warm?mode=${mode}`, { method: 'POST' })
+        if (!res) return
         let added = 0
-        let nextEligibleAt
+        let nextEligibleAt = null
         if (res.ok) {
           const body = await res.json().catch(() => ({}))
           added = body?.stats?.added ?? 0
@@ -586,10 +602,10 @@ const useHomeStore = create((set, get) => ({
         } else {
           toast('Shuffled — nothing new from sources', 'info')
         }
-      })
-      .catch(err => {
+      } catch (err) {
         console.warn('[homeStore] refreshHome warm failed:', err.message)
-      })
+      }
+    })()
   },
 
   // Rotate visible content across all rows. Skips ph_likes (user-curated).
@@ -643,9 +659,13 @@ const useHomeStore = create((set, get) => ({
         // item still changes. Rotating by exactly items.length is a no-op.
         const step = items.length > ROTATE_BY ? ROTATE_BY : items.length - 1
         if (step <= 0) { skippedReasons.stepZero++; return cat }
-        if (cat._pinned && cat._key) {
-          const prev = _pinnedOffsets.get(cat._key) || 0
-          _pinnedOffsets.set(cat._key, (prev + step) % items.length)
+        if (cat._pinned) {
+          // Pinned rows persist via _pinnedOffsets when keyed; never
+          // marked viewed (persistent_row_items has no `viewed` flag).
+          if (cat._key) {
+            const prev = _pinnedOffsets.get(cat._key) || 0
+            _pinnedOffsets.set(cat._key, (prev + step) % items.length)
+          }
         } else {
           // Mark viewed only the items that fit the standard slice; for
           // small rows we still rotate but don't drain the cache.
