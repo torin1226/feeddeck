@@ -8,6 +8,7 @@ import ErrorBoundary from './ErrorBoundary'
 import FloatingQueue from './FloatingQueue'
 import GlobalToast from './GlobalToast'
 import OfflineBanner from './OfflineBanner'
+import ShuffleDebugOverlay from './ShuffleDebugOverlay'
 
 // Code-split route-level pages for smaller initial bundle
 const HomePage = lazy(() => import('../pages/HomePage'))
@@ -15,6 +16,7 @@ const LibraryPage = lazy(() => import('../pages/LibraryPage'))
 const FeedPage = lazy(() => import('../pages/FeedPage'))
 const SettingsPage = lazy(() => import('../pages/SettingsPage'))
 const VideoDetailPage = lazy(() => import('../pages/VideoDetailPage'))
+const SearchPage = lazy(() => import('../pages/SearchPage'))
 
 // ============================================================
 // AppShell
@@ -58,6 +60,7 @@ export default function AppShell() {
             <Route path="/feed" element={<ErrorBoundary name="Feed"><FeedPage /></ErrorBoundary>} />
             <Route path="/settings" element={<ErrorBoundary name="Settings"><SettingsPage /></ErrorBoundary>} />
             <Route path="/video/:id" element={<ErrorBoundary name="Video"><VideoDetailPage /></ErrorBoundary>} />
+            <Route path="/search" element={<ErrorBoundary name="Search"><SearchPage /></ErrorBoundary>} />
           </Routes>
         </Suspense>
       </main>
@@ -66,6 +69,7 @@ export default function AppShell() {
       {!isFeed && <FloatingQueue />}
       <GlobalToast />
       <OfflineBanner />
+      <ShuffleDebugOverlay />
     </>
   )
 

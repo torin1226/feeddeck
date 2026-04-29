@@ -405,6 +405,21 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_taste_profile_type ON taste_profile(signal_type, signal_value);
     CREATE INDEX IF NOT EXISTS idx_taste_profile_surface ON taste_profile(surface_key);
 
+    -- Search history: every completed search recorded for empty-state fallback
+    -- and future taste-profile signals. query_normalized lets us deduplicate.
+    CREATE TABLE IF NOT EXISTS search_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      query TEXT NOT NULL,
+      query_normalized TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'social',
+      result_count INTEGER DEFAULT 0,
+      clicked_count INTEGER DEFAULT 0,
+      searched_at TEXT NOT NULL DEFAULT (datetime('now')),
+      source TEXT DEFAULT 'manual'
+    );
+    CREATE INDEX IF NOT EXISTS idx_search_history_mode ON search_history(mode, searched_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_search_history_normalized ON search_history(query_normalized, mode);
+
     -- Persistent rows: sticky homepage shelves whose content never auto-purges.
     -- Used for "My PornHub Likes", "From Your Subscriptions", and per-model rows.
     CREATE TABLE IF NOT EXISTS persistent_rows (

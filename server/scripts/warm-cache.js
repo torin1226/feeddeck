@@ -90,10 +90,10 @@ export async function runWarmCache({ mode: modeArg = 'all', dryRun = false, exte
 
   if (dryRun) {
     console.log('Dry run — exiting without fetching.\n')
-    return { categoriesRefilled: 0, feedRefilled: 0, streamUrlsResolved: 0, errors: 0, purged: 0, dryRun: true }
+    return { categoriesRefilled: 0, feedRefilled: 0, streamUrlsResolved: 0, errors: 0, purged: 0, added: 0, rowsRefilled: 0, rowsSkipped: 0, dryRun: true }
   }
 
-  const stats = { categoriesRefilled: 0, feedRefilled: 0, streamUrlsResolved: 0, errors: 0, purged: 0 }
+  const stats = { categoriesRefilled: 0, feedRefilled: 0, streamUrlsResolved: 0, errors: 0, purged: 0, added: 0, rowsRefilled: 0, rowsSkipped: 0 }
   const startTime = Date.now()
 
 // --- Phase 0: Purge stale homepage entries ---
@@ -151,6 +151,7 @@ for (const mode of modes) {
       }
       console.log(`    ✅ +${added} new videos (${videos.length} fetched)`)
       stats.categoriesRefilled++
+      stats.added += added
     } catch (err) {
       console.log(`    ❌ ${err.message.substring(0, 80)}`)
       stats.errors++
@@ -238,6 +239,7 @@ if (modes.includes('nsfw')) {
         const ageSec = (Date.now() - new Date(iso).getTime()) / 1000
         if (ageSec >= 0 && ageSec < (row.fetch_interval || 3600)) {
           console.log(`    ⏭ ${row.key}: refreshed ${Math.round(ageSec/60)}m ago, skipping`)
+          stats.rowsSkipped++
           continue
         }
       }
@@ -267,7 +269,11 @@ if (modes.includes('nsfw')) {
         }
         // Only count this as a successful fetch if we actually got something.
         // An empty result keeps last_fetched=NULL so the next warm-cache retries.
-        if (added > 0) updateLastFetched.run(row.key)
+        if (added > 0) {
+          updateLastFetched.run(row.key)
+          stats.rowsRefilled++
+          stats.added += added
+        }
         console.log(`    ${added > 0 ? '✅' : '⚠️ '} ${row.key}: +${added} items${added === 0 ? ' (will retry next run)' : ''}`)
       } catch (err) {
         console.log(`    ❌ ${row.key}: ${err.message.substring(0, 80)}`)
@@ -325,6 +331,7 @@ for (const mode of modes) {
       db.prepare("UPDATE sources SET last_fetched = datetime('now') WHERE domain = ?").run(src.domain)
       console.log(`    ✅ +${added} new videos (${videos.length} fetched)`)
       stats.feedRefilled++
+      stats.added += added
     } catch (err) {
       console.log(`    ❌ ${err.message.substring(0, 80)}`)
       stats.errors++

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import useViewTransitionNavigate from '../../hooks/useViewTransitionNavigate'
 import useHomeStore from '../../stores/homeStore'
 import useModeStore from '../../stores/modeStore'
@@ -15,6 +15,7 @@ import useThemeStore from '../../stores/themeStore'
 export default function HomeHeader() {
   const navigate = useViewTransitionNavigate()
   const location = useLocation()
+  const [urlParams] = useSearchParams()
   const { setHeroItem, toggleTheatre } = useHomeStore()
   const { isSFW, toggleMode } = useModeStore()
   const { theme, toggleTheme } = useThemeStore()
@@ -119,6 +120,38 @@ export default function HomeHeader() {
     }
   }, [])
 
+  // Submit (Enter): commit to the dedicated SearchPage instead of fetching inline.
+  // Use replace when already on /search to avoid back-button spam.
+  const submitSearch = useCallback((q) => {
+    const trimmed = (q || '').trim()
+    if (!trimmed) return
+    const target = `/search?q=${encodeURIComponent(trimmed)}`
+    if (location.pathname === '/search') {
+      navigate(target, { replace: true })
+    } else {
+      navigate(target)
+    }
+    clearTimeout(searchTimer.current)
+    setSearchOpen(false)
+    setResults(null)
+    setNoResults(false)
+    setSearchError(null)
+    setSearching(false)
+  }, [location.pathname, navigate])
+
+  // When on /search, pre-fill the input with the q URL param so the user
+  // can edit and re-submit. Open the search bar so the input is visible.
+  useEffect(() => {
+    if (location.pathname !== '/search') return
+    const urlQ = urlParams.get('q') || ''
+    if (urlQ && urlQ !== query) {
+      setQuery(urlQ)
+      setSearchOpen(true)
+    }
+    // Intentionally only react to URL changes, not local query edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, urlParams])
+
   const handleInput = useCallback((value) => {
     setQuery(value)
     clearTimeout(searchTimer.current)
@@ -202,7 +235,7 @@ export default function HomeHeader() {
                   value={query}
                   onChange={(e) => handleInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && query.trim()) doSearch(query.trim())
+                    if (e.key === 'Enter' && query.trim()) submitSearch(query.trim())
                     if (e.key === 'Escape') closeSearch()
                   }}
                   placeholder="Search videos..."

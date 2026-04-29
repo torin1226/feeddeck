@@ -164,6 +164,72 @@ async function _preResolveStreamUrls(videoUrls) {
 }
 
 // -----------------------------------------------------------
+// Cooldown introspection + one-shot warm scheduling
+// -----------------------------------------------------------
+// Returns { rowsCooling, nextEligibleAt } for the homepage warm-cache pass.
+// `nextEligibleAt` is null when at least one row is eligible right now
+// (either never-fetched or past its fetch_interval).
+export function getHomepageCooldownStatus(mode = 'all') {
+  try {
+    const sql = `
+      SELECT last_fetched, fetch_interval
+      FROM persistent_rows
+      WHERE active = 1${mode !== 'all' ? ' AND mode = ?' : ''}
+    `
+    const rows = mode !== 'all'
+      ? db.prepare(sql).all(mode)
+      : db.prepare(sql).all()
+    if (rows.length === 0) return { rowsCooling: 0, nextEligibleAt: null }
+    const nowMs = Date.now()
+    let cooling = 0
+    let soonest = Infinity
+    for (const r of rows) {
+      if (!r.last_fetched) {
+        // Never-fetched row exists — eligible now.
+        return { rowsCooling: 0, nextEligibleAt: null }
+      }
+      const iso = r.last_fetched.includes('T')
+        ? r.last_fetched
+        : r.last_fetched.replace(' ', 'T') + 'Z'
+      const eligibleAt = new Date(iso).getTime() + (r.fetch_interval || 3600) * 1000
+      if (eligibleAt > nowMs) {
+        cooling++
+        if (eligibleAt < soonest) soonest = eligibleAt
+      } else {
+        // At least one row is eligible right now.
+        return { rowsCooling: 0, nextEligibleAt: null }
+      }
+    }
+    return {
+      rowsCooling: cooling,
+      nextEligibleAt: soonest === Infinity ? null : new Date(soonest).toISOString(),
+    }
+  } catch (err) {
+    logger.error('getHomepageCooldownStatus failed:', { error: err.message })
+    return { rowsCooling: 0, nextEligibleAt: null }
+  }
+}
+
+// Dedup by mode key — prevents stacking timers from rapid clicks.
+const _oneShotWarms = new Map()
+export function scheduleOneShotWarm(mode, msUntil) {
+  if (_oneShotWarms.has(mode)) return false
+  const delay = Math.max(1000, msUntil)
+  logger.info(`  ⏲ Scheduling one-shot warm for mode=${mode} in ${Math.round(delay/1000)}s`)
+  const handle = setTimeout(async () => {
+    _oneShotWarms.delete(mode)
+    try {
+      const { runWarmCache } = await import('./scripts/warm-cache.js')
+      await runWarmCache({ mode, externalDb: true })
+    } catch (err) {
+      logger.error('One-shot warm failed:', { error: err.message })
+    }
+  }, delay)
+  _oneShotWarms.set(mode, handle)
+  return true
+}
+
+// -----------------------------------------------------------
 // Scheduled background tasks
 // -----------------------------------------------------------
 function startScheduledFeedRefill() {

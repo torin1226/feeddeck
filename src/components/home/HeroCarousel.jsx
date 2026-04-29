@@ -47,15 +47,17 @@ export default function HeroCarousel() {
       setSearchEmpty(false)
       try {
         const mode = useModeStore.getState().isSFW ? 'social' : 'nsfw'
-        const res = await fetch(`/api/search/multi?q=${encodeURIComponent(q)}&limit=20&mode=${mode}`)
-        const data = await res.json()
-        const results = (data.results || []).map(v => ({
+        const signal = AbortSignal.timeout(90_000)
+        const res = await fetch(`/api/search/multi?q=${encodeURIComponent(q)}&limit=20&mode=${mode}`, { signal })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+        const results = (data.videos || []).map(v => ({
           id: v.id || v.url,
           url: v.url,
           title: v.title,
           thumbnail: v.thumbnail,
           thumbnailSm: v.thumbnail,
-          duration: v.duration ? `${Math.floor(v.duration / 60)}:${String(v.duration % 60).padStart(2, '0')}` : '',
+          duration: v.durationFormatted || (v.duration ? `${Math.floor(v.duration / 60)}:${String(v.duration % 60).padStart(2, '0')}` : ''),
           views: v.view_count ? `${Math.floor(v.view_count / 1000)}K` : '',
           uploader: v.uploader || v.source || '',
           source: v.source || '',
@@ -92,7 +94,7 @@ export default function HeroCarousel() {
   }, [activeId])
 
   return (
-    <div>
+    <div className="[&_*]:pointer-events-auto">
       {/* Search row */}
       <div className="px-10 mb-1">
         <div className="relative max-w-[520px]">

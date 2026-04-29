@@ -122,8 +122,52 @@ router.get('/api/search', (req, res) => {
   })
 
   const limit = parseInt(count, 10)
+  const mode = getMode(req)
 
-  // Use the yt-dlp adapter's streaming search for SSE
+  // NSFW: scraper adapter has no native streaming search, so we await the
+  // batched result and emit each video as an SSE event with a setImmediate
+  // yield so the client can render progressively.
+  if (mode === 'nsfw') {
+    // Flush headers immediately as text/event-stream. Without this, a slow
+    // (e.g. cold-start Puppeteer) or rejected scraperAdapter.searchAll would
+    // let Express finalize the response with default 500/text-plain headers.
+    res.write(': searching\n\n')
+    if (typeof res.flush === 'function') res.flush()
+
+    let cancelled = false
+    req.on('close', () => { cancelled = true })
+
+    const closeWithError = (err) => {
+      if (cancelled || res.writableEnded) return
+      logger.error('Search error (nsfw):', { error: err?.message || String(err) })
+      try {
+        res.write(`event: error\ndata: ${JSON.stringify({ error: err?.message || 'Search failed' })}\n\n`)
+        res.write('data: [done]\n\n')
+      } catch {}
+      try { res.end() } catch {}
+    }
+
+    ;(async () => {
+      try {
+        const videos = await scraperAdapter.searchAll(q, { limit })
+        for (const v of videos) {
+          if (cancelled || res.writableEnded) return
+          res.write(`data: ${JSON.stringify({ ...v, durationFormatted: formatDuration(v.duration) })}\n\n`)
+          await new Promise(r => setImmediate(r))
+        }
+        if (!cancelled && !res.writableEnded) {
+          res.write('data: [done]\n\n')
+          res.end()
+        }
+      } catch (err) {
+        closeWithError(err)
+      }
+    })().catch(closeWithError)
+
+    return
+  }
+
+  // SFW: yt-dlp adapter's streaming search for SSE
   const stream = ytdlpAdapter.streamSearch(q, { site, limit })
 
   stream.onVideo((video) => {
@@ -215,6 +259,60 @@ router.get('/api/search/multi', async (req, res) => {
   } catch (err) {
     logger.error('Multi-site search error:', { error: err.message })
     res.status(500).json({ error: err.message || 'Multi-site search failed' })
+  }
+})
+
+// -----------------------------------------------------------
+// Search history
+// Records every completed search; powers the empty-state fallback
+// and feeds future taste-profile signals.
+// -----------------------------------------------------------
+
+function normalizeQuery(q) {
+  return String(q).trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+router.post('/api/search/history', express.json(), (req, res) => {
+  const { query, mode, result_count } = req.body || {}
+  if (!query?.trim()) return res.status(400).json({ error: 'query required' })
+  const m = mode === 'nsfw' ? 'nsfw' : 'social'
+  try {
+    const result = db.prepare(
+      `INSERT INTO search_history (query, query_normalized, mode, result_count, source)
+       VALUES (?, ?, ?, ?, 'manual')`
+    ).run(query.trim(), normalizeQuery(query), m, parseInt(result_count, 10) || 0)
+    res.json({ id: result.lastInsertRowid })
+  } catch (err) {
+    logger.error('Search history insert error', { error: err.message })
+    res.status(500).json({ error: 'Failed to record search' })
+  }
+})
+
+router.patch('/api/search/history/:id/click', (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10)
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'invalid id' })
+    db.prepare('UPDATE search_history SET clicked_count = clicked_count + 1 WHERE id = ?').run(id)
+    res.status(204).end()
+  } catch (err) {
+    logger.error('Search history click error', { error: err.message })
+    res.status(500).json({ error: 'Failed to record click' })
+  }
+})
+
+router.get('/api/search/history', (req, res) => {
+  const mode = getMode(req)
+  const limit = Math.min(parseInt(req.query.limit, 10) || 5, 50)
+  const hasResults = req.query.has_results === 'true'
+  try {
+    const sql = hasResults
+      ? 'SELECT id, query, mode, result_count, clicked_count, searched_at FROM search_history WHERE mode = ? AND result_count > 0 ORDER BY searched_at DESC LIMIT ?'
+      : 'SELECT id, query, mode, result_count, clicked_count, searched_at FROM search_history WHERE mode = ? ORDER BY searched_at DESC LIMIT ?'
+    const rows = db.prepare(sql).all(mode, limit)
+    res.json({ history: rows })
+  } catch (err) {
+    logger.error('Search history fetch error', { error: err.message })
+    res.json({ history: [] })
   }
 })
 
@@ -703,15 +801,28 @@ router.post('/api/homepage/viewed', (req, res) => {
 // -----------------------------------------------------------
 let _warmInFlight = false
 router.post('/api/homepage/warm', async (req, res) => {
+  const mode = req.query.mode === 'nsfw' ? 'nsfw' : req.query.mode === 'social' ? 'social' : 'all'
+  // Lazy import to avoid circular dependency at module load time.
+  const { getHomepageCooldownStatus, scheduleOneShotWarm } = await import('../index.js')
   if (_warmInFlight) {
-    return res.status(429).json({ error: 'Warm-cache pass already in progress' })
+    return res.status(429).json({
+      error: 'Warm-cache pass already in progress',
+      cooldown: getHomepageCooldownStatus(mode),
+    })
   }
   _warmInFlight = true
   try {
-    const mode = req.query.mode === 'nsfw' ? 'nsfw' : req.query.mode === 'social' ? 'social' : 'all'
     const { runWarmCache } = await import('../scripts/warm-cache.js')
     const stats = await runWarmCache({ mode, externalDb: true })
-    res.json({ ok: true, stats })
+    const cooldown = getHomepageCooldownStatus(mode)
+    // If the warm produced nothing and rows are still cooling, schedule a
+    // one-shot warm for the soonest cooldown expiry so the user's intent is
+    // honored before the next 60s scheduler tick.
+    if ((stats.added || 0) === 0 && cooldown.nextEligibleAt) {
+      const ms = new Date(cooldown.nextEligibleAt).getTime() - Date.now()
+      scheduleOneShotWarm(mode, ms)
+    }
+    res.json({ ok: true, stats, cooldown })
   } catch (err) {
     logger.error('Manual warm-cache failed:', { error: err.message })
     res.status(500).json({ error: 'Warm-cache failed', detail: err.message })

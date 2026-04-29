@@ -390,7 +390,7 @@ export default function HeroSection() {
       {/* Hero content — fades out in theatre mode */}
       <div
         className={`absolute left-10 max-w-[520px] z-10 transition-all duration-500 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] ${
-          theatreMode ? 'bottom-24 opacity-0 pointer-events-none' : 'bottom-[230px]'
+          theatreMode ? 'bottom-24 opacity-0 pointer-events-none' : 'bottom-[270px]'
         }`}
       >
         {/* Tags */}
@@ -501,11 +501,14 @@ export default function HeroSection() {
         </div>
       </div>
 
-      {/* Carousel strip at bottom */}
+      {/* Carousel strip at bottom — wrapper has pointer-events-none so its
+          transparent top-padding doesn't intercept clicks meant for the
+          action row (Play / Theatre / +/- thumbs) sitting just above. The
+          interactive children inside <HeroCarousel/> re-enable pointer events. */}
       <div
         className={`absolute bottom-0 left-0 right-0 z-20 pb-7 pt-5 transition-all duration-500
-          ease-[cubic-bezier(0.25,0.46,0.45,0.94)]
-          ${theatreMode ? 'translate-y-[30px] opacity-0 pointer-events-none' : ''}`}
+          ease-[cubic-bezier(0.25,0.46,0.45,0.94)] pointer-events-none
+          ${theatreMode ? 'translate-y-[30px] opacity-0' : ''}`}
         style={{
           background: 'linear-gradient(to top, var(--color-surface) 0%, transparent 100%)',
         }}

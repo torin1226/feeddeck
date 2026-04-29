@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { inferMode, urlOf } from '../utils/mode'
+import useToastStore from './toastStore'
 
 // ============================================================
 // Home Store
@@ -27,6 +28,18 @@ const fmtViews = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? Math
 let idCounter = 100
 let _fetchVersion = 0 // Guards against nuclearFlush/resetHome racing with fetchHomepage
 let _swapVersion = 0 // Guards against mode-change racing with refresh/shuffle swaps
+
+// Per-pinned-row rotation offset, advanced by shuffleHome.
+// persistent_row_items has no `viewed` flag, so pinned rows can't be
+// rotated server-side like homepage_cache rows. We rotate client-side
+// and re-apply the offset on every fetchHomepage so the rotation
+// survives /home navigation. Module-level (not zustand state) so the
+// offset isn't reset by store wipes; it does reset on full reload.
+const _pinnedOffsets = new Map() // row key -> integer offset
+
+// Pinned rows that should NEVER shuffle. The user's saved likes are
+// curated content; users care about their order, not novelty.
+const PINNED_NO_SHUFFLE = new Set(['ph_likes'])
 
 // Shared video-mapper used by fetchHomepage and the refresh/shuffle swap path.
 // Mirrors the mapVideo at fetchHomepage (kept inline there for locality).
@@ -347,20 +360,30 @@ const useHomeStore = create((set, get) => ({
 
       // Category rows from API groupings. `pinned` flag flows from persistent_rows
       // (see /api/homepage) and prevents re-sort from displacing them.
+      // If isFresh empties a row, fall back to the unfiltered list so depleted
+      // rows (after repeated shuffles) keep showing content rather than vanishing.
+      // Pinned rows (except ph_likes) honor `_pinnedOffsets` so a prior shuffle's
+      // rotation persists when the user navigates back to /home.
       let categories = data.categories
         .filter(cat => cat.videos.length > 0)
         .map(cat => {
           const isPinned = !!cat.pinned
           const mapped = cat.videos.map(mapVideo)
-          const items = isPinned ? mapped : mapped.filter(isFresh)
+          let items = isPinned ? mapped : mapped.filter(isFresh)
+          if (!isPinned && items.length === 0) items = mapped
           items.sort((a, b) => {
             if (b.uploadTs !== a.uploadTs) return b.uploadTs - a.uploadTs
             return b.fetchedTs - a.fetchedTs
           })
+          if (isPinned && cat.key && !PINNED_NO_SHUFFLE.has(cat.key) && items.length > 0) {
+            const off = (_pinnedOffsets.get(cat.key) || 0) % items.length
+            if (off > 0) items = [...items.slice(off), ...items.slice(0, off)]
+          }
           return {
             label: cat.label,
             items,
             _pinned: isPinned,
+            _key: cat.key,
           }
         })
         .filter(cat => cat.items.length > 0)
@@ -513,48 +536,145 @@ const useHomeStore = create((set, get) => ({
   // untouched in both phases.
   // ----------------------------------------------------------
 
-  // Trigger a server-side warm-cache pass (subscription fetchers),
-  // then swap fresh content into the home feed.
+  // Refresh the homepage. Two-phase, optimistic-first:
+  //   1. Rotate immediately via shuffleHome so the user always sees motion.
+  //   2. Trigger /api/homepage/warm in the background. When it completes:
+  //        - added > 0 → swap fresh content in + success toast
+  //        - added = 0 → cooldown-aware toast ("fresh content in ~Xm" or
+  //          "nothing new from sources")
+  //        - 429 (warm already in flight) → same as added = 0
+  //
+  // Why optimistic: a warm-cache pass takes 30–60s when sources need
+  // fetching, and the prior /viewed POSTs serialize behind it. Awaiting
+  // either path leaves the user staring at an unchanged homepage. By
+  // rotating first, the click always feels responsive.
   refreshHome: async (mode = 'social') => {
     if (get().refreshing || get().shuffling) return
     set({ refreshing: true })
+    const toast = useToastStore.getState().showToast
     try {
-      const res = await fetch(`/api/homepage/warm?mode=${mode}`, { method: 'POST' })
-      if (!res.ok && res.status !== 429) {
-        // 429 = already in flight; treat as soft success and still swap in
-        // whatever the server has now.
-        throw new Error(`Warm failed: HTTP ${res.status}`)
-      }
-      await get()._swapInFreshContent(mode)
-    } catch (err) {
-      console.warn('[homeStore] refreshHome failed:', err.message)
-    } finally {
+      // Phase 1: instant rotation (clear refreshing so shuffleHome's guard passes).
       set({ refreshing: false })
+      await get().shuffleHome(mode)
+    } catch (err) {
+      console.warn('[homeStore] refreshHome shuffle failed:', err.message)
     }
+
+    // Phase 2: background warm-cache pass + toast based on result.
+    // Detached promise: the click handler returns immediately after shuffle.
+    fetch(`/api/homepage/warm?mode=${mode}`, { method: 'POST' })
+      .then(async res => {
+        let added = 0
+        let nextEligibleAt
+        if (res.ok) {
+          const body = await res.json().catch(() => ({}))
+          added = body?.stats?.added ?? 0
+          nextEligibleAt = body?.cooldown?.nextEligibleAt ?? null
+        } else if (res.status === 429) {
+          const body = await res.json().catch(() => ({}))
+          nextEligibleAt = body?.cooldown?.nextEligibleAt ?? null
+        } else {
+          throw new Error(`Warm failed: HTTP ${res.status}`)
+        }
+
+        if (added > 0) {
+          await get()._swapInFreshContent(mode)
+          toast(`Got ${added} fresh items`, 'success')
+        } else if (nextEligibleAt) {
+          const mins = Math.max(1, Math.round((new Date(nextEligibleAt).getTime() - Date.now()) / 60000))
+          toast(`Shuffled — fresh content in ~${mins}m`, 'info')
+        } else {
+          toast('Shuffled — nothing new from sources', 'info')
+        }
+      })
+      .catch(err => {
+        console.warn('[homeStore] refreshHome warm failed:', err.message)
+      })
   },
 
-  // Mark the leftmost-5 cards of every non-pinned row as viewed,
-  // then swap in replacements from the existing homepage cache.
+  // Rotate visible content across all rows. Skips ph_likes (user-curated).
+  //
+  // Optimistic + instant: rotate every non-likes row client-side immediately
+  // and clear `shuffling` on the next tick. Mark-viewed POSTs run in the
+  // background so the rotation persists across /home navigation (next
+  // fetchHomepage will exclude the marked items). Previously this awaited
+  // every POST + a /api/homepage GET — when the server is busy (e.g. running
+  // a warm-cache pass) those serial calls add 10–30s of latency before the
+  // user sees anything change.
+  //
+  // Non-pinned rows (homepage_cache rows) ALSO send mark-viewed POSTs so
+  // subsequent fetches don't re-surface the same items. Pinned rows
+  // (persistent_row_items has no `viewed` flag) rely on `_pinnedOffsets`
+  // re-applied by fetchHomepage to make the rotation survive navigation.
   shuffleHome: async (mode = 'social') => {
-    if (get().refreshing || get().shuffling) return
+    const dbg = (kind, msg) => {
+      if (typeof window === 'undefined') return
+      const log = (window.__shuffleDebugLog ||= [])
+      log.push({ t: Date.now(), kind, msg })
+      if (log.length > 50) log.shift()
+    }
+    dbg('call', `shuffleHome(${mode}) — refreshing=${get().refreshing} shuffling=${get().shuffling} cats=${(get().categories || []).length}`)
+    if (get().refreshing || get().shuffling) {
+      dbg('bail', 'GUARD: refreshing or shuffling already true')
+      return
+    }
     set({ shuffling: true })
+    const toast = useToastStore.getState().showToast
     try {
+      // If categories is empty (user went straight to /settings without
+      // visiting /home), fetch first so shuffle has something to rotate.
+      if (((get().categories || []).length) === 0) {
+        dbg('info', 'categories empty — calling fetchHomepage first')
+        set({ shuffling: false })
+        await get().fetchHomepage(mode)
+        set({ shuffling: true })
+        dbg('info', `after fetchHomepage cats=${(get().categories || []).length}`)
+      }
       const cats = get().categories || []
       const idsToHide = []
-      for (const cat of cats) {
-        if (cat._pinned) continue
-        for (const item of (cat.items || []).slice(0, 5)) {
-          if (item && item.id) idsToHide.push(item.id)
+      let rotatedCount = 0
+      let skippedReasons = { likes: 0, oneOrZero: 0, stepZero: 0 }
+      const ROTATE_BY = 5
+      const rotated = cats.map(cat => {
+        if (PINNED_NO_SHUFFLE.has(cat._key)) { skippedReasons.likes++; return cat }
+        const items = cat.items || []
+        if (items.length <= 1) { skippedReasons.oneOrZero++; return cat }
+        // For rows shorter than ROTATE_BY, rotate by length-1 so the top
+        // item still changes. Rotating by exactly items.length is a no-op.
+        const step = items.length > ROTATE_BY ? ROTATE_BY : items.length - 1
+        if (step <= 0) { skippedReasons.stepZero++; return cat }
+        if (cat._pinned && cat._key) {
+          const prev = _pinnedOffsets.get(cat._key) || 0
+          _pinnedOffsets.set(cat._key, (prev + step) % items.length)
+        } else {
+          // Mark viewed only the items that fit the standard slice; for
+          // small rows we still rotate but don't drain the cache.
+          const markCount = Math.min(ROTATE_BY, items.length)
+          for (const item of items.slice(0, markCount)) {
+            if (item && item.id) idsToHide.push(item.id)
+          }
         }
-      }
-      // Mark all in parallel; failures are non-fatal.
-      await Promise.all(idsToHide.map(id =>
+        rotatedCount++
+        return { ...cat, items: [...items.slice(step), ...items.slice(0, step)] }
+      })
+      dbg('info', `mapped: ${rotatedCount} rotated, skipped likes=${skippedReasons.likes} small=${skippedReasons.oneOrZero} stepZero=${skippedReasons.stepZero}`)
+      set({ categories: rotated })
+      dbg('info', `set categories — new state cats=${(get().categories || []).length}`)
+      // Fire-and-forget: mark-viewed POSTs run in the background. The
+      // optimistic rotation is already on screen; these just persist it.
+      for (const id of idsToHide) {
         fetch(`/api/homepage/viewed?id=${encodeURIComponent(id)}`, { method: 'POST' })
           .catch(() => {})
-      ))
-      await get()._swapInFreshContent(mode)
+      }
+      if (rotatedCount > 0) {
+        toast(`Shuffled ${rotatedCount} row${rotatedCount === 1 ? '' : 's'}`, 'info')
+      } else {
+        toast('Nothing to shuffle yet', 'info')
+      }
+      dbg('done', `OK rotated=${rotatedCount} idsToHide=${idsToHide.length}`)
     } catch (err) {
       console.warn('[homeStore] shuffleHome failed:', err.message)
+      dbg('error', `THROW: ${err.message}`)
     } finally {
       set({ shuffling: false })
     }
@@ -585,12 +705,17 @@ const useHomeStore = create((set, get) => ({
     const isFresh = (v) => v.uploadTs === 0 || (now - v.uploadTs) <= RECENT_MS
 
     // Build fresh items per category, keyed by the API's raw label.
+    // If the 180-day freshness filter empties a row, fall back to the
+    // unfiltered API set. The user is shuffling — surfacing stale-but-
+    // unviewed content beats keeping the same items on screen, and the
+    // server has already excluded viewed items.
     const freshByLabel = new Map()
     for (const cat of (data.categories || [])) {
       if (!cat.videos || cat.videos.length === 0) continue
       const isPinned = !!cat.pinned
       const mapped = cat.videos.map(_mapApiVideo)
-      const items = isPinned ? mapped : mapped.filter(isFresh)
+      let items = isPinned ? mapped : mapped.filter(isFresh)
+      if (!isPinned && items.length === 0) items = mapped
       items.sort((a, b) => {
         if (b.uploadTs !== a.uploadTs) return b.uploadTs - a.uploadTs
         return b.fetchedTs - a.fetchedTs

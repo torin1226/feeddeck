@@ -32,6 +32,8 @@ const POINTS = {
 const LIKE_CAP = 25
 const VIEW_CAP = 15
 const SUBSCRIBER_COUNT_CAP = 5
+const CREATOR_BOOST_MULTIPLIER = 40
+const CREATOR_BOOST_CAP = 30
 const AGE_PENALTY_MIN_YEARS = 2
 const MS_PER_DAY = 86_400_000
 const MS_PER_YEAR = 365.25 * MS_PER_DAY
@@ -52,6 +54,7 @@ function _loadProfile() {
   try {
     const signals = db.prepare('SELECT signal_type, signal_value, weight FROM taste_profile').all()
     const downvotedUrls = db.prepare("SELECT video_url FROM video_ratings WHERE rating = 'down'").all()
+    const creatorBoostRows = db.prepare('SELECT creator, boost_score FROM creator_boosts').all()
 
     const likedTagSet = new Set()
     const dislikedTagSet = new Set()
@@ -62,10 +65,16 @@ function _loadProfile() {
       else if (s.weight < 0) dislikedTagSet.add(tag)
     }
 
+    const creatorBoosts = new Map()
+    for (const r of creatorBoostRows) {
+      if (r.creator && r.boost_score !== 0) creatorBoosts.set(r.creator, r.boost_score)
+    }
+
     _profileCache = {
       likedTagSet,
       dislikedTagSet,
       downvotedUrls: new Set(downvotedUrls.map(r => r.video_url)),
+      creatorBoosts,
     }
     _profileCacheTime = now
     return _profileCache
