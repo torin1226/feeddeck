@@ -250,71 +250,107 @@ describe('shuffleHome: mark-viewed call count and id correctness', () => {
 // refreshHome: warm + swap
 // ----------------------------------------------------------------
 describe('refreshHome: warm endpoint and swap behavior', () => {
-  it('calls POST /api/homepage/warm before swapping in content', async () => {
+  // refreshHome is now optimistic-first:
+  //   1. shuffleHome rotates categories client-side (always, instant)
+  //   2. POST /api/homepage/warm fires in background (detached IIFE)
+  //   3. ONLY when warm reports `stats.added > 0` does
+  //      _swapInFreshContent run a homepage GET + phase1/phase2 swap.
+  // 429 / non-429 errors / added=0 all skip the swap entirely.
+  it('shuffleHome runs before warm fetch, and warm precedes any swap', async () => {
+    const cat = makeStoreCategory({ label: 'Cat', itemIds: ['o1','o2','o3','o4','o5','o6'] })
+    seedCategories([cat])
+
     const calls = []
     globalThis.fetch = vi.fn(async (url, opts) => {
       calls.push({ url, method: opts?.method || 'GET' })
-      return { ok: true, json: async () => buildHomepageResponse([]) }
+      if (url.includes('/api/homepage/warm')) {
+        return { ok: true, json: async () => ({ stats: { added: 12 } }) }
+      }
+      return { ok: true, json: async () => buildHomepageResponse([cat], 12) }
     })
 
     await useHomeStore.getState().refreshHome('social')
+    // Drain the detached IIFE chain (warm POST -> _swapInFreshContent GET).
+    await new Promise(r => setTimeout(r, 50))
 
+    const viewedCalls = calls.filter(c => c.url.includes('/api/homepage/viewed'))
     const warmCall = calls.find(c => c.url.includes('/api/homepage/warm'))
+    const homepageCall = calls.find(c => c.url.includes('/api/homepage') && !c.url.includes('/warm') && !c.url.includes('/viewed'))
+
     expect(warmCall).toBeDefined()
     expect(warmCall.method).toBe('POST')
-
-    const homepageCall = calls.find(c => c.url.includes('/api/homepage') && !c.url.includes('/warm'))
     expect(homepageCall).toBeDefined()
-    // Warm must fire before homepage fetch
+    // Optimistic /viewed POSTs from shuffleHome happen before warm fires.
+    expect(calls.indexOf(viewedCalls[0])).toBeLessThan(calls.indexOf(warmCall))
+    // Warm precedes the swap homepage GET (added>0 is what triggers it).
     expect(calls.indexOf(warmCall)).toBeLessThan(calls.indexOf(homepageCall))
   })
 
   it('mode is passed as query param to both warm and homepage requests', async () => {
-    globalThis.fetch = vi.fn(async (_url) => ({
-      ok: true,
-      json: async () => buildHomepageResponse([]),
-    }))
+    const cat = makeStoreCategory({ label: 'Cat', itemIds: ['o1','o2','o3','o4','o5','o6'] })
+    seedCategories([cat])
+
+    globalThis.fetch = vi.fn(async (url) => {
+      if (url.includes('/api/homepage/warm')) {
+        return { ok: true, json: async () => ({ stats: { added: 12 } }) }
+      }
+      return { ok: true, json: async () => buildHomepageResponse([cat], 12) }
+    })
 
     await useHomeStore.getState().refreshHome('nsfw')
+    await new Promise(r => setTimeout(r, 50))
 
     const urls = fetch.mock.calls.map(c => c[0])
     expect(urls.some(u => u.includes('/api/homepage/warm?mode=nsfw'))).toBe(true)
     expect(urls.some(u => u.includes('/api/homepage?mode=nsfw'))).toBe(true)
   })
 
-  it('429 from warm is treated as soft success — swap still proceeds', async () => {
+  it('429 from warm: optimistic shuffle stays, no fresh swap fires', async () => {
     const cat = makeStoreCategory({ label: 'Cat', itemIds: ['old1','old2','old3','old4','old5','old6'] })
     seedCategories([cat])
 
+    const calls = []
     globalThis.fetch = vi.fn(async (url) => {
-      if (url.includes('/warm')) return { ok: false, status: 429, json: async () => ({}) }
+      calls.push(url)
+      if (url.includes('/api/homepage/warm')) {
+        return { ok: false, status: 429, json: async () => ({ cooldown: { nextEligibleAt: new Date(Date.now() + 5 * 60_000).toISOString() } }) }
+      }
       return { ok: true, json: async () => buildHomepageResponse([cat], 12) }
     })
 
     await useHomeStore.getState().refreshHome('social')
+    // Drain the detached IIFE chain (warm 429 path).
+    await new Promise(r => setTimeout(r, 50))
 
-    // Swap should have proceeded — categories should have fresh items in top-5
-    const cats = useHomeStore.getState().categories
-    expect(cats.length).toBeGreaterThan(0)
-    const top5 = cats[0].items.slice(0, 5).map(i => i.id)
-    // Fresh items have id pattern 'fresh_Cat_N'
-    expect(top5.every(id => id.startsWith('fresh_'))).toBe(true)
+    // Optimistic rotation moved old6 to the head; no fresh_ ids appeared.
+    const top5 = useHomeStore.getState().categories[0].items.slice(0, 5).map(i => i.id)
+    expect(top5.some(id => id.startsWith('fresh_'))).toBe(false)
+    expect(top5).toContain('old6')
+    // No /api/homepage GET (other than the optimistic /viewed POSTs).
+    const swapCall = calls.find(u => u.includes('/api/homepage') && !u.includes('/warm') && !u.includes('/viewed'))
+    expect(swapCall).toBeUndefined()
   })
 
-  it('non-429 error from warm aborts — no swap proceeds', async () => {
-    const cat = makeStoreCategory({ label: 'Cat', itemIds: ['old1','old2','old3','old4','old5'] })
+  it('non-429 error from warm: optimistic shuffle stays, no fresh swap fires', async () => {
+    const cat = makeStoreCategory({ label: 'Cat', itemIds: ['old1','old2','old3','old4','old5','old6'] })
     seedCategories([cat])
 
+    const calls = []
     globalThis.fetch = vi.fn(async (url) => {
-      if (url.includes('/warm')) return { ok: false, status: 500 }
+      calls.push(url)
+      if (url.includes('/api/homepage/warm')) return { ok: false, status: 500 }
       return { ok: true, json: async () => buildHomepageResponse([cat], 12) }
     })
 
     await useHomeStore.getState().refreshHome('social')
+    // Drain the detached IIFE chain (warm 500 path).
+    await new Promise(r => setTimeout(r, 50))
 
-    // Categories should be unchanged
-    const cats = useHomeStore.getState().categories
-    expect(cats[0].items[0].id).toBe('old1')
+    // Same expectation as 429: shuffle ran, swap did not.
+    const top5 = useHomeStore.getState().categories[0].items.slice(0, 5).map(i => i.id)
+    expect(top5.some(id => id.startsWith('fresh_'))).toBe(false)
+    const swapCall = calls.find(u => u.includes('/api/homepage') && !u.includes('/warm') && !u.includes('/viewed'))
+    expect(swapCall).toBeUndefined()
   })
 })
 
@@ -436,50 +472,50 @@ describe('_swapInFreshContent phase 1 and phase 2', () => {
 })
 
 // ----------------------------------------------------------------
-// Inventory-depth scenario: what happens when cache is nearly empty
-// This documents the "shuffle does nothing" scenario so the user can
-// understand it's a cache-depth issue, not a code bug.
+// shuffleHome rotation contract (after 2026-04-28 optimistic rewrite)
+//
+// shuffleHome NO LONGER hits /api/homepage. It rotates each
+// non-pinned category's items array client-side and fires
+// fire-and-forget POST /api/homepage/viewed for the leftmost-N
+// items. Bringing in fresh items from the server is now the
+// exclusive job of _swapInFreshContent (called by refreshHome
+// when warm reports stats.added > 0).
 // ----------------------------------------------------------------
-describe('low-inventory scenario (cache nearly exhausted)', () => {
-  it('when /api/homepage returns empty categories, swap leaves existing categories unchanged', async () => {
+describe('shuffleHome client-side rotation contract', () => {
+  it('rotates without ever calling /api/homepage', async () => {
     const cat = makeStoreCategory({ label: 'Trending', itemIds: ['old0','old1','old2','old3','old4'] })
     seedCategories([cat])
 
+    const urls = []
     globalThis.fetch = vi.fn(async (url) => {
-      if (url.includes('/viewed')) return { ok: true, json: async () => ({}) }
-      // Homepage returns no categories (exhausted cache)
-      return { ok: true, json: async () => makeApiResponse([]) }
+      urls.push(url)
+      return { ok: true, json: async () => ({}) }
     })
 
     await useHomeStore.getState().shuffleHome('social')
 
-    // Categories unchanged because freshByLabel has no entries
-    const cats = useHomeStore.getState().categories
-    expect(cats[0].items.map(i => i.id)).toEqual(['old0','old1','old2','old3','old4'])
+    // No /api/homepage GET was issued — only optimistic /viewed POSTs.
+    const swapCall = urls.find(u => u.includes('/api/homepage') && !u.includes('/viewed') && !u.includes('/warm'))
+    expect(swapCall).toBeUndefined()
+    // 5 items, items.length not > ROTATE_BY=5, so step = items.length-1 = 4.
+    // After rotation by 4: [items[4], items[0..3]] -> ['old4', 'old0', 'old1', 'old2', 'old3']
+    expect(useHomeStore.getState().categories[0].items.map(i => i.id))
+      .toEqual(['old4','old0','old1','old2','old3'])
   })
 
-  it('when /api/homepage returns only 5 fresh items, only those 5 rotate into top positions', async () => {
+  it('rotates by ROTATE_BY=5 for rows with more than 5 items', async () => {
     const cat = makeStoreCategory({
       label: 'Trending',
       itemIds: ['old0','old1','old2','old3','old4','old5','old6','old7','old8','old9'],
     })
     seedCategories([cat])
 
-    globalThis.fetch = vi.fn(async (url) => {
-      if (url.includes('/viewed')) return { ok: true, json: async () => ({}) }
-      return { ok: true, json: async () => makeApiResponse([{
-        key: 'trending', label: 'Trending', pinned: false,
-        videos: Array.from({ length: 5 }, (_, i) => makeApiVideo(`fresh_${i}`)),
-      }]) }
-    })
+    globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({}) }))
 
     await useHomeStore.getState().shuffleHome('social')
 
-    const top5 = useHomeStore.getState().categories[0].items.slice(0, 5).map(i => i.id)
-    // Top-5 are fresh
-    expect(top5.every(id => id.startsWith('fresh_'))).toBe(true)
-    // Tail still has old items (phase 2 skipped — fresh.length <= 5)
-    const tail = useHomeStore.getState().categories[0].items.slice(5).map(i => i.id)
-    expect(tail.some(id => id.startsWith('old'))).toBe(true)
+    // step = 5; rotation moves items[5..] to the head.
+    expect(useHomeStore.getState().categories[0].items.map(i => i.id))
+      .toEqual(['old5','old6','old7','old8','old9','old0','old1','old2','old3','old4'])
   })
 })
