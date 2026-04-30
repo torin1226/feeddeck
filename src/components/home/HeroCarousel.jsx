@@ -5,19 +5,16 @@ import useModeStore from '../../stores/modeStore'
 // ============================================================
 // HeroCarousel
 // Horizontal scroll strip of cards at the bottom of the hero.
-// Includes search bar with 380ms debounce and infinite scroll
-// via IntersectionObserver on a sentinel element.
+// Includes search bar with 380ms debounce.
 // ============================================================
 
 export default function HeroCarousel() {
-  const { carouselItems, heroItem, setHeroItem } = useHomeStore()
+  const { carouselItems, heroItem, setHeroItem, setFocusedItem } = useHomeStore()
   const scrollRef = useRef(null)
-  const sentinelRef = useRef(null)
   const [query, setQuery] = useState('')
   const [searchResults, setSearchResults] = useState(null)
   const [savedItems, setSavedItems] = useState(null)
   const searchTimer = useRef(null)
-  const [loadingMore, setLoadingMore] = useState(false)
 
   const displayItems = searchResults || carouselItems
   const activeId = heroItem?.id
@@ -50,15 +47,17 @@ export default function HeroCarousel() {
       setSearchEmpty(false)
       try {
         const mode = useModeStore.getState().isSFW ? 'social' : 'nsfw'
-        const res = await fetch(`/api/search/multi?q=${encodeURIComponent(q)}&limit=20&mode=${mode}`)
-        const data = await res.json()
-        const results = (data.results || []).map(v => ({
+        const signal = AbortSignal.timeout(90_000)
+        const res = await fetch(`/api/search/multi?q=${encodeURIComponent(q)}&limit=20&mode=${mode}`, { signal })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+        const results = (data.videos || []).map(v => ({
           id: v.id || v.url,
           url: v.url,
           title: v.title,
           thumbnail: v.thumbnail,
           thumbnailSm: v.thumbnail,
-          duration: v.duration ? `${Math.floor(v.duration / 60)}:${String(v.duration % 60).padStart(2, '0')}` : '',
+          duration: v.durationFormatted || (v.duration ? `${Math.floor(v.duration / 60)}:${String(v.duration % 60).padStart(2, '0')}` : ''),
           views: v.view_count ? `${Math.floor(v.view_count / 1000)}K` : '',
           uploader: v.uploader || v.source || '',
           source: v.source || '',
@@ -94,48 +93,8 @@ export default function HeroCarousel() {
     if (active) active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
   }, [activeId])
 
-  // Infinite scroll: load more when sentinel is visible
-  useEffect(() => {
-    const sentinel = sentinelRef.current
-    if (!sentinel || searchResults) return
-
-    const obs = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !loadingMore) {
-          setLoadingMore(true)
-          const mode = useModeStore.getState().isSFW ? 'social' : 'nsfw'
-          fetch(`/api/homepage/more?mode=${mode}&offset=${carouselItems.length}&limit=12`)
-            .then((r) => r.ok ? r.json() : Promise.reject())
-            .then((data) => {
-              const newItems = (data.videos || []).map((v) => ({
-                id: v.id || v.url,
-                url: v.url,
-                title: v.title,
-                thumbnail: v.thumbnail,
-                thumbnailSm: v.thumbnail,
-                duration: v.durationFormatted || '',
-                views: v.view_count ? `${Math.floor(v.view_count / 1000)}K` : '',
-                uploader: v.uploader || v.source || '',
-              }))
-              if (newItems.length > 0) {
-                useHomeStore.setState((s) => ({
-                  carouselItems: [...s.carouselItems, ...newItems],
-                }))
-              }
-            })
-            .catch(() => {})
-            .finally(() => setLoadingMore(false))
-        }
-      },
-      { root: scrollRef.current, rootMargin: '0px 200px 0px 0px' }
-    )
-
-    obs.observe(sentinel)
-    return () => obs.disconnect()
-  }, [carouselItems.length, searchResults, loadingMore])
-
   return (
-    <div>
+    <div className="[&_*]:pointer-events-auto">
       {/* Search row */}
       <div className="px-10 mb-1">
         <div className="relative max-w-[520px]">
@@ -201,40 +160,32 @@ export default function HeroCarousel() {
             item={item}
             isActive={item.id === activeId}
             onClick={() => setHeroItem(item)}
+            onHover={() => setFocusedItem(item, 'hero-carousel')}
           />
         ))}
-
-        {/* Infinite scroll sentinel */}
-        {!searchResults && (
-          <div
-            ref={sentinelRef}
-            className="flex-none w-16 h-card-thumb-lg flex items-center justify-center"
-          >
-            {loadingMore && (
-              <div className="w-5 h-5 border-2 border-text-muted/30 border-t-accent rounded-full animate-spin" />
-            )}
-          </div>
-        )}
       </div>
     </div>
   )
 }
 
-function CarouselCard({ item, isActive, onClick }) {
+function CarouselCard({ item, isActive, onClick, onHover }) {
   return (
     <div
       data-card-id={item.id}
       onClick={onClick}
+      onMouseEnter={onHover}
+      onFocus={onHover}
+      tabIndex={0}
       className={`flex-none w-card-lg h-card-thumb-lg rounded-lg overflow-hidden cursor-pointer
         relative transition-all duration-250 ease-out border-2 bg-overlay
         ${isActive ? 'border-accent shadow-glow-accent' : 'border-transparent'}
-        hover:scale-[1.03] hover:-translate-y-0.5 hover:shadow-card-hover`}
+        hover:scale-[var(--hover-scale)] hover:-translate-y-0.5 hover:shadow-card-hover`}
     >
       <img
         src={item.thumbnailSm || item.thumbnail}
         alt={item.title}
         loading="lazy"
-        className="w-full h-full object-cover transition-transform duration-300 hover:scale-[1.03]"
+        className="w-full h-full object-cover transition-transform duration-300 hover:scale-[var(--hover-scale)]"
       />
       {/* Overlay with title */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/[0.75] via-transparent to-transparent flex flex-col justify-end p-2">

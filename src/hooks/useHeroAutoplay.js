@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
+import useHomeStore from '../stores/homeStore'
 
 // ============================================================
 // useHeroAutoplay Hook
@@ -113,16 +114,27 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
     if (vid) vid.muted = muted
   }, [muted])
 
+  // Yield the playback singleton when a card preview owns focus.
+  // Cards in gallery/top10/etc. surfaces play their own muted preview via
+  // useFocusPreview; the hero pauses for the duration of that hover so two
+  // videos never compete. Hero and hero-carousel surfaces don't trigger a
+  // card preview, so they leave hero autoplay running.
+  const focusedSurface = useHomeStore((s) => s.focusedItem?.surface)
+  const cardPreviewActive = focusedSurface
+    && focusedSurface !== 'hero'
+    && focusedSurface !== 'hero-carousel'
+
   // Pause autoplay when theatre mode activates (theatre has its own video)
+  // OR when a card preview has claimed the playback singleton.
   useEffect(() => {
     const vid = videoRef.current
     if (!vid) return
-    if (theatreMode) {
+    if (theatreMode || cardPreviewActive) {
       vid.pause()
     } else if (autoplayReady && autoplayUrl && !reducedMotion) {
       vid.play().catch(() => {})
     }
-  }, [theatreMode, autoplayReady, autoplayUrl, reducedMotion])
+  }, [theatreMode, cardPreviewActive, autoplayReady, autoplayUrl, reducedMotion])
 
   const toggleMute = useCallback(() => {
     setMuted(prev => !prev)

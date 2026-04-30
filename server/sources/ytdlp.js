@@ -303,8 +303,7 @@ export class YtDlpAdapter extends SourceAdapter {
   // Convert social feed URLs (that require auth) to yt-dlp search queries
   _socialFeedToSearch(feedUrl, limit) {
     if (/youtube\.com\/feed\/trending/i.test(feedUrl)) {
-      // YouTube trending: use the trending music/videos playlist (public, no auth)
-      return 'https://www.youtube.com/playlist?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf'
+      return `ytsearch${limit}:trending videos today`
     }
     if (/youtube\.com\/feed\//i.test(feedUrl)) {
       // Other YouTube feeds (subscriptions, etc.) — fallback to popular search

@@ -11,7 +11,11 @@
     "preview": "vite preview",
     "start": "node server/index.js",
     "test": "vitest run",
-    "lint": "eslint src/ server/"
+    "lint": "eslint src/ server/",
+    "warm": "node server/scripts/warm-cache.js",
+    "warm:social": "node server/scripts/warm-cache.js --social",
+    "warm:nsfw": "node server/scripts/warm-cache.js --nsfw",
+    "diagnose:ph": "node server/scripts/diagnose-ph-personal.mjs"
   },
   "dependencies": {
     "@esbuild/linux-x64": "^0.28.0",

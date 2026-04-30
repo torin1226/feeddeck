@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { logger } from './logger.js'
+import { inferMode } from './utils.js'
 
 // ============================================================
 // Database Setup
@@ -47,9 +48,9 @@ function _seedCategories(database) {
     ['nsfw_redgifs_couple', 'RedGifs Couples',      'https://www.redgifs.com/search?query=couple&order=trending',                  'nsfw', 23],
     ['nsfw_fikfap_trend',   'FikFap Trending',      'https://fikfap.com/trending',                                                 'nsfw', 24],
     // Social categories (19)
-    ['social_trending',      'Trending',            'https://www.youtube.com/feed/trending',                                       'social', 0],
+    ['social_trending',      'Trending',            'ytsearch10:trending videos today',                                            'social', 0],
     ['social_subscriptions', 'My Subscriptions',    'https://www.youtube.com/feed/subscriptions',                                  'social', 1],
-    ['social_shorts',        'Shorts',              'https://www.youtube.com/shorts',                                              'social', 2],
+    ['social_shorts',        'Shorts',              'ytsearch10:youtube shorts trending today',                                    'social', 2],
     ['social_viral',         'Viral This Week',     'ytsearch10:viral videos this week',                                           'social', 3],
     ['social_tech',          'Tech & Gadgets',      'ytsearch10:best new tech gadgets',                                            'social', 4],
     ['social_design',        'Design',              'ytsearch10:UI UX design tips',                                                'social', 5],
@@ -70,6 +71,80 @@ function _seedCategories(database) {
   for (const row of categories) {
     insert.run(...row)
   }
+}
+
+// System searches from CONTENT_QUERIES.md — saved searches that boost feed scoring.
+// Matched videos get +SYSTEM_SEARCH points (see scoring.js). They do not add homepage rows on their own.
+function _seedSystemSearches(database) {
+  const insert = database.prepare(
+    'INSERT OR IGNORE INTO system_searches (name, query, mode, weight) VALUES (?, ?, ?, ?)'
+  )
+  const rows = [
+    // NSFW: Personalized Feeds (1.5)
+    ['Recommended For You',    'https://www.pornhub.com/recommended',                                    'nsfw', 1.5],
+    ['My Subscriptions',       'https://www.pornhub.com/subscriptions',                                  'nsfw', 1.5],
+    ['RedGifs Feed',           'https://www.redgifs.com/trending',                                       'nsfw', 1.5],
+    ['FikFap Feed',            'https://fikfap.com/trending',                                            'nsfw', 1.5],
+    // NSFW: Taste-Specific (1.2)
+    ['Amateur HD',             'https://www.pornhub.com/video/search?search=amateur+homemade&hd=1&o=tr', 'nsfw', 1.2],
+    ['POV Trending',           'https://www.pornhub.com/video/search?search=pov&hd=1&o=tr',              'nsfw', 1.2],
+    ['Real Couples',           'https://www.pornhub.com/video/search?search=real+couple&hd=1&o=tr',      'nsfw', 1.2],
+    ['Solo',                   'https://www.pornhub.com/video/search?search=solo&hd=1&o=tr',             'nsfw', 1.2],
+    ['Sensual / Romantic',     'https://www.pornhub.com/video/search?search=sensual+romantic&hd=1',      'nsfw', 1.2],
+    ['Massage',                'https://www.pornhub.com/video/search?search=massage&hd=1&o=tr',          'nsfw', 1.2],
+    ['Casting',                'https://www.pornhub.com/video/search?search=casting&hd=1&o=tr',          'nsfw', 1.2],
+    ['Fit / Yoga',             'https://www.pornhub.com/video/search?search=fit+yoga&hd=1&o=tr',         'nsfw', 1.2],
+    ['Cosplay',                'https://www.pornhub.com/video/search?search=cosplay&hd=1&o=tr',          'nsfw', 1.2],
+    // NSFW: Discovery (1.0)
+    ['Trending Today',         'https://www.pornhub.com/video?o=tr',                                     'nsfw', 1.0],
+    ['Hottest Rated',          'https://www.pornhub.com/video?o=ht',                                     'nsfw', 1.0],
+    ['Most Viewed This Week',  'https://www.pornhub.com/video?o=mv&t=w',                                 'nsfw', 1.0],
+    ['New This Week',          'https://www.pornhub.com/video?o=cm&t=w',                                 'nsfw', 1.0],
+    ['Verified Amateurs',      'https://www.pornhub.com/categories/verified-amateurs',                   'nsfw', 1.0],
+    ['XVideos Best',           'https://www.xvideos.com/best',                                           'nsfw', 1.0],
+    ['SpankBang Trending',     'https://spankbang.com/trending',                                         'nsfw', 1.0],
+    // NSFW: Short-Form (1.3)
+    ['RedGifs Clips Only',     'https://www.redgifs.com/trending?type=g',                                'nsfw', 1.3],
+    ['PH Shorts',              'https://www.pornhub.com/video/search?search=amateur&max_duration=5&o=tr','nsfw', 1.3],
+    // Social: Cookies-Powered Feeds (1.5)
+    ['My Subscriptions',       'https://www.youtube.com/feed/subscriptions',                             'social', 1.5],
+    ['YouTube Trending',       'https://www.youtube.com/feed/trending',                                  'social', 1.5],
+    ['YouTube Shorts',         'https://www.youtube.com/shorts',                                         'social', 1.5],
+    ['TikTok For You',         'https://www.tiktok.com/foryou',                                          'social', 1.5],
+    ['TikTok Trending',        'https://www.tiktok.com/trending',                                        'social', 1.5],
+    ['Reddit Front Page',      'https://www.reddit.com/r/videos/hot',                                    'social', 1.5],
+    // Social: Music (1.3)
+    ['R&B Music Videos',       'ytsearch10:R&B music video new',                                         'social', 1.3],
+    ['Tiny Desk Concerts',     'ytsearch10:tiny desk concert',                                           'social', 1.3],
+    ['DJ Sets Sunday Clean',   'ytsearch10:DJ set house music cleaning vibes',                           'social', 1.3],
+    ['Live Looping',           'ytsearch10:live looping performance',                                    'social', 1.3],
+    ['Jazz Cafe Ambience',     'ytsearch10:jazz cafe ambience',                                          'social', 1.3],
+    ['Chill Beats',            'ytsearch10:lofi hip hop chill beats study',                              'social', 1.3],
+    ['Album Reactions',        'ytsearch10:album reaction first listen R&B',                             'social', 1.3],
+    // Social: Tech & Design (1.2)
+    ['Future of UX Design',    'ytsearch10:future of UX design',                                         'social', 1.2],
+    ['Vibe Coding',            'ytsearch10:vibe coding new skills AI',                                   'social', 1.2],
+    ['Fireship',               'https://www.youtube.com/@Fireship/shorts',                               'social', 1.2],
+    ['UI Design Tips',         'ytsearch10:UI design tips',                                              'social', 1.2],
+    ['AI Tools for Designers', 'ytsearch10:AI tools for designers',                                      'social', 1.2],
+    // Social: Funny / Viral (1.2)
+    ['Funny Sketches New',     'ytsearch10:funny sketch comedy new',                                     'social', 1.2],
+    ['Vine Compilations',      'ytsearch10:vine compilation funny best',                                 'social', 1.2],
+    ['Reddit Unexpected',      'https://www.reddit.com/r/Unexpected/hot',                                'social', 1.2],
+    ['Reddit NextLevel',       'https://www.reddit.com/r/nextfuckinglevel/hot',                          'social', 1.2],
+    ['Try Not to Laugh',       'ytsearch10:try not to laugh challenge',                                  'social', 1.2],
+    // Social: Lifestyle & Culture (1.0)
+    ['City Walks 4K',          'ytsearch10:city walking tour 4K',                                        'social', 1.0],
+    ['Street Food',            'ytsearch10:street food tour',                                            'social', 1.0],
+    ['Home Office Setups',     'ytsearch10:home office setup tour',                                      'social', 1.0],
+    // Social: News & Current (1.0)
+    ['Critical News Today',    'ytsearch10:breaking news today important',                               'social', 1.0],
+    ['US Politics Update',     'ytsearch10:US politics update this week',                                'social', 1.0],
+  ]
+  for (const row of rows) {
+    insert.run(...row)
+  }
+  logger.info('Seeded system_searches', { count: rows.length })
 }
 
 export function initDatabase() {
@@ -139,6 +214,9 @@ export function initDatabase() {
       source TEXT,
       uploader TEXT,
       view_count INTEGER DEFAULT 0,
+      like_count INTEGER,
+      subscriber_count INTEGER,
+      upload_date TEXT,
       tags TEXT DEFAULT '[]',
       fetched_at DATETIME DEFAULT (datetime('now')),
       expires_at DATETIME DEFAULT (datetime('now', '+7 days')),
@@ -171,6 +249,10 @@ export function initDatabase() {
       thumbnail TEXT,
       duration INTEGER DEFAULT 0,
       orientation TEXT DEFAULT 'horizontal',
+      view_count INTEGER,
+      like_count INTEGER,
+      subscriber_count INTEGER,
+      upload_date TEXT,
       fetched_at DATETIME DEFAULT (datetime('now')),
       expires_at DATETIME DEFAULT (datetime('now', '+6 hours')),
       watched INTEGER DEFAULT 0,
@@ -236,6 +318,7 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_history_date ON history(watched_at DESC);
     CREATE INDEX IF NOT EXISTS idx_homepage_cache_cat_viewed ON homepage_cache(category_key, viewed);
     CREATE INDEX IF NOT EXISTS idx_homepage_cache_expires ON homepage_cache(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_homepage_cache_url ON homepage_cache(url);
     CREATE INDEX IF NOT EXISTS idx_categories_mode ON categories(mode, sort_order);
     CREATE INDEX IF NOT EXISTS idx_feed_cache_mode ON feed_cache(mode, watched, expires_at);
     CREATE INDEX IF NOT EXISTS idx_feed_cache_url ON feed_cache(url);
@@ -285,6 +368,90 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_sub_backups_platform ON subscription_backups(platform);
     CREATE INDEX IF NOT EXISTS idx_sub_backups_handle ON subscription_backups(handle);
     CREATE INDEX IF NOT EXISTS idx_sub_backups_display_name ON subscription_backups(display_name);
+
+    -- 3.12 Taste Feedback: individual video ratings (thumbs up/down)
+    CREATE TABLE IF NOT EXISTS video_ratings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      video_url TEXT NOT NULL,
+      surface_type TEXT NOT NULL DEFAULT 'home_row',
+      surface_key TEXT,
+      rating TEXT NOT NULL CHECK(rating IN ('up', 'down')),
+      tags TEXT DEFAULT '[]',
+      creator TEXT,
+      title TEXT,
+      thumbnail TEXT,
+      rated_at DATETIME DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_video_ratings_url ON video_ratings(video_url);
+    CREATE INDEX IF NOT EXISTS idx_video_ratings_rating ON video_ratings(rating, rated_at);
+
+    -- 3.12 Taste Feedback: creator-level affinity from thumbs-up
+    CREATE TABLE IF NOT EXISTS creator_boosts (
+      creator TEXT PRIMARY KEY,
+      boost_score REAL DEFAULT 0.0,
+      surface_boosts TEXT DEFAULT '{}',
+      last_updated DATETIME DEFAULT (datetime('now'))
+    );
+
+    -- 3.12 Taste Feedback: multi-signal taste profile (replaces tag_preferences as primary scoring input)
+    CREATE TABLE IF NOT EXISTS taste_profile (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      signal_type TEXT NOT NULL,
+      signal_value TEXT NOT NULL,
+      weight REAL DEFAULT 0.0,
+      surface_key TEXT,
+      updated_at DATETIME DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_taste_profile_type ON taste_profile(signal_type, signal_value);
+    CREATE INDEX IF NOT EXISTS idx_taste_profile_surface ON taste_profile(surface_key);
+
+    -- Search history: every completed search recorded for empty-state fallback
+    -- and future taste-profile signals. query_normalized lets us deduplicate.
+    CREATE TABLE IF NOT EXISTS search_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      query TEXT NOT NULL,
+      query_normalized TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'social',
+      result_count INTEGER DEFAULT 0,
+      clicked_count INTEGER DEFAULT 0,
+      searched_at TEXT NOT NULL DEFAULT (datetime('now')),
+      source TEXT DEFAULT 'manual'
+    );
+    CREATE INDEX IF NOT EXISTS idx_search_history_mode ON search_history(mode, searched_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_search_history_normalized ON search_history(query_normalized, mode);
+
+    -- Persistent rows: sticky homepage shelves whose content never auto-purges.
+    -- Used for "My PornHub Likes", "From Your Subscriptions", and per-model rows.
+    CREATE TABLE IF NOT EXISTS persistent_rows (
+      key TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'nsfw',
+      source TEXT NOT NULL,
+      fetcher TEXT NOT NULL,
+      fetcher_arg TEXT,
+      sort_order INTEGER DEFAULT 0,
+      active INTEGER DEFAULT 1,
+      last_fetched DATETIME,
+      fetch_interval INTEGER DEFAULT 3600
+    );
+
+    CREATE TABLE IF NOT EXISTS persistent_row_items (
+      row_key TEXT NOT NULL,
+      video_url TEXT NOT NULL,
+      title TEXT,
+      thumbnail TEXT,
+      duration INTEGER DEFAULT 0,
+      uploader TEXT,
+      view_count INTEGER,
+      like_count INTEGER,
+      upload_date TEXT,
+      liked_at DATETIME,
+      added_at DATETIME DEFAULT (datetime('now')),
+      tags TEXT DEFAULT '[]',
+      PRIMARY KEY (row_key, video_url),
+      FOREIGN KEY (row_key) REFERENCES persistent_rows(key) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_persistent_items_row ON persistent_row_items(row_key, liked_at DESC, added_at DESC);
   `)
 
   // Seed default categories if empty
@@ -334,11 +501,56 @@ export function initDatabase() {
       ['spankbang.com',  'nsfw',   'SpankBang',         'https://spankbang.com/trending',       0.7],
       ['redgifs.com',    'nsfw',   'RedGifs',           'https://www.redgifs.com/trending',     0.9],
       ['fikfap.com',     'nsfw',   'FikFap',            'https://fikfap.com/trending',          0.7],
+      // RedTube/YouPorn/xHamster: scraper configs exist (sources/scraper.js), wire them up.
+      ['redtube.com',    'nsfw',   'RedTube',           'https://www.redtube.com/mostviewed?period=today', 0.7],
+      ['youporn.com',    'nsfw',   'YouPorn',           'https://www.youporn.com/most_viewed/?t=t',        0.7],
+      ['xhamster.com',   'nsfw',   'xHamster',          'https://xhamster.com/trending',                   0.7],
     ]
     for (const row of newSources) {
       insertSrc.run(...row)
     }
   } catch {}
+
+  // Migrate: add diversifying NSFW categories if missing (Phase 1.4)
+  try {
+    const insertCat = db.prepare('INSERT OR IGNORE INTO categories (key, label, query, mode, sort_order) VALUES (?, ?, ?, ?, ?)')
+    const extraCategories = [
+      ['nsfw_redgifs_pov',   'POV Clips',     'https://www.redgifs.com/search?query=pov&order=trending',  'nsfw', 25],
+      ['nsfw_redgifs_solo',  'RedGifs Solo',  'https://www.redgifs.com/search?query=solo&order=trending', 'nsfw', 26],
+      ['nsfw_xvideos_new',   'XVideos New',   'https://www.xvideos.com/new',                              'nsfw', 27],
+      ['nsfw_xvideos_hits',  'XVideos Hits',  'https://www.xvideos.com/hits',                             'nsfw', 28],
+      ['nsfw_spankbang_new', 'SpankBang New', 'https://spankbang.com/new_videos',                         'nsfw', 29],
+      ['nsfw_fikfap_new',    'FikFap New',    'https://fikfap.com/new',                                   'nsfw', 30],
+    ]
+    for (const row of extraCategories) {
+      insertCat.run(...row)
+    }
+  } catch (err) {
+    logger.error('Diversifying NSFW category seed failed:', { error: err.message })
+  }
+
+  // Seed system_searches if empty (Phase 1.3): saved searches that boost feed scoring (+10 pts via scoring.js).
+  // 22 NSFW + 28 social entries from CONTENT_QUERIES.md.
+  try {
+    const ssCount = db.prepare('SELECT COUNT(*) as n FROM system_searches').get()
+    if (ssCount.n === 0) {
+      _seedSystemSearches(db)
+    }
+  } catch (err) {
+    logger.error('system_searches seed failed:', { error: err.message })
+  }
+
+  // Seed persistent_rows: PH likes + PH subscriptions feed lead the NSFW homepage.
+  // Top-3 model rows are added dynamically by selectTopPHModels() during warm-cache.
+  try {
+    const insertPR = db.prepare(
+      'INSERT OR IGNORE INTO persistent_rows (key, label, mode, source, fetcher, sort_order) VALUES (?, ?, ?, ?, ?, ?)'
+    )
+    insertPR.run('ph_likes', 'My PornHub Likes',        'nsfw', 'pornhub.com', 'ph_likes',         0)
+    insertPR.run('ph_subs',  'From Your Subscriptions', 'nsfw', 'pornhub.com', 'ph_subscriptions', 1)
+  } catch (err) {
+    logger.error('persistent_rows seed failed:', { error: err.message })
+  }
 
   // Migrate: fix social source queries from feed URLs (need auth) to search queries
   try {
@@ -397,11 +609,140 @@ export function initDatabase() {
     }
   } catch {}
 
+  // Migrate: add upload_date / like_count / subscriber_count to feed_cache and homepage_cache
+  for (const table of ['feed_cache', 'homepage_cache']) {
+    try {
+      const cols = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name))
+      const additions = [
+        ['upload_date', 'TEXT'],
+        ['like_count', 'INTEGER'],
+        ['subscriber_count', 'INTEGER'],
+      ]
+      if (table === 'feed_cache') additions.push(['view_count', 'INTEGER'])
+      for (const [name, type] of additions) {
+        if (!cols.has(name)) {
+          db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`)
+        }
+      }
+    } catch (err) {
+      logger.warn(`Migration failed for ${table}:`, { error: err.message })
+    }
+  }
+
   // Migrate: fix 'Your Subscriptions' label to 'My Subscriptions' to match BrowseSection TARGET_LABELS
   try {
     db.exec("UPDATE categories SET label = 'My Subscriptions' WHERE key = 'social_subscriptions' AND label = 'Your Subscriptions'")
     db.exec("UPDATE sources SET label = 'My Subscriptions' WHERE domain = 'subscriptions' AND label = 'Your Subscriptions'")
   } catch {}
+
+  // Migrate: fix social_trending + social_shorts to ytsearch queries -- SPA pages can't be extracted by yt-dlp
+  try {
+    db.prepare("UPDATE categories SET query = 'ytsearch10:trending videos today' WHERE key = 'social_trending' AND query = 'https://www.youtube.com/feed/trending'").run()
+    db.prepare("UPDATE categories SET query = 'ytsearch10:youtube shorts trending today' WHERE key = 'social_shorts' AND query = 'https://www.youtube.com/shorts'").run()
+    db.prepare("DELETE FROM homepage_cache WHERE category_key IN ('social_trending', 'social_shorts') AND viewed = 0").run()
+  } catch {}
+
+  // Migrate: add title + thumbnail columns to video_ratings if missing
+  try {
+    const cols = db.prepare("PRAGMA table_info(video_ratings)").all()
+    if (cols.length > 0 && !cols.some(c => c.name === 'title')) {
+      db.exec("ALTER TABLE video_ratings ADD COLUMN title TEXT")
+      db.exec("ALTER TABLE video_ratings ADD COLUMN thumbnail TEXT")
+    }
+  } catch {}
+
+  // ============================================================
+  // MODE FIREWALL MIGRATIONS (2026-04-25)
+  // Add mode columns to mode-blind tables so cross-mode content
+  // can be filtered at the query layer. Backfill via inferMode()
+  // on existing rows that have a URL.
+  // ============================================================
+
+  // video_ratings: add mode column + backfill from video_url
+  try {
+    const cols = db.prepare("PRAGMA table_info(video_ratings)").all()
+    if (cols.length > 0 && !cols.some(c => c.name === 'mode')) {
+      db.exec("ALTER TABLE video_ratings ADD COLUMN mode TEXT")
+      const rows = db.prepare("SELECT id, video_url FROM video_ratings WHERE mode IS NULL").all()
+      const upd = db.prepare("UPDATE video_ratings SET mode = ? WHERE id = ?")
+      for (const r of rows) {
+        upd.run(inferMode(r.video_url), r.id)
+      }
+      logger.info('Backfilled video_ratings.mode', { rows: rows.length })
+    }
+  } catch (err) {
+    logger.error('video_ratings mode migration failed:', { error: err.message })
+  }
+
+  // queue: add mode column + backfill from video_url
+  try {
+    const cols = db.prepare("PRAGMA table_info(queue)").all()
+    if (cols.length > 0 && !cols.some(c => c.name === 'mode')) {
+      db.exec("ALTER TABLE queue ADD COLUMN mode TEXT")
+      const rows = db.prepare("SELECT id, video_url FROM queue WHERE mode IS NULL").all()
+      const upd = db.prepare("UPDATE queue SET mode = ? WHERE id = ?")
+      for (const r of rows) {
+        upd.run(inferMode(r.video_url), r.id)
+      }
+      logger.info('Backfilled queue.mode', { rows: rows.length })
+    }
+  } catch (err) {
+    logger.error('queue mode migration failed:', { error: err.message })
+  }
+
+  // tag_preferences: add mode column. Existing rows stay NULL (legacy global).
+  // New writes must specify mode. Reads filter by mode OR mode IS NULL.
+  try {
+    const cols = db.prepare("PRAGMA table_info(tag_preferences)").all()
+    if (cols.length > 0 && !cols.some(c => c.name === 'mode')) {
+      db.exec("ALTER TABLE tag_preferences ADD COLUMN mode TEXT")
+      logger.info('Added tag_preferences.mode column (legacy rows remain NULL)')
+    }
+  } catch (err) {
+    logger.error('tag_preferences mode migration failed:', { error: err.message })
+  }
+
+  // taste_profile: add mode column.
+  try {
+    const cols = db.prepare("PRAGMA table_info(taste_profile)").all()
+    if (cols.length > 0 && !cols.some(c => c.name === 'mode')) {
+      db.exec("ALTER TABLE taste_profile ADD COLUMN mode TEXT")
+      logger.info('Added taste_profile.mode column (legacy rows remain NULL)')
+    }
+  } catch (err) {
+    logger.error('taste_profile mode migration failed:', { error: err.message })
+  }
+
+  // creator_boosts: add mode column.
+  try {
+    const cols = db.prepare("PRAGMA table_info(creator_boosts)").all()
+    if (cols.length > 0 && !cols.some(c => c.name === 'mode')) {
+      db.exec("ALTER TABLE creator_boosts ADD COLUMN mode TEXT")
+      logger.info('Added creator_boosts.mode column (legacy rows remain NULL)')
+    }
+  } catch (err) {
+    logger.error('creator_boosts mode migration failed:', { error: err.message })
+  }
+
+  // Migrate: seed taste_profile from existing tag_preferences (one-time)
+  try {
+    const tasteCount = db.prepare('SELECT COUNT(*) as n FROM taste_profile').get()
+    if (tasteCount.n === 0) {
+      const tagPrefs = db.prepare('SELECT tag, preference, updated_at FROM tag_preferences').all()
+      if (tagPrefs.length > 0) {
+        const insertTaste = db.prepare(
+          'INSERT INTO taste_profile (signal_type, signal_value, weight, surface_key, updated_at) VALUES (?, ?, ?, NULL, ?)'
+        )
+        for (const tp of tagPrefs) {
+          const weight = tp.preference === 'liked' ? 0.5 : -0.5
+          insertTaste.run('tag', tp.tag, weight, tp.updated_at || new Date().toISOString())
+        }
+        logger.info('Migrated tag_preferences into taste_profile', { count: tagPrefs.length })
+      }
+    }
+  } catch (err) {
+    logger.error('taste_profile migration failed:', { error: err.message })
+  }
 
   logger.info('Database initialized', { path: DB_PATH })
   return db

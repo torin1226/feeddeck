@@ -283,7 +283,7 @@ function RelatedVideoCard({ item, onNavigate, onQueue }) {
       onClick={onNavigate}
       onKeyDown={(e) => { if (e.key === 'Enter') onNavigate() }}
       className="cursor-pointer group rounded-lg overflow-hidden bg-raised
-        transition-all duration-200 hover:scale-[1.02] hover:shadow-card-hover"
+        transition-all duration-200 hover:scale-[var(--hover-scale)] hover:shadow-card-hover"
     >
       {/* Thumbnail */}
       <div className="relative" style={{ aspectRatio: '16 / 9' }}>

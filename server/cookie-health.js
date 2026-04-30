@@ -31,7 +31,11 @@ const PROBES = {
   },
   pornhub: {
     label: 'PornHub',
-    testUrl: 'https://www.pornhub.com/view_video.php?viewkey=ph5f8b3c7a21a28',
+    // HYDRATION: use a category page, not a specific video. Individual videos get
+    // taken down (the previous probe URL `view_video.php?viewkey=ph5f8b3c7a21a28`
+    // started returning 404 in April 2026). The /video?o=tr trending page always
+    // exists as long as PH is reachable, and yt-dlp can extract playlist entries.
+    testUrl: 'https://www.pornhub.com/video?o=tr',
     expiredPatterns: [
       /login required/i,
       /cookies.*invalid/i,
@@ -109,6 +113,12 @@ async function _probeOneDomain(key, probe) {
       return { status: 'healthy', message: `${probe.label} cookies valid (rate-limited, but auth works)` }
     }
 
-    return { status: 'error', message: `${probe.label} probe failed: ${msg.substring(0, 100)}` }
+    // HYDRATION: prefer the first "ERROR: ..." line from stderr (yt-dlp's actual
+    // failure reason) over the verbose Node "Command failed: ..." prefix that
+    // includes the entire command line. The old 100-char cap truncated mid-path
+    // and made stale-URL bugs look like cookie path bugs.
+    const ytErr = stderr.split('\n').find(l => l.startsWith('ERROR:'))
+    const detail = ytErr ? ytErr.replace(/^ERROR:\s*/, '') : msg
+    return { status: 'error', message: `${probe.label} probe failed: ${detail.substring(0, 250)}` }
   }
 }

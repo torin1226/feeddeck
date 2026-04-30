@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import useViewTransitionNavigate from '../../hooks/useViewTransitionNavigate'
 import useHomeStore from '../../stores/homeStore'
 import useModeStore from '../../stores/modeStore'
@@ -15,7 +15,11 @@ import useThemeStore from '../../stores/themeStore'
 export default function HomeHeader() {
   const navigate = useViewTransitionNavigate()
   const location = useLocation()
+  const [urlParams] = useSearchParams()
   const { setHeroItem, toggleTheatre } = useHomeStore()
+  const shuffleHome = useHomeStore(s => s.shuffleHome)
+  const shuffling = useHomeStore(s => s.shuffling)
+  const refreshing = useHomeStore(s => s.refreshing)
   const { isSFW, toggleMode } = useModeStore()
   const { theme, toggleTheme } = useThemeStore()
 
@@ -25,6 +29,7 @@ export default function HomeHeader() {
   const [results, setResults] = useState(null)
   const [searching, setSearching] = useState(false)
   const [noResults, setNoResults] = useState(false)
+  const [searchError, setSearchError] = useState(null)
 
   const inputRef = useRef(null)
   const searchTimer = useRef(null)
@@ -67,6 +72,7 @@ export default function HomeHeader() {
     setQuery('')
     setResults(null)
     setNoResults(false)
+    setSearchError(null)
     setSearching(false)
     clearTimeout(searchTimer.current)
   }, [])
@@ -75,10 +81,19 @@ export default function HomeHeader() {
     if (!q.trim()) return
     setSearching(true)
     setNoResults(false)
+    setSearchError(null)
     try {
       const mode = useModeStore.getState().isSFW ? 'social' : 'nsfw'
-      const res = await fetch(`/api/search/multi?q=${encodeURIComponent(q)}&limit=12&mode=${mode}`)
-      const data = await res.json()
+      // Search fans out to all sources server-side; YouTube via yt-dlp can take ~30-60s
+      const signal = AbortSignal.timeout(90_000)
+      const res = await fetch(`/api/search/multi?q=${encodeURIComponent(q)}&limit=12&mode=${mode}`, { signal })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setResults(null)
+        setNoResults(false)
+        setSearchError(data.error || `Search failed (HTTP ${res.status})`)
+        return
+      }
       const videos = (data.videos || data.results || []).map(v => ({
         id: v.id || v.url,
         url: v.url,
@@ -96,13 +111,49 @@ export default function HomeHeader() {
         setResults(null)
         setNoResults(true)
       }
-    } catch {
+    } catch (err) {
       setResults(null)
-      setNoResults(true)
+      setNoResults(false)
+      const msg = err?.name === 'TimeoutError' || err?.name === 'AbortError'
+        ? 'Search timed out — try again or a more specific query'
+        : err?.message || 'Search request failed'
+      setSearchError(msg)
     } finally {
       setSearching(false)
     }
   }, [])
+
+  // Submit (Enter): commit to the dedicated SearchPage instead of fetching inline.
+  // Use replace when already on /search to avoid back-button spam.
+  const submitSearch = useCallback((q) => {
+    const trimmed = (q || '').trim()
+    if (!trimmed) return
+    const target = `/search?q=${encodeURIComponent(trimmed)}`
+    if (location.pathname === '/search') {
+      navigate(target, { replace: true })
+    } else {
+      navigate(target)
+    }
+    clearTimeout(searchTimer.current)
+    setSearchOpen(false)
+    setResults(null)
+    setNoResults(false)
+    setSearchError(null)
+    setSearching(false)
+  }, [location.pathname, navigate])
+
+  // When on /search, pre-fill the input with the q URL param so the user
+  // can edit and re-submit. Open the search bar so the input is visible.
+  useEffect(() => {
+    if (location.pathname !== '/search') return
+    const urlQ = urlParams.get('q') || ''
+    if (urlQ && urlQ !== query) {
+      setQuery(urlQ)
+      setSearchOpen(true)
+    }
+    // Intentionally only react to URL changes, not local query edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, urlParams])
 
   const handleInput = useCallback((value) => {
     setQuery(value)
@@ -110,6 +161,7 @@ export default function HomeHeader() {
     if (!value.trim()) {
       setResults(null)
       setNoResults(false)
+      setSearchError(null)
       return
     }
     searchTimer.current = setTimeout(() => doSearch(value.trim()), 300)
@@ -142,10 +194,7 @@ export default function HomeHeader() {
 
   return (
     <header
-      className="fixed top-0 left-0 right-0 z-system h-14 flex items-center justify-between px-10"
-      style={{
-        background: `linear-gradient(to bottom, var(--color-surface) 0%, transparent 100%)`,
-      }}
+      className="fixed top-0 left-0 right-0 z-system h-14 flex items-center justify-between px-10 bg-white/[0.03] backdrop-blur-2xl border-b border-white/[0.06]"
     >
       {/* Logo */}
       <div className="text-lg font-bold tracking-tight font-display">
@@ -153,33 +202,30 @@ export default function HomeHeader() {
       </div>
 
       {/* Nav */}
-      <nav className="flex gap-7">
+      <nav className="flex gap-1">
         {navItems.map((item) => (
           <button
             key={item.path}
             onClick={() => navigate(item.path)}
-            className={`text-sm font-medium transition-colors cursor-pointer relative pb-0.5 ${
+            className={`text-sm font-medium transition-all duration-150 cursor-pointer rounded-full px-3.5 py-1.5 border ${
               location.pathname === item.path
-                ? 'text-text-primary'
-                : 'text-text-secondary hover:text-text-primary'
+                ? 'text-accent bg-accent/[0.10] border-accent/[0.20]'
+                : 'text-text-secondary border-transparent hover:text-text-primary hover:bg-white/[0.05] hover:border-white/[0.06]'
             }`}
           >
             {item.label}
-            {location.pathname === item.path && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-accent rounded-full" />
-            )}
           </button>
         ))}
       </nav>
 
       {/* Right side */}
-      <div className="flex items-center gap-3.5">
+      <div className="flex items-center gap-5">
         {/* Search */}
         <div ref={containerRef} className="relative">
           <div className="flex items-center">
             {/* Search input — expands from the icon */}
             <div
-              className={`flex items-center overflow-hidden transition-all duration-200 ease-out rounded-full
+              className={`relative flex items-center overflow-hidden transition-all duration-200 ease-out rounded-full
                 ${searchOpen
                   ? 'w-64 sm:w-80 bg-white/[0.07] border border-white/10 backdrop-blur-lg'
                   : 'w-0'
@@ -192,7 +238,7 @@ export default function HomeHeader() {
                   value={query}
                   onChange={(e) => handleInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && query.trim()) doSearch(query.trim())
+                    if (e.key === 'Enter' && query.trim()) submitSearch(query.trim())
                     if (e.key === 'Escape') closeSearch()
                   }}
                   placeholder="Search videos..."
@@ -203,8 +249,8 @@ export default function HomeHeader() {
               )}
               {searchOpen && query && (
                 <button
-                  onClick={() => { setQuery(''); setResults(null); setNoResults(false); inputRef.current?.focus() }}
-                  className="absolute right-10 text-text-muted hover:text-text-primary transition-colors text-xs px-1"
+                  onClick={() => { setQuery(''); setResults(null); setNoResults(false); setSearchError(null); inputRef.current?.focus() }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary transition-colors text-xs px-1"
                 >
                   &#10005;
                 </button>
@@ -226,9 +272,9 @@ export default function HomeHeader() {
           </div>
 
           {/* Search results dropdown */}
-          {searchOpen && (results || searching || noResults) && (
+          {searchOpen && (results || searching || noResults || searchError) && (
             <div
-              className="absolute right-0 top-full mt-2 w-[400px] max-h-[70vh] overflow-y-auto
+              className="absolute right-0 top-full mt-2 w-[400px] max-h-[60vh] overflow-y-auto
                 bg-surface/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl
                 scrollbar-none"
               style={{ scrollbarWidth: 'none' }}
@@ -241,8 +287,16 @@ export default function HomeHeader() {
                 </div>
               )}
 
+              {/* Error */}
+              {searchError && !searching && (
+                <div className="px-4 py-5 text-center">
+                  <div className="text-rose-400 text-sm font-medium">Search failed</div>
+                  <div className="text-text-muted/70 text-xs mt-1 break-words">{searchError}</div>
+                </div>
+              )}
+
               {/* No results */}
-              {noResults && !searching && (
+              {noResults && !searching && !searchError && (
                 <div className="px-4 py-6 text-center">
                   <div className="text-text-muted text-sm">No results for &ldquo;{query}&rdquo;</div>
                   <div className="text-text-muted/50 text-xs mt-1">Try a different term</div>
@@ -305,6 +359,25 @@ export default function HomeHeader() {
           )}
         </div>
 
+        <div className="w-px h-5 bg-white/10" aria-hidden="true" />
+
+        {/* Shuffle (rotates first 5 cards in every row except Likes) */}
+        <button
+          onClick={() => shuffleHome(isSFW ? 'social' : 'nsfw')}
+          disabled={shuffling || refreshing}
+          className="p-2 rounded-lg text-text-secondary hover:text-text-primary transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Shuffle homepage"
+          aria-label="Shuffle homepage"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={shuffling ? 'animate-spin' : ''}>
+            <polyline points="16 3 21 3 21 8" />
+            <line x1="4" y1="20" x2="21" y2="3" />
+            <polyline points="21 16 21 21 16 21" />
+            <line x1="15" y1="15" x2="21" y2="21" />
+            <line x1="4" y1="4" x2="9" y2="9" />
+          </svg>
+        </button>
+
         <button
           onClick={() => navigate('/settings')}
           className="p-2 rounded-lg text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
@@ -327,7 +400,7 @@ export default function HomeHeader() {
           className={`px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition-all tracking-wide ${
             isSFW
               ? 'bg-amber-500/[0.06] border border-amber-500/25 text-amber-400 hover:bg-amber-500/[0.12]'
-              : 'bg-surface-overlay border border-surface-border text-text-secondary hover:text-text-primary hover:border-text-muted'
+              : 'bg-white/[0.04] border border-white/[0.08] text-text-secondary hover:text-text-primary hover:bg-white/[0.07] hover:border-white/[0.12]'
           }`}
         >
           &#9679; {isSFW ? 'SOCIAL MODE' : 'NSFW MODE'}

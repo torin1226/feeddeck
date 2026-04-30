@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import useHomeStore from '../../stores/homeStore'
 import usePlayerStore from '../../stores/playerStore'
 import useQueueStore from '../../stores/queueStore'
+import useRatingsStore from '../../stores/ratingsStore'
+import useToastStore from '../../stores/toastStore'
 import useHeroAutoplay from '../../hooks/useHeroAutoplay'
+import useAmbientColor from '../../hooks/useAmbientColor'
 import HeroCarousel from './HeroCarousel'
 
 // ============================================================
@@ -15,7 +18,7 @@ import HeroCarousel from './HeroCarousel'
 // ============================================================
 
 export default function HeroSection() {
-  const { heroItem, theatreMode, toggleTheatre } = useHomeStore()
+  const { heroItem, theatreMode, toggleTheatre, setFocusedItem } = useHomeStore()
   const { addToQueue, advance, queue } = useQueueStore()
   const {
     setActiveVideo, isPlaying, setPlaying,
@@ -26,8 +29,45 @@ export default function HeroSection() {
 
   const {
     autoplayVideoRef, autoplayReady, autoplayUrl,
-    muted: autoplayMuted, toggleMute: toggleAutoplayMute, reducedMotion: _reducedMotion,
+    muted: autoplayMuted, toggleMute: toggleAutoplayMute,
   } = useHeroAutoplay(heroItem, theatreMode)
+
+  const ambient = useAmbientColor(heroItem?.thumbnail)
+  const ambientRgb = ambient ? `${ambient[0]}, ${ambient[1]}, ${ambient[2]}` : null
+
+  const recordRating = useRatingsStore(s => s.recordRating)
+  const undoRating = useRatingsStore(s => s.undoRating)
+  const isToastPaused = useRatingsStore(s => s.isToastPaused)
+  const heroRating = useRatingsStore(s => heroItem ? s.ratedUrls[heroItem.url] : null)
+  const showToast = useToastStore(s => s.showToast)
+  const showActionToast = useToastStore(s => s.showActionToast)
+
+  const handleHeroRate = useCallback(async (rating) => {
+    if (!heroItem?.url || heroRating) return
+    recordRating(heroItem.url, 'home_hero', rating)
+    try {
+      await fetch('/api/ratings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoUrl: heroItem.url, surfaceType: 'home_hero', surfaceKey: null,
+          rating, tags: heroItem.tags || [], creator: heroItem.uploader || '',
+          title: heroItem.title || '', thumbnail: heroItem.thumbnail || '', source: heroItem.source || '',
+        }),
+      })
+    } catch (err) { console.warn('Hero rating failed:', err.message) }
+    if (rating === 'down') {
+      showActionToast("Got it. We'll show less like this.", {
+        position: 'bottom', timeout: 10000,
+        actions: [{ label: 'Undo', primary: true, onClick: () => {
+          undoRating(heroItem.url, 'home_hero')
+          fetch('/api/ratings/undo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoUrl: heroItem.url }) }).catch(() => {})
+        }}],
+      })
+    } else if (!isToastPaused() && heroItem.uploader) {
+      showToast(`Saved. More from ${heroItem.uploader} coming your way.`, 'success')
+    }
+  }, [heroItem, heroRating, recordRating, undoRating, isToastPaused, showToast, showActionToast])
 
   const [previewing, setPreviewing] = useState(false)
   const [showBadge, setShowBadge] = useState(false)
@@ -46,9 +86,14 @@ export default function HeroSection() {
     // Pre-warm the stream URL so Play is instant (covers reduced motion / HLS cases
     // where useHeroAutoplay doesn't resolve a URL)
     if (heroItem?.url) prewarmStream(heroItem.url)
+    // Hero is the default focused surface — claim focus when the hero
+    // card changes and theatre mode is off. inputKind 'auto' marks this
+    // as a non-user-driven claim so debounce-aware consumers can treat
+    // it as background state rather than intentional hover/keyboard.
+    if (heroItem && !theatreMode) setFocusedItem(heroItem, 'hero', { inputKind: 'auto' })
     return () => clearTimeout(badgeTimer.current)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [heroItem?.id])
+  }, [heroItem?.id, theatreMode])
 
   // When theatre mode activates, set active video and resolve stream.
   // Priority: autoplay URL > prewarmed URL > fresh resolve
@@ -180,7 +225,10 @@ export default function HeroSection() {
       className={`relative overflow-hidden transition-[height] duration-500 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] ${
         theatreMode ? 'h-screen min-h-screen' : ''
       }`}
-      style={theatreMode ? {} : { height: '100vh', minHeight: '600px' }}
+      style={{
+        ...(theatreMode ? {} : { height: '100vh', minHeight: '600px' }),
+        ...(ambientRgb ? { '--hero-ambient-rgb': ambientRgb } : {}),
+      }}
     >
       {/* Background image with Ken Burns + autoplay video overlay */}
       {/* Hero thumbnail — uses object-contain to avoid cropping + blurred fill behind for letterbox */}
@@ -283,6 +331,21 @@ export default function HeroSection() {
           opacity: theatreMode ? 0.2 : 1,
         }}
       />
+      {/* Ambient tint — sampled from hero thumbnail; soft glow at the top
+          edge that bleeds the image's dominant color into the gradient stack.
+          Hidden when no ambient color resolved (CORS-tainted CDNs) so we
+          fall back cleanly to the neutral dark gradients above. */}
+      {ambientRgb && (
+        <div
+          className="absolute inset-0 transition-opacity duration-700 pointer-events-none"
+          style={{
+            background:
+              'linear-gradient(to top, transparent 0%, rgba(var(--hero-ambient-rgb), 0.10) 55%, rgba(var(--hero-ambient-rgb), 0.22) 100%)',
+            opacity: theatreMode ? 0 : 1,
+            mixBlendMode: 'screen',
+          }}
+        />
+      )}
 
       {/* Preview badge */}
       <div
@@ -329,7 +392,7 @@ export default function HeroSection() {
       {/* Hero content — fades out in theatre mode */}
       <div
         className={`absolute left-10 max-w-[520px] z-10 transition-all duration-500 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] ${
-          theatreMode ? 'bottom-24 opacity-0 pointer-events-none' : 'bottom-[230px]'
+          theatreMode ? 'bottom-24 opacity-0 pointer-events-none' : 'bottom-[270px]'
         }`}
       >
         {/* Tags */}
@@ -352,10 +415,14 @@ export default function HeroSection() {
 
         {/* Meta */}
         <div className="flex items-center gap-2.5 text-[13px] text-text-secondary mb-5 flex-wrap">
-          <span className="flex items-center gap-1 text-amber-400 font-semibold">
-            &#9733; {heroItem.rating}/10
-          </span>
-          <span className="text-text-muted">&middot;</span>
+          {heroItem.rating != null && (
+            <>
+              <span className="flex items-center gap-1 text-amber-400 font-semibold">
+                &#9733; {heroItem.rating}/10
+              </span>
+              <span className="text-text-muted">&middot;</span>
+            </>
+          )}
           <span>{heroItem.views} views</span>
           <span className="text-text-muted">&middot;</span>
           <span>{heroItem.uploader}</span>
@@ -398,22 +465,52 @@ export default function HeroSection() {
           >
             +
           </button>
-          <button
-            className="w-[42px] h-[42px] rounded-full bg-white/[0.08] border border-white/[0.12]
-              text-text-primary text-sm flex items-center justify-center
-              hover:bg-white/[0.16] transition-all"
-            title="Like"
-          >
-            &#9825;
-          </button>
+          {heroRating ? (
+            <span className="flex items-center gap-1 text-xs text-white/50 px-2">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                {heroRating === 'up'
+                  ? <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3" />
+                  : <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17" />}
+              </svg>
+              {heroRating === 'up' ? 'Liked' : 'Not for me'}
+            </span>
+          ) : (
+            <>
+              <button
+                onClick={() => handleHeroRate('down')}
+                className="w-[42px] h-[42px] rounded-full bg-white/[0.08] border border-white/[0.12]
+                  text-white/80 flex items-center justify-center
+                  hover:bg-white/[0.16] transition-all"
+                title="Not for me"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17" />
+                </svg>
+              </button>
+              <button
+                onClick={() => handleHeroRate('up')}
+                className="w-[42px] h-[42px] rounded-full bg-white/[0.08] border border-white/[0.12]
+                  text-white/80 flex items-center justify-center
+                  hover:bg-white/[0.16] transition-all"
+                title="Like this"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3" />
+                </svg>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Carousel strip at bottom */}
+      {/* Carousel strip at bottom — wrapper has pointer-events-none so its
+          transparent top-padding doesn't intercept clicks meant for the
+          action row (Play / Theatre / +/- thumbs) sitting just above. The
+          interactive children inside <HeroCarousel/> re-enable pointer events. */}
       <div
         className={`absolute bottom-0 left-0 right-0 z-20 pb-7 pt-5 transition-all duration-500
-          ease-[cubic-bezier(0.25,0.46,0.45,0.94)]
-          ${theatreMode ? 'translate-y-[30px] opacity-0 pointer-events-none' : ''}`}
+          ease-[cubic-bezier(0.25,0.46,0.45,0.94)] pointer-events-none
+          ${theatreMode ? 'translate-y-[30px] opacity-0' : ''}`}
         style={{
           background: 'linear-gradient(to top, var(--color-surface) 0%, transparent 100%)',
         }}

@@ -1,0 +1,1187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>FeedDeck — 5c.2 Restructure Comparison</title>
+<style>
+  :root {
+    --surface: #0a0a0c;
+    --surface-2: #111114;
+    --text: #e7e7ea;
+    --text-muted: #8a8a90;
+    --text-faint: #5a5a60;
+    --accent: #f43f5e;
+    --accent-soft: rgba(244,63,94,0.12);
+    --accent-border: rgba(244,63,94,0.30);
+    --accent-glow: 0 0 36px rgba(244,63,94,0.18);
+    --glass-bg: rgba(255,255,255,0.04);
+    --glass-bg-hover: rgba(255,255,255,0.07);
+    --glass-bg-elevated: rgba(255,255,255,0.08);
+    --glass-border: rgba(255,255,255,0.08);
+    --glass-border-strong: rgba(255,255,255,0.14);
+    --glass-highlight: rgba(255,255,255,0.10);
+    --glass-shadow: 0 12px 40px rgba(0,0,0,0.55);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--surface);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* surface tint (lightweight, no SVG filter) */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(circle at 20% 0%, rgba(244,63,94,0.04), transparent 50%),
+      radial-gradient(circle at 80% 100%, rgba(80,40,160,0.04), transparent 50%);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .doc {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 56px 32px 96px;
+    position: relative;
+    z-index: 2;
+  }
+
+  .doc-header {
+    margin-bottom: 48px;
+  }
+  .doc-header .eyebrow {
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .doc-header h1 {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 38px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0 0 12px;
+  }
+  .doc-header p {
+    color: var(--text-muted);
+    margin: 0;
+    max-width: 640px;
+  }
+
+  .panel {
+    margin-top: 56px;
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.01));
+    border: 1px solid var(--glass-border);
+    overflow: hidden;
+    box-shadow: var(--glass-shadow);
+  }
+
+  .panel-head {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    padding: 22px 28px;
+    border-bottom: 1px solid var(--glass-border);
+    background: rgba(255,255,255,0.02);
+  }
+  .panel-head .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .panel-head .tag.before { color: var(--text-faint); }
+  .panel-head .tag.after-a {
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-color: var(--accent-border);
+  }
+  .panel-head .tag.after-b {
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-color: var(--accent-border);
+    box-shadow: var(--accent-glow);
+  }
+  .panel-head h2 {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+  .panel-head .sub {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-left: auto;
+  }
+
+  .panel-body {
+    padding: 24px;
+  }
+
+  /* mock viewport */
+  .viewport {
+    background: var(--surface);
+    border-radius: 12px;
+    border: 1px solid var(--glass-border);
+    overflow: hidden;
+    position: relative;
+  }
+  .viewport-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: rgba(0,0,0,0.4);
+    border-bottom: 1px solid var(--glass-border);
+  }
+  .viewport-bar .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.10);
+  }
+  .viewport-bar .url {
+    margin-left: 12px;
+    font-family: 'JetBrains Mono', 'Geist Mono', monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  /* header inside mock */
+  .mock-header {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 14px 24px;
+    background: var(--glass-bg);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--glass-border);
+  }
+  .mock-header .logo {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: -0.01em;
+  }
+  .mock-header .logo span { color: var(--accent); }
+  .mock-header .nav {
+    display: flex;
+    gap: 4px;
+    margin-left: 16px;
+  }
+  .mock-header .nav a {
+    padding: 6px 14px;
+    font-size: 12px;
+    color: var(--text-muted);
+    border-radius: 999px;
+    border: 1px solid transparent;
+    text-decoration: none;
+  }
+  .mock-header .nav a.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-color: var(--accent-border);
+    font-weight: 600;
+  }
+  .mock-header .right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .mock-header .search {
+    width: 200px;
+    height: 28px;
+    border-radius: 999px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+  .mock-header .icon-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  /* === BEFORE: hero section === */
+  .hero {
+    position: relative;
+    height: 360px;
+    background: linear-gradient(135deg, #1a1421 0%, #0c0e1a 60%, #050507 100%);
+    overflow: hidden;
+  }
+  .hero::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 30% 40%, rgba(244,63,94,0.18) 0%, transparent 50%),
+                radial-gradient(circle at 70% 60%, rgba(120,80,180,0.18) 0%, transparent 55%);
+  }
+  .hero-content {
+    position: absolute;
+    bottom: 110px;
+    left: 40px;
+    z-index: 2;
+    max-width: 480px;
+  }
+  .hero-content .meta {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .hero-content .meta .chip {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+  }
+  .hero-content h3 {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0 0 10px;
+    line-height: 1.1;
+  }
+  .hero-content .desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+  }
+  .hero-actions { display: flex; gap: 8px; }
+  .btn {
+    height: 32px;
+    padding: 0 16px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    color: var(--text);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn.primary {
+    background: var(--accent-soft);
+    border-color: var(--accent-border);
+    color: var(--accent);
+    box-shadow: var(--accent-glow);
+  }
+
+  .hero-strip {
+    position: absolute;
+    bottom: 16px;
+    left: 0;
+    right: 0;
+    padding: 0 40px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    overflow: hidden;
+  }
+  .hero-strip .arrow {
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    display: grid;
+    place-items: center;
+    color: var(--text-muted);
+    font-size: 11px;
+    flex: 0 0 24px;
+  }
+  .hero-strip .strip-thumb {
+    flex: 0 0 76px;
+    height: 44px;
+    border-radius: 4px;
+    border: 1px solid var(--glass-border);
+  }
+  .strip-thumb.t1 { background: linear-gradient(135deg, #2b1818, #1a0e10); }
+  .strip-thumb.t2 { background: linear-gradient(135deg, #1a2330, #0f161e); }
+  .strip-thumb.t3 { background: linear-gradient(135deg, #2a1d2e, #150b18); }
+  .strip-thumb.t4 { background: linear-gradient(135deg, #2a2418, #18130a); }
+  .strip-thumb.t5 { background: linear-gradient(135deg, #16292c, #0a1416); }
+  .strip-thumb.t6 { background: linear-gradient(135deg, #2c1f1a, #18100c); }
+  .strip-thumb.active {
+    border-color: var(--accent);
+    box-shadow: var(--accent-glow);
+    transform: scale(1.06);
+  }
+
+  /* === ROW (gallery row inside before) === */
+  .row {
+    padding: 22px 40px 14px;
+  }
+  .row-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .row-head h4 {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+  .row-head .count {
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  .row-strip {
+    display: flex;
+    gap: 12px;
+    overflow: hidden;
+    padding-bottom: 4px;
+  }
+  .card {
+    flex: 0 0 200px;
+    aspect-ratio: 16/9;
+    border-radius: 8px;
+    border: 1px solid var(--glass-border);
+    position: relative;
+    overflow: hidden;
+    transition: all 200ms var(--ease-out);
+  }
+  .card .label {
+    position: absolute;
+    inset: auto 0 0 0;
+    padding: 8px 10px 8px;
+    background: linear-gradient(180deg, transparent, rgba(0,0,0,0.85));
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .card .badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(0,0,0,0.7);
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+  }
+  .card.f1 { background: linear-gradient(135deg, #2c1d1d 0%, #15090b 100%); }
+  .card.f2 { background: linear-gradient(135deg, #1a2330 0%, #08111d 100%); }
+  .card.f3 { background: linear-gradient(135deg, #2a1d2e 0%, #100614 100%); }
+  .card.f4 { background: linear-gradient(135deg, #2a2418 0%, #16110a 100%); }
+  .card.f5 { background: linear-gradient(135deg, #16292c 0%, #08171a 100%); }
+  .card.f6 { background: linear-gradient(135deg, #2c1f1a 0%, #170d0a 100%); }
+  .card.f7 { background: linear-gradient(135deg, #1d1d2c 0%, #0a0a16 100%); }
+  .card.v1 { background: linear-gradient(135deg, #2b1722 0%, #14070d 100%); aspect-ratio: 9/16; flex-basis: 130px; }
+  .card.v2 { background: linear-gradient(135deg, #1f1a2c 0%, #0c0916 100%); aspect-ratio: 9/16; flex-basis: 130px; }
+
+  .row-dots {
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+    margin-top: 10px;
+  }
+  .row-dots .d {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.12);
+  }
+  .row-dots .d.active {
+    width: 22px;
+    background: var(--accent);
+  }
+
+  .peek-row {
+    margin-top: 14px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    opacity: 0.55;
+    mask-image: linear-gradient(90deg, #000 70%, transparent);
+    -webkit-mask-image: linear-gradient(90deg, #000 70%, transparent);
+  }
+  .peek-row .peek-label {
+    font-size: 10px;
+    color: var(--text-faint);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-right: 8px;
+    flex: 0 0 auto;
+  }
+  .peek-row .peek-thumb {
+    flex: 0 0 60px;
+    height: 34px;
+    border-radius: 4px;
+    border: 1px solid var(--glass-border);
+    background: rgba(255,255,255,0.04);
+  }
+
+  /* === AFTER A: full viewport === */
+  .stage {
+    position: relative;
+    height: 540px;
+    padding: 36px 40px 24px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .stage::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 60%, rgba(244,63,94,0.10) 0%, transparent 55%);
+    pointer-events: none;
+  }
+  .stage-row {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    z-index: 1;
+  }
+  .stage-card {
+    flex: 0 0 240px;
+    aspect-ratio: 16/9;
+    border-radius: 14px;
+    border: 1px solid var(--glass-border);
+    position: relative;
+    overflow: hidden;
+    transition: all 450ms var(--ease-spring);
+    box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+  }
+  .stage-card.dim-2 { opacity: 0.55; transform: scale(0.96); flex-basis: 200px; }
+  .stage-card.dim-1 { opacity: 0.78; transform: scale(0.98); flex-basis: 220px; }
+  .stage-card.focused {
+    flex: 0 0 380px;
+    border-color: var(--accent-border);
+    box-shadow: 0 14px 50px rgba(0,0,0,0.6), var(--accent-glow);
+    opacity: 1;
+  }
+  .stage-card.focused::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 14px;
+    border-top: 1px solid var(--glass-highlight);
+    pointer-events: none;
+  }
+  .stage-card .badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(0,0,0,0.7);
+    color: var(--text);
+    backdrop-filter: blur(4px);
+  }
+  .stage-card .badge.short {
+    left: 10px;
+    right: auto;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border: 1px solid var(--accent-border);
+  }
+  .stage-card.bg-a { background: linear-gradient(135deg, #321f23 0%, #150a0d 100%); }
+  .stage-card.bg-b { background: linear-gradient(135deg, #1a2436 0%, #08111d 100%); }
+  .stage-card.bg-c { background: linear-gradient(135deg, #2d1c33 0%, #100517 100%); }
+  .stage-card.bg-d { background: linear-gradient(135deg, #2a2420 0%, #15110d 100%); }
+  .stage-card.bg-e { background: linear-gradient(135deg, #1a2c2e 0%, #08171a 100%); }
+  .stage-card.bg-f { background: linear-gradient(135deg, #2a1f1c 0%, #170c0a 100%); }
+  .stage-card.bg-g { background: linear-gradient(135deg, #232032 0%, #0d0a16 100%); }
+  .stage-card.v { aspect-ratio: 9/16; flex-basis: 160px; }
+  .stage-card.v.dim-2 { flex-basis: 130px; }
+  .stage-card.v.dim-1 { flex-basis: 145px; }
+  .stage-card.v.focused { flex-basis: 240px; }
+
+  .stage-card .overlay-mini {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 10px 12px;
+    background: linear-gradient(180deg, transparent, rgba(0,0,0,0.85));
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .stage-card.focused .overlay-mini { opacity: 0; }
+
+  .info-panel {
+    margin-top: 18px;
+    margin-left: auto;
+    margin-right: auto;
+    width: 460px;
+    padding: 16px 20px;
+    border-radius: 14px;
+    background: var(--glass-bg-elevated);
+    backdrop-filter: blur(24px);
+    border: 1px solid var(--glass-border-strong);
+    border-top-color: var(--glass-highlight);
+    box-shadow: var(--glass-shadow);
+    text-align: center;
+  }
+  .info-panel .tags {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    margin-bottom: 8px;
+  }
+  .info-panel .tag-pill {
+    font-size: 9px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+  }
+  .info-panel h5 {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px;
+  }
+  .info-panel .meta-line {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+  .info-panel .actions {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+  }
+
+  .stage-dots {
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+    margin-top: 14px;
+  }
+  .stage-dots .d {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.12);
+  }
+  .stage-dots .d.active {
+    width: 24px;
+    background: var(--accent);
+    box-shadow: var(--accent-glow);
+  }
+
+  .stage-peek {
+    margin-top: 14px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.5;
+  }
+  .stage-peek .peek-label {
+    font-size: 10px;
+    color: var(--text-faint);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-right: 6px;
+  }
+  .stage-peek .peek-thumb {
+    width: 64px;
+    height: 36px;
+    border-radius: 4px;
+    border: 1px solid var(--glass-border);
+    background: rgba(255,255,255,0.04);
+  }
+
+  /* sub-rows below stage */
+  .sub-rows {
+    border-top: 1px solid var(--glass-border);
+    padding: 8px 0 16px;
+  }
+  .sub-rows .row-head h4 { font-size: 14px; }
+
+  /* === AFTER B: infinite hydration extras === */
+  .divider-pill {
+    flex: 0 0 36px;
+    height: 180px;
+    border-radius: 18px;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-top-color: var(--glass-highlight);
+    display: grid;
+    place-items: center;
+    position: relative;
+    box-shadow: var(--glass-shadow);
+  }
+  .divider-pill .label {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+  }
+  .divider-pill .arrow {
+    position: absolute;
+    bottom: 8px;
+    color: var(--accent);
+    font-size: 12px;
+  }
+
+  .stage-header {
+    text-align: center;
+    margin-bottom: 18px;
+    transition: opacity 250ms ease-out;
+  }
+  .stage-header .eyebrow {
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .stage-header h3 {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+
+  .stage-dots.windowed .d {
+    transition: all 200ms;
+  }
+  .stage-dots.windowed .d.fade-far { opacity: 0.3; transform: scale(0.7); }
+  .stage-dots.windowed .d.fade-mid { opacity: 0.6; transform: scale(0.85); }
+
+  /* annotations */
+  .annot {
+    margin-top: 18px;
+    padding: 14px 18px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--glass-border);
+    border-left: 2px solid var(--accent);
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+  .annot strong { color: var(--text); font-weight: 600; }
+  .annot ul { margin: 6px 0 0; padding-left: 18px; }
+  .annot li { margin-bottom: 3px; }
+
+  .legend {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+    padding: 14px 18px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--glass-border);
+  }
+  .legend .item {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .legend .swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+  }
+  .legend .swatch.new {
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-border);
+  }
+  .legend .swatch.removed {
+    background: rgba(120,30,30,0.2);
+    border: 1px dashed rgba(220,80,80,0.4);
+  }
+  .legend .swatch.kept {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+  }
+
+  .strike {
+    position: relative;
+  }
+  .strike::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 14px;
+    background: rgba(120,30,30,0.18);
+    border: 1px dashed rgba(220,80,80,0.5);
+    pointer-events: none;
+  }
+  .strike-label {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%,-50%) rotate(-4deg);
+    background: rgba(40,8,12,0.92);
+    color: #ff8a98;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    z-index: 5;
+    border: 1px solid rgba(220,80,80,0.5);
+  }
+
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 56px;
+  }
+  .summary-cell {
+    padding: 18px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--glass-border);
+  }
+  .summary-cell h6 {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 13px;
+    margin: 0 0 10px;
+    letter-spacing: -0.01em;
+  }
+  .summary-cell ul {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+  .summary-cell.scope-a { border-color: var(--accent-border); background: var(--accent-soft); }
+  .summary-cell.scope-a h6 { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="doc">
+  <header class="doc-header">
+    <div class="eyebrow">Milestone 5c.2 · Restructure Comparison</div>
+    <h1>Poster Shelf — before, Push A, Push A+B</h1>
+    <p>Three states of the homepage. Hover the panels to read the inline annotations. The wireframes use real glass tokens, accent rose, surface grain, and motion easings from the live design system.</p>
+  </header>
+
+  <div class="legend">
+    <div class="item"><div class="swatch new"></div>New / changed in this push</div>
+    <div class="item"><div class="swatch kept"></div>Unchanged</div>
+    <div class="item"><div class="swatch removed"></div>Removed</div>
+  </div>
+
+  <!-- ============ BEFORE ============ -->
+  <section class="panel">
+    <div class="panel-head">
+      <span class="tag before">Before</span>
+      <h2>Current homepage</h2>
+      <span class="sub">HeroSection (100vh) + 2× GalleryShelf rows + BrowseSection</span>
+    </div>
+    <div class="panel-body">
+      <div class="viewport">
+        <div class="viewport-bar">
+          <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+          <span class="url">feeddeck.local /</span>
+        </div>
+        <div class="mock-header">
+          <div class="logo">Feed<span>Deck</span></div>
+          <nav class="nav">
+            <a class="active">Home</a><a>Feed</a><a>Library</a>
+          </nav>
+          <div class="right">
+            <div class="search">Search…</div>
+            <div class="icon-btn">⚙</div>
+            <div class="icon-btn">☾</div>
+          </div>
+        </div>
+
+        <!-- HERO -->
+        <div class="hero">
+          <div class="hero-content">
+            <div class="meta">
+              <span class="chip">Live Music</span><span class="chip">YouTube</span><span class="chip">12:48</span>
+            </div>
+            <h3>Sunset at Tomorrowland Mainstage</h3>
+            <p class="desc">Crowd, lasers, DJ silhouette against the sky. The big-feature thumbnail and Ken Burns video preview.</p>
+            <div class="hero-actions">
+              <button class="btn primary">▶ Play</button>
+              <button class="btn">+ Queue</button>
+              <button class="btn">♡</button>
+            </div>
+          </div>
+          <div class="hero-strip">
+            <div class="arrow">‹</div>
+            <div class="strip-thumb t1 active"></div>
+            <div class="strip-thumb t2"></div>
+            <div class="strip-thumb t3"></div>
+            <div class="strip-thumb t4"></div>
+            <div class="strip-thumb t5"></div>
+            <div class="strip-thumb t6"></div>
+            <div class="arrow">›</div>
+          </div>
+        </div>
+
+        <!-- GalleryShelf row 1 -->
+        <div class="row">
+          <div class="row-head"><h4>Live Music</h4><span class="count">12 items</span></div>
+          <div class="row-strip">
+            <div class="card f1"><span class="badge">12:48</span><div class="label">Tomorrowland 2025</div></div>
+            <div class="card f2"><span class="badge">8:32</span><div class="label">Berlin Boiler Room</div></div>
+            <div class="card f3"><span class="badge">15:01</span><div class="label">Coachella Set</div></div>
+            <div class="card f4"><span class="badge">6:42</span><div class="label">Glastonbury Highlights</div></div>
+            <div class="card f5"><span class="badge">22:16</span><div class="label">Burning Man Sunrise</div></div>
+            <div class="card f6"><span class="badge">9:08</span><div class="label">Studio Session</div></div>
+          </div>
+          <div class="row-dots">
+            <div class="d active"></div><div class="d"></div><div class="d"></div><div class="d"></div><div class="d"></div>
+          </div>
+        </div>
+
+        <!-- GalleryShelf row 2 -->
+        <div class="row" style="padding-top:6px;">
+          <div class="row-head"><h4>My Subscriptions</h4><span class="count">8 items</span></div>
+          <div class="row-strip">
+            <div class="card f7"><span class="badge">11:24</span><div class="label">Veritasium · Tunnels</div></div>
+            <div class="card f3"><span class="badge">14:50</span><div class="label">Marques · iPad Pro</div></div>
+            <div class="card f5"><span class="badge">8:12</span><div class="label">Linus · Server Build</div></div>
+            <div class="card f1"><span class="badge">22:06</span><div class="label">Kurzgesagt</div></div>
+            <div class="card f2"><span class="badge">18:33</span><div class="label">Tom Scott</div></div>
+            <div class="card f4"><span class="badge">7:15</span><div class="label">Casey Neistat</div></div>
+          </div>
+          <div class="peek-row">
+            <span class="peek-label">Up next · Trending</span>
+            <div class="peek-thumb"></div><div class="peek-thumb"></div><div class="peek-thumb"></div><div class="peek-thumb"></div><div class="peek-thumb"></div>
+          </div>
+        </div>
+
+        <!-- BrowseSection -->
+        <div class="row" style="border-top:1px solid var(--glass-border); margin-top:8px;">
+          <div class="row-head"><h4>Continue Watching</h4></div>
+          <div class="row-strip">
+            <div class="card f3"><span class="badge">42%</span><div class="label">Resume · Documentary</div></div>
+            <div class="card f5"><span class="badge">71%</span><div class="label">Resume · Set</div></div>
+            <div class="card f6"><span class="badge">12%</span><div class="label">Resume · Interview</div></div>
+            <div class="card f1"><span class="badge">88%</span><div class="label">Resume · Talk</div></div>
+          </div>
+        </div>
+        <div class="row" style="padding-top:6px;">
+          <div class="row-head"><h4>Top 10 Today</h4></div>
+          <div class="row-strip">
+            <div class="card f2"><span class="badge">#1</span><div class="label">Top pick</div></div>
+            <div class="card f4"><span class="badge">#2</span><div class="label">Top pick</div></div>
+            <div class="card f6"><span class="badge">#3</span><div class="label">Top pick</div></div>
+            <div class="card f7"><span class="badge">#4</span><div class="label">Top pick</div></div>
+            <div class="card f3"><span class="badge">#5</span><div class="label">Top pick</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="annot">
+        <strong>Today.</strong> The hero section eats 100vh of premium real estate to show <em>one</em> item, then a 6-thumbnail strip below it. Two GalleryShelf rows compete with the hero for attention. Theatre mode swells the HeroSection into the viewport in-place, hiding everything else. BrowseSection trails below.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ AFTER A ============ -->
+  <section class="panel">
+    <div class="panel-head">
+      <span class="tag after-a">After · Push A</span>
+      <h2>Full-viewport poster carousel · /watch/:id route</h2>
+      <span class="sub">HeroSection removed · theatre is now route-level · BrowseSection kept below</span>
+    </div>
+    <div class="panel-body">
+      <div class="viewport">
+        <div class="viewport-bar">
+          <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+          <span class="url">feeddeck.local /</span>
+        </div>
+        <div class="mock-header">
+          <div class="logo">Feed<span>Deck</span></div>
+          <nav class="nav">
+            <a class="active">Home</a><a>Feed</a><a>Library</a>
+          </nav>
+          <div class="right">
+            <div class="search">Search…</div>
+            <div class="icon-btn">⚙</div>
+            <div class="icon-btn">☾</div>
+          </div>
+        </div>
+
+        <!-- HERO REMOVED -->
+        <!-- Full viewport stage -->
+        <div class="stage" style="height:540px;">
+          <div class="stage-header">
+            <div class="eyebrow">Discover · 12 items</div>
+            <h3>Live Music</h3>
+          </div>
+
+          <div class="stage-row">
+            <div class="stage-card bg-a dim-2"><span class="badge">12:48</span><div class="overlay-mini">Tomorrowland 2025</div></div>
+            <div class="stage-card bg-b dim-1"><span class="badge">8:32</span><div class="overlay-mini">Berlin Boiler Room</div></div>
+            <div class="stage-card bg-c focused">
+              <span class="badge">15:01</span>
+            </div>
+            <div class="stage-card bg-d dim-1"><span class="badge">6:42</span><div class="overlay-mini">Glastonbury</div></div>
+            <div class="stage-card bg-e dim-2"><span class="badge">22:16</span><div class="overlay-mini">Burning Man</div></div>
+          </div>
+
+          <div class="info-panel">
+            <div class="tags">
+              <span class="tag-pill">Live</span><span class="tag-pill">Coachella</span><span class="tag-pill">Set</span>
+            </div>
+            <h5>Coachella 2025 — Mainstage Headliner</h5>
+            <div class="meta-line">YouTube · 15:01 · 2.4M views</div>
+            <div class="actions">
+              <button class="btn primary">▶ Play</button>
+              <button class="btn">+ Queue</button>
+              <button class="btn">♡</button>
+              <button class="btn">…</button>
+            </div>
+          </div>
+
+          <div class="stage-dots">
+            <div class="d"></div><div class="d"></div><div class="d active"></div><div class="d"></div><div class="d"></div><div class="d"></div><div class="d"></div>
+          </div>
+
+          <div class="stage-peek">
+            <span class="peek-label">Up next · My Subscriptions</span>
+            <div class="peek-thumb"></div><div class="peek-thumb"></div><div class="peek-thumb"></div><div class="peek-thumb"></div>
+          </div>
+        </div>
+
+        <!-- BrowseSection retained -->
+        <div class="sub-rows">
+          <div class="row" style="padding-top:18px;">
+            <div class="row-head"><h4>Continue Watching</h4></div>
+            <div class="row-strip">
+              <div class="card f3"><span class="badge">42%</span><div class="label">Resume · Documentary</div></div>
+              <div class="card f5"><span class="badge">71%</span><div class="label">Resume · Set</div></div>
+              <div class="card f6"><span class="badge">12%</span><div class="label">Resume · Interview</div></div>
+              <div class="card f1"><span class="badge">88%</span><div class="label">Resume · Talk</div></div>
+            </div>
+          </div>
+          <div class="row" style="padding-top:6px;">
+            <div class="row-head"><h4>Top 10 Today</h4></div>
+            <div class="row-strip">
+              <div class="card f2"><span class="badge">#1</span><div class="label">Top pick</div></div>
+              <div class="card f4"><span class="badge">#2</span><div class="label">Top pick</div></div>
+              <div class="card f6"><span class="badge">#3</span><div class="label">Top pick</div></div>
+              <div class="card f7"><span class="badge">#4</span><div class="label">Top pick</div></div>
+              <div class="card f3"><span class="badge">#5</span><div class="label">Top pick</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="annot">
+        <strong>What changes vs. before:</strong>
+        <ul>
+          <li><strong>HeroSection (493 lines) deleted.</strong> No more 100vh fixed hero. The poster carousel <em>is</em> the homepage.</li>
+          <li><strong>Cards expand on focus</strong> with spring easing. Neighbors dim to 0.78, far cards to 0.55. Mixed aspect ratios (16:9, 9:16) sit on the same track.</li>
+          <li><strong>Glass info panel</strong> floats below the focused card. Title, meta, tags, and action buttons all live here. Replaces the hero's bottom-left content stack.</li>
+          <li><strong>Theatre is now a route.</strong> Clicking the focused card calls <code>navigate('/watch/:id')</code>. Back button returns to the homepage with carousel state preserved. /watch can be deep-linked or shared.</li>
+          <li><strong>BrowseSection kept below.</strong> Continue Watching, Top 10, additional category rows still discoverable on scroll. The full-viewport feel applies above the fold.</li>
+          <li><strong>What's still there from current state:</strong> peek-row preview of next category, progress dots, autoplay video preview on focused card.</li>
+          <li><strong>5c.2b features NOT yet active here:</strong> only one category at a time, no infinite pool, no category dividers, peek-row click doesn't hydrate.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ AFTER A+B ============ -->
+  <section class="panel">
+    <div class="panel-head">
+      <span class="tag after-b">After · Push A + B</span>
+      <h2>+ Infinite carousel hydration</h2>
+      <span class="sub">Flat pool · category dividers · windowed dots · header cross-fade · peek-row hydrates</span>
+    </div>
+    <div class="panel-body">
+      <div class="viewport">
+        <div class="viewport-bar">
+          <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+          <span class="url">feeddeck.local /</span>
+        </div>
+        <div class="mock-header">
+          <div class="logo">Feed<span>Deck</span></div>
+          <nav class="nav">
+            <a class="active">Home</a><a>Feed</a><a>Library</a>
+          </nav>
+          <div class="right">
+            <div class="search">Search…</div>
+            <div class="icon-btn">⚙</div>
+            <div class="icon-btn">☾</div>
+          </div>
+        </div>
+
+        <div class="stage" style="height:560px;">
+          <div class="stage-header">
+            <div class="eyebrow" style="opacity:0.6;">Crossing into ↓</div>
+            <h3 style="background: linear-gradient(90deg, var(--text) 50%, var(--accent) 50%); -webkit-background-clip: text; background-clip: text; color: transparent;">Live Music · My Subscriptions</h3>
+          </div>
+
+          <div class="stage-row">
+            <div class="stage-card bg-a dim-2"><span class="badge">12:48</span><div class="overlay-mini">Tomorrowland</div></div>
+            <div class="stage-card bg-b dim-1"><span class="badge">8:32</span><div class="overlay-mini">Boiler Room</div></div>
+
+            <!-- DIVIDER PILL -->
+            <div class="divider-pill">
+              <span class="label">My Subs</span>
+              <span class="arrow">→</span>
+            </div>
+
+            <div class="stage-card bg-g focused">
+              <span class="badge">11:24</span>
+            </div>
+            <div class="stage-card bg-c dim-1"><span class="badge">14:50</span><div class="overlay-mini">Marques</div></div>
+            <div class="stage-card bg-e dim-2"><span class="badge">8:12</span><div class="overlay-mini">Linus</div></div>
+          </div>
+
+          <div class="info-panel">
+            <div class="tags">
+              <span class="tag-pill">Subscribed</span><span class="tag-pill">Veritasium</span><span class="tag-pill">Science</span>
+            </div>
+            <h5>Veritasium — The Tunnel Problem</h5>
+            <div class="meta-line">YouTube · 11:24 · subscribed channel · 1.8M views</div>
+            <div class="actions">
+              <button class="btn primary">▶ Play</button>
+              <button class="btn">+ Queue</button>
+              <button class="btn">♡</button>
+              <button class="btn">…</button>
+            </div>
+          </div>
+
+          <div class="stage-dots windowed">
+            <div class="d fade-far"></div><div class="d fade-mid"></div>
+            <div class="d"></div><div class="d"></div><div class="d"></div>
+            <div class="d active"></div>
+            <div class="d"></div><div class="d"></div><div class="d"></div>
+            <div class="d fade-mid"></div><div class="d fade-far"></div>
+          </div>
+
+          <div class="stage-peek" style="opacity:0.7;">
+            <span class="peek-label" style="color:var(--accent);">Click to jump · Trending</span>
+            <div class="peek-thumb"></div><div class="peek-thumb"></div><div class="peek-thumb"></div><div class="peek-thumb"></div>
+          </div>
+        </div>
+
+        <div class="sub-rows">
+          <div class="row" style="padding-top:18px;">
+            <div class="row-head"><h4>Continue Watching</h4></div>
+            <div class="row-strip">
+              <div class="card f3"><span class="badge">42%</span><div class="label">Resume · Documentary</div></div>
+              <div class="card f5"><span class="badge">71%</span><div class="label">Resume · Set</div></div>
+              <div class="card f6"><span class="badge">12%</span><div class="label">Resume · Interview</div></div>
+              <div class="card f1"><span class="badge">88%</span><div class="label">Resume · Talk</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="annot">
+        <strong>What Push B adds on top of Push A:</strong>
+        <ul>
+          <li><strong>Flat pool.</strong> homeStore exposes a single ordered <code>pool[]</code>. Every item carries <code>_cat</code>/<code>_catLabel</code>. No more "category 1 ends, category 2 starts on a separate row."</li>
+          <li><strong>Vertical divider pill</strong> between sections. Glass capsule with rotated label and an arrow that hints at the next category. Arrow keys / scroll skip past it automatically.</li>
+          <li><strong>Header cross-fade.</strong> The shelf header label fades from "Live Music" → "My Subscriptions" (250ms) when the focused card crosses the divider. The mock shows the moment of transition — both labels visible at 50/50.</li>
+          <li><strong>Windowed dots.</strong> Only ~11–15 dots render, centered on the active card. Far dots fade to ~30% and shrink. Solves the "200 dots in a row" problem when the pool is long.</li>
+          <li><strong>Peek-row click hydrates.</strong> Tapping the peek-row triggers a fetch for that category, appends to the pool, and jumps the carousel to the first card of the new category.</li>
+          <li><strong>Background refill.</strong> When the user is within 3 cards of the pool's end, an idle-callback hits <code>/api/homepage</code> for a fresh batch. Items append without disrupting scroll position.</li>
+          <li><strong>What's still the same:</strong> /watch/:id route, info panel, BrowseSection below, focus expansion, glass tokens.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- Comparison summary -->
+  <div class="summary-grid">
+    <div class="summary-cell">
+      <h6>Before · what hurts</h6>
+      <ul>
+        <li>Hero eats 100vh for one item</li>
+        <li>Hero strip is a 6-thumb redundant carousel</li>
+        <li>Theatre mode swells in-place — no shareable URL</li>
+        <li>Two GalleryShelf rows compete with hero</li>
+        <li>Heavy HeroSection.jsx (493 lines, 6 stores)</li>
+      </ul>
+    </div>
+    <div class="summary-cell scope-a">
+      <h6>Push A · scope</h6>
+      <ul>
+        <li>Remove HeroSection from HomePage</li>
+        <li>GalleryShelf becomes full-viewport (~85vh)</li>
+        <li>Migrate playback to /watch/:id (rebuild on top of VideoDetailPage skeleton — close 3 P1 gaps: HLS.js, queue autoadvance, server-fallback ID lookup)</li>
+        <li>Card click → navigate('/watch/:id')</li>
+        <li>Preserve carousel scroll/focus on back nav</li>
+        <li>Keep BrowseSection below</li>
+      </ul>
+    </div>
+    <div class="summary-cell">
+      <h6>Push B · scope</h6>
+      <ul>
+        <li>Refactor homeStore to flat pool[] with _cat markers</li>
+        <li>Lazy-load: 2 categories on init, append on approach to end</li>
+        <li>Vertical divider pill component</li>
+        <li>Skip-divider logic for arrow keys + scroll</li>
+        <li>Header cross-fade on category boundary</li>
+        <li>Windowed dots (~15 centered)</li>
+        <li>Peek-row click hydrates target category</li>
+        <li>Background refill on near-exhaustion</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</body>
+</html>

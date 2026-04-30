@@ -2,16 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "feeddeck (client)",
-      "runtimeExecutable": "npm.cmd",
-      "runtimeArgs": ["run", "dev:client"],
+      "name": "feeddeck",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
       "port": 5173
-    },
-    {
-      "name": "feeddeck (server)",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["--watch", "server/index.js"],
-      "port": 3001
     }
   ]
 }

@@ -52,6 +52,21 @@ export default [
     },
   },
   {
-    ignores: ['dist/', 'node_modules/', '*.config.js', 'server/scripts/diagnose-*.mjs', 'server/scripts/test-*.mjs'],
+    ignores: [
+      'dist/',
+      'node_modules/',
+      '*.config.js',
+      'server/scripts/diagnose-*.mjs',
+      'server/scripts/test-*.mjs',
+      // Root-level scripts, mockups, tools -- not production code
+      '*.cjs',
+      'import-tiktok.js',
+      'category-cards-mockup.jsx',
+      'queue-drawer-mockup.jsx',
+      'm7-preview.jsx',
+      'm7-preview.jsx.bak',
+      'tools/',
+      'docs/design-reviews/',
+    ],
   },
 ]

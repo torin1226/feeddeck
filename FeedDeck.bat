@@ -17,5 +17,8 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr :3001 ^| findstr LISTENING 2^
 :: Wait a beat then open the browser
 start "" cmd /c "timeout /t 3 /nobreak >nul && start http://localhost:3000"
 
-:: Start both servers (this keeps the window alive)
+:: Start both servers. The Express backend kicks off a warm-cache pass
+:: in-process at startup (see server/index.js), so launching via this
+:: script is enough to refresh subs + content. No second Node process
+:: is spawned (multi-process SQLite writes corrupt the db on Windows).
 call npm run dev

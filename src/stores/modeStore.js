@@ -31,6 +31,15 @@ function setDocumentMeta(isSFW) {
  * Nuclear flush: purge ALL content from every store that might
  * hold mode-specific data. Called on every mode switch.
  * Lazy-imports stores to avoid circular dependency.
+ *
+ * Mode firewall: this function MUST clear every persisted store
+ * that can hold a video reference. The persisted-store list:
+ *   - feedStore (memory only, but warm-fetch buffers persist briefly)
+ *   - homeStore (memory only)
+ *   - queueStore (PERSISTED in localStorage as fd-queue)
+ *   - libraryStore (PERSISTED in localStorage as fd-lib)
+ *   - playerStore (memory only)
+ *   - ratingsStore (memory only)
  */
 async function nuclearFlush() {
   // Destroy any active video elements immediately
@@ -41,17 +50,31 @@ async function nuclearFlush() {
   })
 
   // Flush all content stores (lazy import to break circular deps)
-  const [{ default: useFeedStore }, { default: useHomeStore }, { default: useQueueStore }, { default: usePlayerStore }] = await Promise.all([
+  const [
+    { default: useFeedStore },
+    { default: useHomeStore },
+    { default: useQueueStore },
+    { default: usePlayerStore },
+    { default: useLibraryStore },
+    { default: useRatingsStore },
+  ] = await Promise.all([
     import('./feedStore'),
     import('./homeStore'),
     import('./queueStore'),
     import('./playerStore'),
+    import('./libraryStore'),
+    import('./ratingsStore'),
   ])
 
   useFeedStore.getState().resetFeed()
   useHomeStore.getState().resetHome()
   useQueueStore.getState().clearQueue()
   usePlayerStore.getState().clear()
+  // Clear library so the previous mode's videos don't bleed into
+  // Continue Watching, Liked, Favorites, etc. The next mount
+  // calls loadFromServer() which fetches the correct mode's set.
+  useLibraryStore.getState().clearLibrary()
+  useRatingsStore.getState().reset()
 }
 
 const useModeStore = create(
@@ -62,25 +85,27 @@ const useModeStore = create(
       _hydrated: false, // True once zustand persist has finished hydrating
 
       // Actions
-      activateSFW: () => {
+      // Order matters: flush BEFORE setting the new mode so stores are
+      // empty by the time UI re-renders with the new mode. Without the
+      // await, cross-mode content briefly remains visible during the
+      // race window between set() and the async clears.
+      activateSFW: async () => {
+        await nuclearFlush()
         setDocumentMeta(true)
         set({ isSFW: true })
-        nuclearFlush()
       },
 
-      activateNSFW: () => {
+      activateNSFW: async () => {
+        await nuclearFlush()
         setDocumentMeta(false)
         set({ isSFW: false })
-        nuclearFlush()
       },
 
-      toggleMode: () => {
-        set((state) => {
-          const next = !state.isSFW
-          setDocumentMeta(next)
-          return { isSFW: next }
-        })
-        nuclearFlush()
+      toggleMode: async () => {
+        const next = !useModeStore.getState().isSFW
+        await nuclearFlush()
+        setDocumentMeta(next)
+        set({ isSFW: next })
       },
     }),
     {

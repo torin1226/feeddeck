@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef } from 'react'
+import { lazy, Suspense } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import useKeyboard from '../hooks/useKeyboard'
 import useQueueSync from '../hooks/useQueueSync'
@@ -8,6 +8,7 @@ import ErrorBoundary from './ErrorBoundary'
 import FloatingQueue from './FloatingQueue'
 import GlobalToast from './GlobalToast'
 import OfflineBanner from './OfflineBanner'
+import ShuffleDebugOverlay from './ShuffleDebugOverlay'
 
 // Code-split route-level pages for smaller initial bundle
 const HomePage = lazy(() => import('../pages/HomePage'))
@@ -15,6 +16,7 @@ const LibraryPage = lazy(() => import('../pages/LibraryPage'))
 const FeedPage = lazy(() => import('../pages/FeedPage'))
 const SettingsPage = lazy(() => import('../pages/SettingsPage'))
 const VideoDetailPage = lazy(() => import('../pages/VideoDetailPage'))
+const SearchPage = lazy(() => import('../pages/SearchPage'))
 
 // ============================================================
 // AppShell
@@ -31,15 +33,6 @@ export default function AppShell() {
   const mobilePreview = useDeviceStore(s => s.mobilePreview)
   const toggleMobilePreview = useDeviceStore(s => s.toggleMobilePreview)
   const modeHydrated = useModeStore(s => s._hydrated)
-
-  // Trigger View Transitions API crossfade on route changes
-  const prevPath = useRef(location.pathname)
-  useEffect(() => {
-    if (prevPath.current !== location.pathname && document.startViewTransition) {
-      document.startViewTransition()
-    }
-    prevPath.current = location.pathname
-  }, [location.pathname])
 
   // Block ALL rendering until mode store has hydrated.
   // This prevents NSFW content from flashing on SFW first load.
@@ -67,6 +60,7 @@ export default function AppShell() {
             <Route path="/feed" element={<ErrorBoundary name="Feed"><FeedPage /></ErrorBoundary>} />
             <Route path="/settings" element={<ErrorBoundary name="Settings"><SettingsPage /></ErrorBoundary>} />
             <Route path="/video/:id" element={<ErrorBoundary name="Video"><VideoDetailPage /></ErrorBoundary>} />
+            <Route path="/search" element={<ErrorBoundary name="Search"><SearchPage /></ErrorBoundary>} />
           </Routes>
         </Suspense>
       </main>
@@ -75,6 +69,7 @@ export default function AppShell() {
       {!isFeed && <FloatingQueue />}
       <GlobalToast />
       <OfflineBanner />
+      <ShuffleDebugOverlay />
     </>
   )
 

@@ -5,7 +5,7 @@
 
 This is the single source of truth for all project tasks. Claude Code and Cowork read from and update this file directly.
 
-For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
+For backlog management protocol, see `.claude/skills/backlog/SKILL.md`.
 
 ---
 
@@ -19,259 +19,37 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 
 ---
 
-## Milestone 1: Desktop MLP (Minimum Lovable Product)
+## Progress Summary
 
-> Goal: Open the site on desktop, browse real content, watch videos, queue stuff, and it feels polished. Everything below this line ships before moving to mobile.
+| Milestone | Status | Done/Total | Focus |
+|-----------|--------|-----------|-------|
+| M1: Desktop MLP | **Done** | 54/54 | Archived |
+| M2: Swipe Feed | **Done** | 68/70 | 1 manual test gate, 1 service worker |
+| M3: Discovery & Org | Active | 114/134 (85%) | 3.12 Taste Feedback (largest open block) |
+| M4: Deploy & Advanced | Waiting | 23/35 (66%) | Social pipeline, AI recs, extension |
+| M5: Design Polish | Active | 47/52 (90%) | Color tokens, glass materials, logo |
+| M5a: Playback | Blocked | 10/18 (56%) | Needs manual browser testing (8 [?]) |
+| Discovered Tasks | Mixed | 42/50 (84%) | Editorial design polish, deferred items |
 
-### 1.1 Finish Homepage Animation
-
-- [x] Create `useFeaturedScroll.js` hook with state machine (IDLE, SCROLLING, SNAPPING, REVEALED)
-- [x] Implement 250vh scroll zone wrapper with sticky inner container (100vh)
-- [x] 3-phase animation: Phase A (enter small→fullscreen), Phase B (hold fullscreen), Phase C (fullscreen→carousel)
-- [x] Active card uses `transform: scale(X)` — never set width/height during scroll
-- [x] Side cards emerge via opacity and translateX in Phase C only
-- [x] Border-radius transitions, tipping point snap, REVEALED↔SCROLLING transitions
-- [x] Fix stale closure bugs (refs-only approach, no useCallback)
-- [x] Fix late-mount initialization (totalCards watcher for async data)
-- [x] Test in real browser and fine-tune phase boundaries/timing
-- [x] Add `will-change: transform` on cards for GPU compositing hints
-
-### 1.2 Wire Homepage to Real Data
-
-- [x] Create `playerStore.js` for shared activeVideo state across hero, carousel, queue
-- [x] Theatre mode end-to-end: hero video plays, TheatreControls work, CategoryRows hide, exit restores
-- [x] Hero ↔ Carousel interaction: clicking carousel card updates hero background/title/metadata
-- [x] Homepage → real data bridge: replace picsum.photos placeholders with data from library/backend
-- [x] Verify all keyboard shortcuts work on HomePage (not just LibraryPage)
-
-### 1.3 Backend Homepage Endpoints
-
-- [x] Add `homepage_cache` table (id, category, mode, url, title, thumbnail, duration, source, uploader, fetched_at, expires_at, viewed)
-- [x] Add `categories` table (key, label, query, mode where mode = 'social' or 'nsfw')
-- [x] `GET /api/homepage?mode=social|nsfw` returns cached videos grouped by category
-- [x] Async yt-dlp refill when any category drops below 8 valid videos
-- [x] `POST /api/homepage/viewed?id=` marks video viewed, triggers refill if below threshold
-
-### 1.4 Hover Preview
-
-- [x] Stream real video (muted, low-res) on thumbnail hover
-- [x] 300ms debounce before starting stream
-- [x] Abort stream on mouseout
-- [x] Max 1 preview streaming at a time (new hover cancels previous)
-- [x] No duration cap — plays as long as user hovers
-
-### 1.5 Error Handling & Resilience
-
-- [x] Stale streaming URL detection and refresh (yt-dlp URLs expire)
-- [x] yt-dlp failure handling: video taken down, geo-blocked, rate limited — surface clear error to user
-- [x] Loading skeletons for grid, hero, carousel, featured section (not spinners)
-- [x] Empty states: no videos in library, empty queue, empty search results, no categories loaded
-
-### 1.6 Rebrand Cleanup
-
-> Internal plumbing still uses old "Puppy Viewer" names. Fix before shipping. 20 files affected, ~70 references total.
-
-**localStorage & Zustand stores:**
-- [x] Rename localStorage keys: `pv-mode` → `fd-mode`, `pv-lib` → `fd-lib`, `pv-queue` → `fd-queue`, `pv-app` → `fd-app`, `pv-content` → `fd-content`
-- [x] Add migration: on load, if old `pv-*` keys exist, copy to `fd-*` keys and delete old ones
-- [x] Update Zustand store `name` fields in: `modeStore.js`, `libraryStore.js`, `queueStore.js`, `useAppStore.js`, `useContentStore.js`
-- [x] Update `DebugPanel.jsx` localStorage key references (`pv-mode`, `pv-lib`, `pv-queue`)
-
-**Puppy data removal (entire SFW→Social rewrite):**
-- [x] Delete `src/data/puppyData.js` entirely (35 puppy references)
-- [x] Remove all `import { getSFWData } from '../data/puppyData'` in: `VideoPlayer.jsx`, `FloatingQueue.jsx`, `QueueSidebar.jsx`, `VideoCard.jsx`, `Queue.jsx`
-- [x] Remove `import { getSFWData, generateDemoPuppies } from '../data/puppyData'` in `MobileSwipeView.jsx`
-- [x] Replace puppy-specific SFW rendering logic with dual-mode Social data in all components above
-
-**UI branding:**
-- [x] `Header.jsx`: "Puppy Gallery" → "FeedDeck", remove puppy branding
-- [x] `ModeToggle.jsx`: "Switch to puppy mode" → appropriate Social mode label
-- [x] `useAppStore.js`: `document.title = 'Puppy Gallery 🐕'` → `'FeedDeck'`
-- [x] `modeStore.js`: Remove `PUPPY_FAVICON`, update title logic to always show "FeedDeck" / 📡
-- [x] `VideoPlayer.jsx`: Remove hardcoded puppy pexels video URL, replace SFW logic
-- [x] `VideoGrid.jsx`: "Check back later for more puppy videos!" → appropriate empty state
-- [x] `QueueSidebar.jsx`: "Queue up some puppy videos!" → appropriate empty state
-- [x] `dist/index.html`: "Puppy Gallery 🐕" → "FeedDeck"
-
-**Project-level:**
-- [x] `package.json`: `"name": "puppy-viewer"` → `"feeddeck"`
-- [x] `.claude/launch.json`: rename both config entries from "puppy-viewer" to "feeddeck"
-- [x] Rename project folder from `puppy-viewer/` to `feeddeck/` (coordinate with user)
-- [x] Update all import paths after folder rename
-
-### 1.7 Desktop MLP Polish
-
-- [x] Responsive breakpoint audit: verify homepage at all Tailwind breakpoints (sm/md/lg/xl)
-- [x] Next-up preview overlay: show upcoming video in corner before queue auto-advances
-- [x] Playback speed selector (0.5x to 2x)
-- [x] Quality selector — deferred to Milestone 3 (requires `yt-dlp -F` endpoint)
-- [x] Hero search bar: make it narrower, move helper text from beside it to below it
+> **Archive:** 135+ completed tasks moved to [`BACKLOG-ARCHIVE.md`](BACKLOG-ARCHIVE.md) on 2026-04-25.
 
 ---
 
-## Milestone 2: Swipe Feed
+## Milestone 1: Desktop MLP — COMPLETE
 
-> Goal: A buttery-smooth infinite vertical video feed that aggregates short-form content from multiple sources. Available on mobile AND desktop at `/feed`. Think TikTok but pulling from everywhere, with the mode (Social vs NSFW) determining which sources are mixed in.
+> All 54 tasks done. Details in [`BACKLOG-ARCHIVE.md`](BACKLOG-ARCHIVE.md).
 
-### Design Spec
+---
 
-#### Gesture Map (touch + trackpad/scroll on desktop)
+## Milestone 2: Swipe Feed — COMPLETE
 
-| Gesture | Action |
-|---------|--------|
-| Swipe up | Next video |
-| Swipe down | Previous video |
-| Swipe right | Open source URL in new browser tab |
-| Swipe left | Add to queue (animation + toast confirmation) |
-| Double-tap | Like/heart (burst animation) |
-| Tap | Play/pause toggle |
-| Long-press | Source controls: "More from this source" / "Hide this source" |
+> 68/70 tasks done. Remaining: mobile device testing gate ([?] in 2.7) and service worker caching ([ ] in 2.8).
 
-#### Feed UI
+**Remaining M2 items:**
 
-- **Overlay (subtle, always visible):** Video title, creator name, source icon (small, bottom-left)
-- **Timeline bar:** Thin scrubbable progress bar at very bottom, TikTok-style. Shows position in current video.
-- **Bottom nav bar:** 4 tabs — Feed, Search, Queue, Profile/Settings
-- **No sidebar icons.** All actions are gesture-driven. Clean, immersive.
-
-#### Video Display
-
-- **Vertical video:** Full-bleed, fills viewport
-- **Horizontal video (default):** Cropped/fit to fill — no black bars, center-crop to fill vertical frame
-- **Horizontal video (user setting):** Letterbox mode — black bars top/bottom, video at native aspect ratio
-- **Setting location:** Profile/Settings tab, "Video Display" section
-
-#### Feed Algorithm
-
-- **Sources per mode:**
-  - Social: YouTube Shorts, Instagram Reels, TikTok
-  - NSFW: fikfap, pornhubshorties, and similar aggregators (user can add more)
-- **Mix:** Library videos (previously saved) shuffled in with discovery (new from sources)
-- **Max length:** User-configurable in settings (default: no limit)
-- **Source weights:** Algorithm-driven, influenced by "more from this source" / "hide this source" feedback
-- **No repeat:** Don't show the same video twice in a session unless user scrolls back
-
-#### Source Management
-
-- **In-feed:** Long-press any video → "More from this source" (boost weight) or "Hide this source" (suppress)
-- **Backend:** `sources` table tracks domains, mode, weight, active/hidden status
-- **Adding sources:** Future — in-app setting to add new domains. For MLP, hardcode the initial source list.
-
-#### Content Pipeline
-
-- **Scheduled background fetch:** Cron-style job fetches new videos from each active source on an interval (e.g., every 30 min). Stores metadata + streaming URL in `feed_cache` table.
-- **On-demand top-up:** When the client's buffer drops below 5 unwatched videos, hit `GET /api/feed/next?mode=X&count=10` to fetch more.
-- **Expiry:** Streaming URLs expire. Backend tracks `expires_at` and re-fetches via yt-dlp when needed.
-- **Dedup:** Same video URL from different aggregators = one entry.
-
-### 2.1 Feed Core
-
-- [x] Create `/feed` route, accessible from both mobile and desktop
-- [x] Full-viewport vertical scroll container with CSS scroll-snap (`snap-y snap-mandatory`)
-- [x] Each video fills 100vh (or 100dvh for mobile browser chrome)
-- [x] Infinite scroll: fetch next batch when 5 videos from end of buffer
-- [x] Video autoplay on snap (muted initially, unmute on first tap)
-- [x] Preload next 2 videos, cache previous 2, unload beyond that
-- [x] Vertical video: full-bleed, no transforms needed
-- [x] Horizontal video: default center-crop to fill frame (`object-fit: cover`)
-- [x] Horizontal video letterbox setting: `object-fit: contain` with black background
-- [x] Store letterbox preference in user settings (localStorage for now, server later)
-
-### 2.2 Gesture System
-
-- [x] Swipe up/down: snap to next/previous video (scroll-snap handles this natively)
-- [x] Swipe right: detect horizontal swipe threshold (>50px, <30deg angle), open `video.sourceUrl` in new tab
-- [x] Swipe left: detect horizontal swipe, trigger add-to-queue
-- [x] Swipe-left feedback: card slides left with queue icon animation + toast "Added to queue"
-- [x] Double-tap: like/heart with burst animation overlay (heart particles, TikTok-style)
-- [x] Tap: play/pause toggle
-- [x] Long-press (>500ms): open source control sheet ("More from this source" / "Hide this source")
-- [x] Desktop: map scroll wheel to swipe up/down, keyboard arrows too
-- [x] Desktop: map left/right arrow keys to swipe-left (queue) and swipe-right (source)
-- [x] Prevent gesture conflicts: horizontal swipes only register if clearly horizontal (angle check)
-
-### 2.3 Feed UI Components
-
-- [x] `FeedPage.jsx`: route component, manages feed state and infinite scroll
-- [x] `FeedVideo.jsx`: single video card (100vh), handles video element + overlay
-- [x] `FeedOverlay.jsx`: subtle bottom-left overlay — title, creator, source icon (built into FeedVideo)
-- [x] `FeedTimeline.jsx`: thin scrubbable progress bar at bottom edge (built into FeedVideo)
-- [x] `FeedBottomNav.jsx`: 4-tab navigation (Feed, Search, Queue, Profile)
-- [x] `FeedToast.jsx`: transient notification for queue add, like confirmation
-- [x] `HeartBurst.jsx`: double-tap heart animation (CSS particles or canvas)
-- [x] `SourceControlSheet.jsx`: long-press bottom sheet with source actions
-- [x] `QueueSwipeAnimation.jsx`: card-slides-left animation component
-
-### 2.4 Feed Store & State
-
-- [x] Create `feedStore.js` (Zustand): current feed buffer, current index, loading state
-- [x] Feed buffer: array of video objects with `id`, `url`, `streamUrl`, `title`, `creator`, `source`, `sourceUrl`, `duration`, `orientation`, `thumbnail`
-- [x] Track watched IDs in session to prevent repeats
-- [x] Source weight map: `{ domain: weight }` persisted in localStorage/server (server-side via source-feedback endpoint)
-- [x] User settings: max video length, letterbox preference
-
-### 2.5 Feed Backend
-
-- [x] `feed_cache` table: id, source_domain, mode, url, stream_url, title, creator, thumbnail, duration, orientation (vertical/horizontal), fetched_at, expires_at, watched
-- [x] `sources` table: domain, mode (social/nsfw), label, weight, active (boolean), added_at
-- [x] Seed initial sources: YouTube Shorts, TikTok (social); PornHub (nsfw)
-- [x] `GET /api/feed/next?mode=X&count=10` — return next unwatched videos, weighted by source preferences
-- [x] `POST /api/feed/watched?id=X` — mark video watched
-- [x] `POST /api/feed/source-feedback` — body: `{ domain, action: 'boost' | 'hide' }` — adjust source weight
-- [x] Background fetch job: iterate active sources, yt-dlp extract new videos, insert into feed_cache
-- [x] Configurable fetch interval per source (default 30 min)
-- [x] Stream URL refresh: if `expires_at` passed, re-fetch via yt-dlp before serving
-- [x] Dedup: unique constraint on video URL, skip duplicates across sources
-
-### 2.6 Mobile Testing via Local WiFi
-
-> Test swipe feed and mobile UI on a real phone before any Pi/Tailscale setup. All M1-M3 work targets the local Windows laptop.
-
-- [x] Update `vite.config.js` to bind dev server to `0.0.0.0` (not just localhost)
-- [x] Verify Vite proxy still routes `/api` to Express for mobile clients
-- [x] Update Express to also listen on `0.0.0.0`
-- [x] Add dev script or console log that prints local network URL (e.g. `http://192.168.x.x:3000`) on startup
-- [x] Document setup in a short note: connect to same WiFi, open URL on phone (Vite prints network URL on startup)
-
-### 2.7 Feed Polish
-
-- [x] Smooth snap animation (not jarring — ease-out, ~300ms) (CSS scroll-snap + smooth behavior)
-- [x] Loading skeleton while next batch fetches
-- [x] "You're all caught up" state when feed exhausted (rare but handle it)
-- [x] Pull-to-refresh at top of feed (mobile)
-- [x] Orientation transition: smooth crossfade when switching between vertical and horizontal videos
-- [x] Respect system reduced-motion preference (disable burst animations, simplify transitions)
 - [?] Test on real mobile devices: iOS Safari, Android Chrome (viewport, scroll-snap, gesture conflicts)
   > QUESTION: Ready for manual mobile testing. Start `npm run dev` and open the network URL on your phone (same WiFi). Test swipe up/down, left/right gestures, double-tap hearts, and long-press source control.
-
-### 2.8 Video Playback Optimization
-
-> Goal: Eliminate all stutter and delay between swipes. Videos should feel like they're already playing before the user gets there. Priority gate: do not start until basic feed video playback works end-to-end.
-
-**Tier 1 — Highest leverage (do first):**
-- [x] Pre-resolve stream URLs at ingest time: background refill job runs yt-dlp and stores `stream_url` in `feed_cache` immediately. `/api/feed/next` returns stream URLs directly in the response. Eliminates per-video `/api/stream-url` round-trips
-- [x] Pre-warm feed on app load: add `feedStore.prefetch()` that fetches first batch of feed data + stream URLs during idle time on homepage (before user navigates to `/feed`). Use `requestIdleCallback` or fire after homepage render
-- [x] Eager URL warm-up in store: when `fetchMore()` pulls 10 videos into buffer, immediately resolve/validate stream URLs for next 5 videos (beyond the ±2 render window). Bytes downloading before user scrolls there
-
-**Tier 2 — Smooth out the edges:**
-- [x] Video element pooling: DEFERRED — conflicts with singleton `<video>` pattern needed for iOS unmute persistence. The singleton already avoids DOM churn for the active element. Pre-resolved stream URLs (Tier 1) eliminate the main latency source. Revisit if stutter persists after mobile testing
-- [x] `<link rel="preconnect">` for known CDN domains: N/A — all video loads go through same-origin `/api/proxy-stream`, so browser preconnect hints don't apply. Server-side DNS is already warm from refill jobs
-- [x] Increase preload window: bump PRELOAD_AHEAD from 2 to 3-4 on fast connections. Detect via `navigator.connection.effectiveType`
-
-**Tier 3 — Premium smoothness:**
 - [ ] Service worker video segment caching: cache first ~500KB of each preloaded video response. Swipe transitions start from cache instantly while rest streams in background
-- [x] Adaptive preload depth: use Network Information API to adjust strategy. 4G/WiFi → preload 4 ahead, 3G → preload 1 + lower quality (already implemented in FeedVideo._getPreloadWindow())
-- [x] Stream URL TTL monitoring: proactive re-resolve for URLs expiring within 15min (5min check interval). Also fixed /api/stream-url to check expires_at before serving cached URLs
-
-### 2.9 Mobile Feed Polish
-
-> **Priority gate:** Do not start until 2.8 is complete (video playback is silky smooth).
-
-- [x] Long-press timing fix: increase threshold from 500ms to ~800-1000ms so source-control sheet doesn't fire during normal scrolling or casual holds
-- [x] Refresh feed button: visible button in feed UI to manually refresh/reload the feed (complement to pull-to-refresh)
-- [x] Fullscreen immersive mode: button on feed overlay that hides nav bar and overlay. Video fills entire viewport, user can still scroll between videos. Tapping screen temporarily reveals overlay (auto-hides after ~3s or on next scroll)
-- [x] Auto-hide nav bar: bottom nav hides on scroll down (into feed), reappears on scroll up. CSS transform slide-down/up with ~200ms transition. Reclaims screen real estate without losing access
-- [x] Rethink settings access: added three-dot source control button on right side of active video (tap-friendly alternative to long-press). Settings tab already in bottom nav. Long-press still works but is no longer the only discovery path
 
 ---
 
@@ -466,6 +244,54 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 - [x] Radial gradient vignette overlay blends edges into background color seamlessly
 - [x] Works across aspect ratios: blurred fill handles letterboxing for any ratio
 
+### 3.12 Taste Feedback & Adaptive Ranking (2-Step Rating System)
+
+> **Full spec:** `ADR_taste-feedback-system.md` | **UX report:** `UX_taste-feedback-report.md` | **Mockup:** `mockup_taste-feedback.html`
+> Goal: Thumbs up/down on any video, directly influencing what content surfaces across all pages. Two feedback tiers: quick rating (Step 1) and keyword override for bad rows (Step 2). Multi-signal taste profile with 60-day decay half-life.
+
+**Phase A — Database & Scoring Engine (do first, everything depends on this):**
+- [x] Add `video_ratings` table (video_url, surface_type, surface_key, rating, tags JSON, creator, rated_at)
+- [x] Add `creator_boosts` table (creator PK, boost_score, surface_boosts JSON, last_updated)
+- [x] Add `taste_profile` table (signal_type, signal_value, weight, surface_key nullable, updated_at)
+- [x] Migrate existing `tag_preferences` data into `taste_profile` (signal_type='tag', surface_key=NULL) — `database.js:638–655` one-time seed migration
+- [x] Build unified scoring function on server: `server/scoring.js` exports `scoreVideos`, `getScoreBreakdown`, `invalidateProfileCache` — implementation is point-based (additive), not the multiplicative formula in `ADR_taste-feedback-system.md`
+- [ ] Add 60-day half-life decay to scoring reads: `weight * (0.5 ^ (days_since_update / 60))`
+- [x] Replace `homeStore.js` client-side scoring with server-side scored results — partial: `feed.js` uses server-side scoring, but `homeStore.js:271` still runs a client-side boost pass
+- [x] Integrate `taste_profile` scores into `feed.js` weighted selection (replace simple tag multiplier) — `feed.js:6` imports `scoreVideo`, `isDownvoted`, `MIN_VISIBLE_SCORE`
+
+**Phase B — Step 1: Thumbs Up/Down (MVP interaction):**
+- [x] Create `ratingsStore.js` (Zustand): per-row consecutive-down tracker, per-row 30s window tracker, toast pause timer, `undoRating()` (2026-04-25)
+- [x] Create `ThumbsRating.jsx`: glass pill overlay at bottom of focused card, thumbs up/down buttons (44px touch targets); SVG Feather icons, undo toast on down-rate (2026-04-25 icon fix + undo wired)
+- [x] Wire ThumbsRating into PosterCard (homepage cards) — show on focused card hover only; expanded card shows inline SVG thumbs buttons (2026-04-25 emoji→SVG)
+- [x] Wire ThumbsRating into FeedVideo (swipe feed cards) — `FeedVideo.jsx:3,390`
+- [x] `POST /api/ratings` endpoint: record rating, update taste_profile + creator_boosts; `POST /api/ratings/undo` to reverse (2026-04-25)
+- [ ] Thumbs-down card animation: 0.3s shrink + fade out, replacement card fades in (0.35s spring)
+- [ ] Thumbs-up: pulse animation on card, auto-boost creator (0.25 global + 0.25 surface), add to Liked section
+- [x] 4+ consecutive downs on same row: trigger `POST /api/ratings/row-refresh`, staggered domino fade-swap (100ms stagger)
+- [x] Reset consecutive-down counter after row-refresh
+
+**Phase C — Toast System Upgrade:**
+- [x] Upgrade GlobalToast to support two tiers: passive (auto-dismiss 3s, no interaction) and action (CTA button, 8s timeout, configurable `position: 'top'|'bottom'` — 2026-04-25)
+- [x] Action toast: rose left-border, pointer-events-auto, configurable buttons, progress bar
+- [x] Toast fatigue: 1st toast normal, 2nd toast adds "Pause for 1hr" option, pause suppresses rating toasts for 60min (`isToastPaused()` in ratingsStore)
+- [x] Down-rate undo toast bypasses pause (recovery path) — up-rate toast respects pause (2026-04-25)
+- [ ] Max 1 action toast per 60s globally (queue others)
+
+**Phase D — Step 2: Enhanced Feedback Loop:**
+- [ ] Rapid-dislike detection: 2+ thumbs-down within 30s on same row triggers action toast ("This row isn't hitting. Want to fix it?") — ratingsStore tracks `recentDownTimestamps`, trigger UI not yet wired
+- [ ] Keyword override panel: inline panel anchored below row header, up to 5 keyword inputs, Apply button
+- [x] `POST /api/ratings/row-preferences` endpoint: save keywords to taste_profile with surface_key
+- [ ] Row reload: new videos lazy-load one at a time (200ms stagger), pushing old content out
+- [x] Thumbs-up toast: "Saved. More from [creator] coming your way." (passive tier, gated by `isToastPaused()`)
+
+**Phase E — Liked Section & Polish:**
+- [ ] "Liked" virtual shelf in library (backed by video_ratings WHERE rating='up')
+- [ ] "Your Likes" row on homepage (appears after 3+ liked videos)
+- [ ] Score clamping safety rail: final_score max 5x base_score
+- [ ] Debug overlay (dev mode only): show score breakdown on card hover
+- [x] `GET /api/ratings/history` endpoint for future "your ratings" view
+- [x] `GET /api/ratings/score-debug?url=&surface=` dev endpoint — returns full scoring breakdown
+
 ### 3.10 Mobile Feed Filter System
 
 > Depends on: 3.2 (Tag Preferences) and 3.6 (Search) for backend infrastructure. Can build the UI shell earlier but full functionality needs tags and search wired up.
@@ -478,6 +304,7 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 ### 3.11 Mobile Device Testing Gate
 
 > **MANUAL CHECKPOINT.** Do not proceed to Milestone 4 (Pi deployment) until this is done. Prompt the user to test on a real phone over local WiFi (setup from 2.6) and sign off.
+> **Target: week of May 5-9.** Beelink deployment deadline moved to **May 15** (was May 1).
 
 - [ ] Claude Code: prompt user to run full manual test on phone (homepage, playback, theatre mode, queue, search, swipe feed)
 - [ ] User sign-off that mobile experience is acceptable before Pi migration begins
@@ -701,6 +528,18 @@ For backlog management protocol, see `BACKLOG_SKILL/SKILL.md`.
 
 _Claude Code adds tasks here as they come up during implementation. Move to the appropriate section when triaging._
 
+### Homepage Quality Pass (filed 2026-04-24 from visual review)
+
+- [x] (2026-04-24) **BUG: `daysAgo` uses `fetched_at` instead of `upload_date`** — fixed 2026-04-24. mapVideo now parses `upload_date` (YYYY-MM-DD, YYYYMMDD, and ISO 8601), uses it for `daysAgo`, and exposes `uploadTs`/`fetchedTs` as sortable timestamps. Backend `/api/homepage` SELECT now also returns `fetched_at`. Categories sort newest-first by `uploadTs` before round-robin. Plus: stale-cache filter (180-day window) excludes pre-2025 content from non-pinned shelves and Top 10 — pinned/subscription content exempt. Plan: `~/.claude/plans/fix-up-next-carousel-distributed-lark.md`.
+
+- [x] (2026-04-24) **Recency bias: prioritize recently cached videos across all rows** — fixed alongside the `daysAgo` bug. Same change set above.
+
+
+
+- [ ] (2026-04-24) Phase 3 of NSFW homepage plan: taste-driven row engine ("Because you liked POV", "More from {creator}", "Tonight's Picks"). Stored as dynamic `persistent_rows` entries with a `dynamic_query` field, regenerated nightly. Sketched in `~/.claude/plans/refactored-swimming-cocoa.md`. Defer until current shelves are validated in real use.
+- [ ] (2026-04-24) Top-3 PH model rows are wired but currently empty (`creator_boosts` table has no PH creators with positive boost yet). Will auto-appear once enough thumbs-up ratings accrue on PH content. No code action needed — just usage time.
+- [ ] (2026-04-24) `0 new videos` runs on `nsfw_redgifs_amatr/couple/pov/solo` and `nsfw_xvideos_hits` — likely scraper selectors are stale or those queries return mostly already-cached URLs. Investigate if rows stay thin after a week of warm-cache runs.
+- [x] (2026-04-24) NSFW homepage thinness — landed in this session. See "## Completed" for full details. Net +12 category rows + 2 sticky personalized shelves leading the page.
 - [x] Reduce CDN URL cache TTL from 4 hours to 2 hours (PornHub URLs expire in ~2hr)
 - [x] Wire source adapter system (`server/sources/`) into `server/index.js` — completed in 3.0 Integration
 - [x] Clean up 3 stale `vite.config.js.timestamp-*` files in project root
@@ -726,177 +565,30 @@ _Claude Code adds tasks here as they come up during implementation. Move to the 
 
 ---
 
-## Design Review Items (2026-04-07, Run 3: User Journey Audit)
 
-_Added by automated daily design review. Prioritized by impact on core user experience._
+### Promoted from Design Reviews (2026-04-07 & 2026-04-08)
 
-### P0 (This Week)
-- [x] **Recover truncated source files** -- Verified: all 10 key source files intact. index.css was truncated (fadeIn keyframe incomplete) — fixed (2026-04-08).
-- [x] **Add loading state to theatre mode** -- Added spinner + backdrop-blur loading indicator with role="status" aria-live="polite" (2026-04-08).
-- [x] **Wire Hero Like button** -- Connected to libraryStore.toggleFavorite, shows filled/unfilled heart with accent color (2026-04-08).
-- [x] **Add touch actions to VideoCard** -- Long-press (600ms) opens context menu on touch devices, prevents click after long-press (2026-04-08).
+_Open items from archived design review runs. Completed review items in [`BACKLOG-ARCHIVE.md`](BACKLOG-ARCHIVE.md)._
 
-### P1 (Next 2 Weeks)
-- [x] **Toast feedback for queue operations** -- Created toastStore + GlobalToast component. "Added to queue" / "Playing next" toasts on all queue add points (VideoCard, HeroSection, ContextMenu, MobileSwipeView) (2026-04-08).
-- [x] **Library loading skeleton** -- SkeletonLibrary component already existed and is used in LibraryPage (verified 2026-04-10).
-- [x] **Label or remove demo data** -- Added amber "Demo" badge on VideoCard when source === 'demo' (2026-04-10).
-- [x] **Settings action feedback** -- Already using showToast for all actions: source add/pause/delete, tag add/remove, cookie import/delete (verified 2026-04-10).
-- [x] **Pre-resolve hero stream URL** -- Added prewarmStream() to playerStore, called on heroItem change. Covers reduced motion and HLS edge cases where autoplay hook doesn't resolve (2026-04-10).
-- [x] **Persist watchedIds from server** -- Already implemented in feedStore.initFeed() via /api/feed/watched-ids (verified 2026-04-10).
-
-### P2 (Month 2)
-- [ ] **Content-aware skeleton shapes** -- Match skeleton layout to actual component dimensions.
-- [ ] **Ambient color extraction** -- Extract dominant thumbnail color for hero gradient overlay.
-- [x] **Settings input validation** -- Client-side validation for source domain format (regex), non-empty label/query, trimmed values before API submission (2026-04-11).
-
-### P3 (Month 3)
-- [ ] **Branded empty state SVGs** -- Replace emoji icons with custom illustrations.
-- [ ] **Noise/grain texture** -- Subtle film grain on dark surfaces for cinematic feel.
-- [ ] **Unified hover scale token** -- Single `--hover-scale: 1.03` used everywhere.
-
----
-
-## Design Review Items (2026-04-08, Run 4: Competitive Comparison)
-
-_Added by automated daily design review. Live comparison against Netflix and HBO Max page structures._
-
-### P0 (This Sprint — Competitive Parity)
-- [x] **Continue Watching row on Homepage** -- ContinueWatchingRow component wired into BrowseSection as first row before category rows (2026-04-11).
-- [x] **Search UI** -- Already implemented: Ctrl+K expanding search in HomeHeader with results dropdown (verified 2026-04-11).
-- [x] **Hero autoplay (muted)** -- Already implemented: useHeroAutoplay hook resolves stream URL, plays muted video with toggle button (verified 2026-04-11).
-
-### P1 (Next 2 Weeks — Premium Feel)
-- [x] **Personalized row titles** -- personalizeLabel() in homeStore generates contextual names based on content: "Quick Hits", "Fresh Today", "Picked for You", "Most Viewed", "More from {uploader}" (2026-04-11).
-- [x] **Fix random year in HeroSection** -- Line 328 still had `2020 + Math.random()` despite prior fix claim. Actually fixed: now uses heroItem.uploadYear or extracted year from addedAt (2026-04-10).
-- [x] **Skeleton → content crossfade** -- Added contentReveal keyframe (200ms ease-out fade+slide) to index.css. Both Netflix and HBO use subtle opacity transitions (2026-04-08 run 4).
-- [x] **Carousel navigation arrows** -- Already implemented in CategoryRow.jsx with left/right chevron buttons, pointer-fine media query, scroll state tracking (verified 2026-04-10).
-- [x] **Progress indicator bar on cards** -- Added 3px accent-colored progress bar at bottom of VideoCard thumbnails when watchProgress > 5% (2026-04-10).
-
-### P2 (Month 2 — Differentiation)
-- [x] **Top 10 / Trending row** -- Top10Row component wired into BrowseSection after ContinueWatching. homeStore builds top10 from allVideos sorted by view count with rank numbers (2026-04-11).
-- [ ] **Content-aware hero gradient** -- Extract dominant color from hero thumbnail for gradient overlay.
-- [ ] **Lightweight detail card on hover** -- Expanded card with synopsis and action buttons before committing to Theatre (Netflix signature pattern).
+- [x] **Content-aware skeleton shapes** -- Match skeleton layout to actual component dimensions. _2026-04-26: HomePage skeletons (`SkeletonHero` + `SkeletonGalleryShelf`) now mirror real dimensions — Hero `min-h-[600px]` to match `HeroSection`, title clamp height + extra "+" button placeholder; GalleryShelf restructured to mirror `GalleryRow` (left-aligned header with "See all" pill, 50vh card heights matching `PosterCard.WIDTH` + `'50vh'`, 35vw scroll padding, 4px-tall windowed dots) plus a `PosterPeekRow` placeholder strip below._ _2026-04-29: FeedPage loading hint replaced — new `SkeletonFeedSlide` (h-dvh full-bleed black surface, centered 64px play affordance, bottom-aligned title/meta shimmer bars) mirrors `FeedVideo`'s actual shape; FeedPage's two `SkeletonCard` instances inside the snap container swapped for a single `<SkeletonFeedSlide />`. Audited `SkeletonLibrary` Continue Watching — already correct (skeleton uses `w-card` + `h-[124px]`, real `ContinueWatchingCard` at LibraryPage.jsx:298,308 uses `w-card` + `h-[124px]`; same dimensions). Audited the "ghost token" theory — `w-card` (200px), `w-card-lg` (230px), `h-card-thumb` (113px), `h-card-thumb-lg` (130px) are all defined in `tailwind.config.js:83-91` (verified via runtime getBoundingClientRect on live preview); no replacement needed. Build clean._
 - [ ] **Editorial row variety** -- Increase from 3-5 to 8-10 rows: "Fresh Today", "Long Watches", "Quick Hits", "Most Viewed", source highlights.
-
-### P3 (Month 3 — Polish)
 - [ ] **Card hover expansion animation** -- Scale + translate + info reveal (Netflix pattern).
 - [ ] **Maturity/content rating badges** -- Source-specific ratings on cards and hero.
 - [ ] **"More Like This" related content** -- Suggest similar videos after watching.
 
 ---
 
-## Completed
+## Completed (Recent)
 
-- [x] (2026-04-11) Continue Watching row on Homepage — wired existing ContinueWatchingRow into BrowseSection as first row before category rows (Netflix competitive parity)
-- [x] (2026-04-11) Top 10 / Trending row — wired Top10Row into BrowseSection, added top10 state to homeStore populated by view count ranking from fetched data
-- [x] (2026-04-11) Personalized row titles — added personalizeLabel() to homeStore that generates contextual names (Quick Hits, Fresh Today, Picked for You, Most Viewed, More from X) with dedup logic
-- [x] (2026-04-11) Settings input validation — client-side domain format regex, non-empty label/query validation, trimmed values before API submission
-- [x] (2026-04-11) Verified: Search UI already implemented (Ctrl+K expanding input in HomeHeader), Hero autoplay already implemented (useHeroAutoplay hook + mute toggle), Settings username field already implemented (Seed Recommendations section)
-- [x] (2026-04-10) Fix random year in HeroSection — actually fixed `2020 + Math.random()` on line 328 (prior claim was incomplete). Now uses heroItem.uploadYear || year from addedAt
-- [x] (2026-04-10) Pre-resolve hero stream URL — added prewarmStream()/getPrewarmedUrl() to playerStore, called on heroItem change for instant Play even with reduced motion or HLS
-- [x] (2026-04-10) Progress indicator bar on VideoCards — 3px accent-colored bar at bottom of thumbnails when watchProgress > 5% (Netflix/HBO competitive parity)
-- [x] (2026-04-10) Demo data badge — amber "DEMO" badge on VideoCard when source === 'demo'
-- [x] (2026-04-10) Backlog audit — verified 5 items already implemented (library skeleton, carousel arrows, settings toasts, watchedIds, continue watching row)
-- [x] (2026-04-08) Fix random year in HeroSection — replaced `2020 + Math.random()` with upload year extraction from heroItem data (design review run 4)
-- [x] (2026-04-08) Skeleton-to-content crossfade — added `contentReveal` keyframe animation (200ms ease-out opacity + translateY) to index.css (design review run 4)
-- [x] (2026-04-08) Fix truncated index.css — fadeIn keyframe was cut off, completed it + removed duplicate view transition rules
-- [x] (2026-04-08) Theatre mode loading spinner — replaced plain text with spinner + backdrop-blur container, added aria role="status"
-- [x] (2026-04-08) Hero Like button wired — connected to libraryStore.toggleFavorite with visual state feedback (filled heart + accent color)
-- [x] (2026-04-08) VideoCard touch actions — long-press (600ms) opens context menu on touch, prevents click after long-press triggered
-- [x] (2026-04-08) Global toast system — toastStore.js + GlobalToast.jsx, wired into AppShell. Queue add/play-next actions show toast across all surfaces (VideoCard, HeroSection, ContextMenu, MobileSwipeView)
-- [x] (2026-03-19) Initialize Vite + React project with folder structure
-- [x] (2026-03-19) Configure Tailwind CSS with dark theme and custom design tokens
-- [x] (2026-03-19) Set up Zustand stores (mode, queue, library)
-- [x] (2026-03-19) Create Express server with health check and API routes
-- [x] (2026-03-19) Initialize SQLite database with videos, preferences, history tables
-- [x] (2026-03-19) Configure Vite proxy for /api requests
-- [x] (2026-03-19) Add npm scripts (dev, build, preview)
-- [x] (2026-03-19) SFW/NSFW mode store with localStorage persistence
-- [x] (2026-03-19) Escape key panic handler (always to SFW)
-- [x] (2026-03-19) Visual mode toggle button
-- [x] (2026-03-19) Tab title and favicon swap on mode change
-- [x] (2026-03-19) SFW data helper with deterministic fake metadata per video ID
-- [x] (2026-03-19) Conditional render for all thumbnails, titles, metadata
-- [x] (2026-03-19) Desktop thumbnail grid (responsive 2/3/4/5 columns)
-- [x] (2026-03-19) Thumbnail card with duration badge
-- [x] (2026-03-19) Lazy loading images
-- [x] (2026-03-19) Video player with standard controls
-- [x] (2026-03-19) Keyboard shortcuts (Space, arrows, F, M, N)
-- [x] (2026-03-19) Queue sidebar with add/remove/reorder
-- [x] (2026-03-19) Queue persistence in localStorage
-- [x] (2026-03-19) Header with search and mode toggle
-- [x] (2026-03-19) Add video modal with URL paste
-- [x] (2026-03-19) Backend yt-dlp metadata extraction endpoint
-- [x] (2026-03-19) Backend stream URL endpoint
-- [x] (2026-03-19) yt-dlp validated with Arc browser cookies
-- [x] (2026-03-19) Context menu on thumbnails
-- [x] (2026-03-20) Homepage mockup built (HTML prototype, reference only)
-- [x] (2026-03-20) Homepage design spec with state machine, component tree, store design
-- [x] (2026-03-20) Design tokens finalized in tailwind.config.js
-- [x] (2026-03-20) All Priority 1 scroll animation tasks (except real-browser testing)
-- [x] (2026-03-20) All Priority 2 React components built
-- [x] (2026-03-20) Test in real browser and fine-tune phase boundaries/timing — rewrote entire scroll animation: replaced state machine with CSS sticky + 5-phase scroll-position interpolation (modeled on Apple TV). Files: `useFeaturedScroll.js` (rewritten), `FeaturedSection.jsx` (350vh zone, overlay ref, Phase 2 video playback)
-- [x] (2026-03-20) Create `playerStore.js` for shared activeVideo state across hero, carousel, queue — already existed from prior work
-- [x] (2026-03-20) Theatre mode end-to-end: hero video plays, TheatreControls wired to playerStore, FeaturedSection+CategoryRows hide, exit restores
-- [x] (2026-03-20) Hero ↔ Carousel interaction: clicking carousel card updates hero — already worked via setHeroItem
-- [x] (2026-03-20) Verify all keyboard shortcuts work on HomePage — added theatre mode keyboard handler (Space, arrows, F, M) to HeroSection
-- [x] (2026-03-20) Add `homepage_cache` table — already existed in database.js
-- [x] (2026-03-20) Add `categories` table — already existed with seed data in database.js
-- [x] (2026-03-20) `GET /api/homepage?mode=social|nsfw` — already implemented in server/index.js
-- [x] (2026-03-20) Async yt-dlp refill when category below 8 — already implemented in refillCategory()
-- [x] (2026-03-20) `POST /api/homepage/viewed?id=` — already implemented with refill trigger
-- [x] (2026-03-20) Homepage → real data bridge: fetchHomepage() in homeStore calls API, maps response, falls back to placeholders when cache empty
-- [x] (2026-03-20) Hover preview: useHoverPreview hook with 300ms debounce, singleton abort, muted video overlay on CategoryRow and VideoCard
-- [x] (2026-03-20) Stale URL auto-retry: handleStreamError in playerStore, onError handler on theatre video element
-- [x] (2026-03-20) yt-dlp error handling: backend parses unavailable/geo-blocked/rate-limited errors, frontend shows via streamError
-- [x] (2026-03-20) Loading skeletons: SkeletonHero, SkeletonFeatured, SkeletonCategoryRow, SkeletonVideoGrid in Skeletons.jsx, wired into HomePage
-- [x] (2026-03-20) Empty states: CategoryRows shows message when no categories, VideoGrid already had EmptyState, queue already had empty state
-- [x] (2026-03-20) Rebrand: localStorage keys pv-* → fd-*, migration in migrations.js (runs before store init), all Zustand store names updated
-- [x] (2026-03-20) Rebrand: deleted puppyData.js, replaced all imports with socialData.js across 6+ components
-- [x] (2026-03-20) Rebrand: UI text updated — Header, ModeToggle, VideoGrid, QueueSidebar, dist/index.html, modeStore, useAppStore
-- [x] (2026-03-20) Rebrand: package.json name → "feeddeck", launch.json configs renamed
-- [x] (2026-03-20) Responsive breakpoint audit: verified homepage renders at sm/md/lg/xl breakpoints
-- [x] (2026-03-20) Next-up preview overlay: shows upcoming queue item in corner during last 10s of theatre playback
-- [x] (2026-03-20) Playback speed selector: SpeedSelector component in TheatreControls, cycles 0.5x–2x
-- [x] (2026-03-20) Hero search bar: narrowed to 280px, helper text moved below input
-- [x] (2026-03-21) Featured carousel overlay: replaced React inline styles with Tailwind classes so scroll hook's imperative DOM updates survive re-renders; added setOverlayOpacity(1) to applyCarousel()
-- [x] (2026-03-21) Featured carousel video preview: stream URL fetch + auto-play on canplay, onPlaying/onPause fade video in/out
-- [x] (2026-03-21) Removed React.StrictMode to fix competing scroll handlers from double-mount
-- [x] (2026-03-21) M2 Feed Core (2.1): route, page, store, video component, backend tables/endpoints, content pipeline
-- [x] (2026-03-21) M2 Gesture System (2.2): touch swipes, double-tap hearts, long-press source sheet, desktop keyboard
-- [x] (2026-03-21) M2 Feed UI (2.3): FeedVideo, FeedToast, HeartBurst, SourceControlSheet, FeedBottomNav, QueueSwipeAnimation
-- [x] (2026-03-21) M2 Feed Store (2.4): feedStore.js with buffer, index, watched tracking, letterbox preference
-- [x] (2026-03-21) M2 Feed Backend (2.5): feed_cache/sources tables, API endpoints, scheduled refill, stream URL caching
-- [x] (2026-03-21) M2 Mobile Setup (2.6): Vite + Express bound to 0.0.0.0, network URL printed on startup
-- [x] (2026-03-21) M2 Feed Polish (2.7): pull-to-refresh, loading spinner, reduced-motion support, orientation crossfade
-- [x] (2026-03-21) Fixed mobile video playback: switched from HLS to direct MP4 format IDs (480p/240p/720p), routed all CDN URLs through /api/proxy-stream to avoid ORB blocking
-- [x] (2026-03-21) Unmute persistence working: shared singleton video element preserves gesture activation across swipes
-- [x] (2026-03-21) Security: fixed command injection (execFile instead of shell interpolation), SSRF protection (CDN domain whitelist), crash-on-rejection handler
-- [x] (2026-03-21) Performance: async yt-dlp in /api/health and /api/metadata (was blocking event loop)
-- [x] (2026-03-21) Code cleanup: removed dead stores (useAppStore, useContentStore), dead components (App.jsx, Queue.jsx), unused dep (react-swipeable), fixed stale closure in FeedVideo, debug overlay behind DEV flag, HLS proxy URL rewriting
-- [x] (2026-03-21) 2.8 Tier 1: Pre-resolve stream URLs at ingest time — `_preResolveStreamUrls()` in server/index.js resolves URLs during background refill
-- [x] (2026-03-21) 2.8 Tier 1: Pre-warm feed on app load — `feedStore.prefetch()` via `requestIdleCallback` on homepage
-- [x] (2026-03-21) 2.8 Tier 1: Eager URL warm-up — `_warmStreamUrls()` resolves stream URLs for new buffer videos and updates store
-- [x] (2026-03-21) 2.8 Tier 2: Adaptive preload window — `_getPreloadWindow()` uses Network Information API (4g=4, 3g=2, 2g=1, default=2-3)
-- [x] (2026-03-21) 2.8 Tier 2: Preconnect hints — N/A, all loads proxied through same-origin
-- [x] (2026-03-21) 2.8 Tier 2: Video element pooling — deferred, conflicts with singleton unmute pattern for iOS
-- [x] (2026-03-21) 2.9: Long-press timing fix (500ms → 800ms)
-- [x] (2026-03-21) 2.9: Refresh feed button (top-right, visible at first video)
-- [x] (2026-03-21) 2.9: Fullscreen immersive mode (toggle button, overlay auto-hides after 3s, tap to reveal)
-- [x] (2026-03-21) 2.9: Auto-hide nav bar (scroll-direction detection, CSS transform transition)
-- [x] (2026-03-21) 2.9: Settings access rethink — three-dot source control button on active video, tap-friendly alternative to long-press
-- [x] (2026-03-22) 3.1 Queue Sync: SQLite-backed queue with CRUD API, queueStore migrated from localStorage to server, useQueueSync polling hook (3s), OfflineBanner
-- [x] (2026-03-22) 3.2 Tag Preferences: tag_preferences table, settings UI with liked/disliked chips, /api/tags/* endpoints
-- [x] (2026-03-22) 3.3 Basic Recommendations: /api/discover endpoint with rule-based scoring, /api/tags/popular
-- [x] (2026-03-22) 3.4 Cookie Auth: cookies.txt import via settings page, yt-dlp auto-detects cookies file, status indicator
-- [x] (2026-03-22) 3.5 Organization: favorites toggle, watch later, star ratings (1-5), custom playlists (full CRUD), library filter tabs
-- [x] (2026-03-22) 3.6 Search: HeroCarousel wired to /api/search/multi (multi-site parallel search)
-- [x] (2026-03-22) 3.7 PiP: native browser PiP button + P keyboard shortcut
-- [x] (2026-03-22) 3.8 Quality Selector: /api/stream-formats endpoint, quality dropdown in VideoPlayer, localStorage preference
-- [x] (2026-03-22) 3.9 Hero Image Fitting: object-contain with blurred background fill + radial gradient vignette
-- [x] (2026-03-22) 4.1 Deployment, 4.3 Theme, 4.8 Source Management (committed from previous session)
-- [x] (2026-03-22) 5.9 Library Page Upgrade: font-display headers, tab bar (All/Favorites/History/Watch Later/Top Rated) with count badges, Continue Watching horizontal row with progress bars, per-tab empty states with CTAs, watchProgress tracking in libraryStore
-- [x] (2026-03-22) 5a.1 Playback Audit & Fixes: HLS.js fatal error recovery (reject instead of resolve), HeroSection onEnded queue autoadvance, proxy-stream 15s timeout, stream URL expires_at check, proactive TTL monitor (re-resolves URLs expiring within 15min)
-- [x] (2026-03-22) 2.8 Tier 3: Stream URL TTL monitoring with proactive re-resolution, /api/stream-url now checks expires_at
-- [x] (2026-03-22) Homepage playback fix: all CDN stream URLs now routed through /api/proxy-stream (HeroSection theatre mode + FeaturedSection previews were using raw CDN URLs that failed due to CORS/Referer requirements)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               
+> Full history: [`BACKLOG-ARCHIVE.md`](BACKLOG-ARCHIVE.md)
+
+- [x] (2026-04-29) **Discovered: Lightweight detail card on hover — already shipped** — Stale design-review item from `docs/design-reviews/2026-04-08-competitive-comparison.md` (item #11). The Netflix-signature hover-detail card was implemented in commits `8647e21` (M0.1 focusedItem state) + `01b5959` (M0.2 hover-preview wire-up) + the 2026-04-24 PosterCard overlay refactor. `PosterCard.jsx:153` enters `isExpanded` mode when `isFocused && variant !== 'landscape'` and renders the full Netflix-style detail panel: genre/duration pills (`PosterCard.jsx:328-333`), title with larger display font (`:335`), meta row with views + uploader (`:337-345`), 2-line clamped synopsis from `item.desc` (`:347-360`), and action buttons before committing to Theatre — `▶ Play` (sets `heroItem` + `theatreMode=true`), `+ Queue` (calls `addToQueue`), and inline thumbs up/down (calls `handleRate`) (`:362-406`). Hover triggers via `GalleryRow.jsx:387-393` `onMouseEnter` calling `setFocusedItem`; keyboard arrow nav uses the same flow with `inputKind: 'keyboard'` (`GalleryRow.jsx:297-308`). Width animates 420→600px on focus with spring easing (450ms, `cubic-bezier(0.34, 1.56, 0.64, 1)`). Top 10 row uses a deliberately distinct treatment (giant rank numbers, no detail panel). Marked complete.
+- [x] (2026-04-28) **Discovered: Noise/grain texture — already shipped** — Stale design-review item. Surface grain overlay was implemented in commit `54bede5` (5c.4 glass header + 5c.5 motion tokens). `body::before` in `src/index.css` paints a fixed-position SVG fractal noise (`feTurbulence`, baseFrequency 0.65, 3 octaves, stitched 300×300 tile) at 2.5% opacity with `mix-blend-mode: overlay` and `pointer-events: none` over the entire viewport. Cinematic texture on dark surfaces, no readability impact. Marked complete.
+- [x] (2026-04-28) **Discovered: Content-aware hero gradient — already shipped** — Stale design-review item; duplicate of the 2026-04-26 "Ambient color extraction for hero gradient" entry below. `useAmbientColor` (`src/hooks/useAmbientColor.js`) samples a 24×24 canvas of `heroItem.thumbnail`, weighting saturated mid-luminance pixels and caching by URL. `HeroSection.jsx` consumes the `[r,g,b]` and exposes it as the `--hero-ambient-rgb` CSS custom property used by the screen-blend gradient overlay. CORS-tainted CDNs return null → falls back cleanly to the neutral gradient. Marked complete.
+- [x] (2026-04-27) **Discovered: Branded empty state SVGs** — Replaced emoji icons with custom line-art illustrations across Library tabs and Feed empty/error states. New `EmptyIllustration` component with 11 variants (library/liked/favorites/history/watchLater/rated/search/feed/sources/allCaughtUp/error) — 80×80 stroke-based SVGs in Feather-icon style, tinted via `currentColor`, with a rose accent dot for branded flourish. Wired into `LibraryEmptyState` (6 emojis replaced: 📂 👍 ♡ ⏱ 🔖 ★) and `FeedPage` error/no-sources/no-videos/exhausted states (4 glyphs replaced: ⚠ ⚙ 📡 ✓). `VideoGrid.jsx` skipped — dead code awaiting Torin's deletion decision. Verified rendering via DOM inspection on Watch Later empty state (80×80 SVG, correct color, all shape primitives present).
+- [x] (2026-04-26) **Discovered: Ambient color extraction for hero gradient** — New `useAmbientColor` hook samples a 24×24 canvas of `heroItem.thumbnail`, weighting saturated mid-luminance pixels and caching the result by URL. `HeroSection` exposes the sampled RGB as `--hero-ambient-rgb` on the root and renders a new screen-blend overlay (`linear-gradient(to top, transparent → rgba(ambient, 0.10) → 0.22)`) above the existing dark gradients, fading to 0 in theatre mode. CORS-tainted CDNs return null and the overlay is skipped — falls back cleanly to the neutral gradient stack.
+- [x] (2026-04-26) **Discovered: Unified hover scale token** — Added `--hover-scale: 1.03` to motion-token block in `index.css`. Replaced six `hover:scale-[1.0X]` literals with `hover:scale-[var(--hover-scale)]` across `VideoCard.jsx`, `LibraryPage.jsx`, `VideoDetailPage.jsx` (was an inconsistent `1.02`), `HeroCarousel.jsx` (×2), `Top10Row.jsx`. Nav-arrow `hover:scale-105` in `GalleryRow.jsx` left alone — different element class, intentionally larger lift. Verified compiled CSS contains `--tw-scale-x: var(--hover-scale)`.
+- [x] (2026-04-26) **Discovered: Cookie-health PornHub probe — already fixed** — Stale backlog item. Commit `63b5dd9` (2026-04-25) replaced the dead probe URL (`view_video.php?viewkey=ph5f8b3c7a21a28`) with `/video?o=tr` (trending page) and surfaces yt-dlp's `ERROR:` line up to 250 chars. Probe now returns 'healthy', the scary 🔴 is gone. Marked complete.
+- [x] (2026-04-26) **Feed Controls: Refresh + Shuffle buttons in Settings** — `POST /api/homepage/warm` endpoint (single-flight 429 guard) triggers `runWarmCache`; `refreshHome` + `shuffleHome` + `_swapInFreshContent` added to `homeStore`; staged replacement swaps leftmost-5 cards immediately, tail at +600ms; pinned rows untouched; `_swapVersion` race guard cancels stale swaps on mode toggle. Also fixed `_homepageVideosStmt` missing `AND viewed = 0` (shuffle-marked items were re-appearing on next GET).
+- [x] (2026-04-25) **Discovered: Vertical scroll hijack — already fixed** — Stale backlog item. `GalleryRow.jsx:142` already says "Scroll hijacking REMOVED — vertical wheel scrolls the page, not the row." Resolved in commit `2cd9422`. Marked complete.
+- [x] (2026-04-25) **Discovered: "Viral This Week" landscape rows scaled up** — `PosterCard.jsx` landscape cap bumped `min(50vh, 360px)` → `min(50vh, 420px)`. On 1080p the landscape cards now render at 420px (was 360px), narrowing the visual-weight gap with poster shelves at 540px.

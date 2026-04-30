@@ -9,7 +9,7 @@
 // (oldest-fetched-first) to avoid hammering any single creator.
 // ============================================================
 
-import { SourceAdapter } from './base.js'
+import { SourceAdapter, toIsoDate } from './base.js'
 import { ytdlpExec, YTDLP_TIMEOUT } from './ytdlp.js'
 import { logger } from '../logger.js'
 import { db } from '../database.js'
@@ -85,7 +85,21 @@ export class CreatorAdapter extends SourceAdapter {
     }
 
     if (creators.length === 0) {
-      logger.info(`  creator: no active ${platform} creators configured`)
+      // Check if subscription_backups had data -- if 0, platform needs manual setup
+      const backupCount = db.prepare(
+        'SELECT COUNT(*) as n FROM subscription_backups WHERE platform = ?'
+      ).get(platform)?.n ?? 0
+
+      if (backupCount === 0) {
+        const setupHint = platform === 'instagram'
+          ? 'Import Instagram GDPR following.json via /api/subscriptions/backup or add creators via /api/creators'
+          : platform === 'twitter'
+          ? 'Add Twitter cookie (twitter.txt) and configure creators via /api/creators'
+          : `Add ${platform} creators via POST /api/creators`
+        logger.warn(`  creator: ${platform} has 0 creators and 0 subscription_backups -- needs setup. ${setupHint}`)
+      } else {
+        logger.info(`  creator: no active ${platform} creators configured (${backupCount} handles in subscription_backups but none in creators table)`)
+      }
       return []
     }
 
@@ -210,6 +224,9 @@ export class CreatorAdapter extends SourceAdapter {
           source: 'reddit',
           uploader: `r/${p.subreddit}`,
           view_count: p.ups || 0,
+          like_count: p.ups || 0,
+          subscriber_count: null,
+          upload_date: toIsoDate(p.created_utc),
           tags: [],
           orientation: (p.media.reddit_video.height > p.media.reddit_video.width) ? 'vertical' : 'horizontal',
           streamUrl: p.media.reddit_video.fallback_url,
@@ -228,6 +245,9 @@ export class CreatorAdapter extends SourceAdapter {
           source: 'reddit',
           uploader: `r/${p.subreddit}`,
           view_count: p.ups || 0,
+          like_count: p.ups || 0,
+          subscriber_count: null,
+          upload_date: toIsoDate(p.created_utc),
           tags: [],
           orientation: 'horizontal',
         })

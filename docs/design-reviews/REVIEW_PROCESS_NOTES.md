@@ -148,3 +148,8 @@ Last updated: 2026-04-12 (run 10)
 18. Settings UX overhaul
 19. Noise/grain texture on dark surfaces
 20. Maturity/content rating badges
+
+## User Signals
+*(Calibration questions asked — log answers here when received)*
+
+- **2026-04-16:** When you open FeedDeck after being away, do you typically want to resume something you were watching, or start fresh? How often do you have partially-watched videos?

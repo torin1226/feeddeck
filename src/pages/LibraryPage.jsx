@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useModeStore from '../stores/modeStore'
 import useLibraryStore from '../stores/libraryStore'
@@ -7,6 +7,8 @@ import VideoCard from '../components/VideoCard'
 import VideoPlayer from '../components/VideoPlayer'
 import DebugPanel from '../components/DebugPanel'
 import { SkeletonLibrary } from '../components/Skeletons'
+import EmptyIllustration from '../components/EmptyIllustration'
+import { modeFromIsSFW, isVideoForMode } from '../utils/mode'
 
 // ============================================================
 // LibraryPage
@@ -17,6 +19,7 @@ import { SkeletonLibrary } from '../components/Skeletons'
 
 const TABS = [
   { key: 'all', label: 'All' },
+  { key: 'liked', label: 'Liked' },
   { key: 'favorites', label: 'Favorites' },
   { key: 'history', label: 'Watch History' },
   { key: 'watchLater', label: 'Watch Later' },
@@ -26,10 +29,38 @@ const TABS = [
 export default function LibraryPage() {
   const navigate = useNavigate()
   const isSFW = useModeStore((s) => s.isSFW)
+  const currentMode = modeFromIsSFW(isSFW)
   const { videos, loading, loadFromServer, seedDemoData } = useLibraryStore()
   const [activeTab, setActiveTab] = useState('all')
   const [activeVideo, setActiveVideo] = useState(null)
   const [debugOpen, setDebugOpen] = useState(false)
+  const [likedVideos, setLikedVideos] = useState([])
+
+  // Fetch liked videos from ratings API, scoped to current mode.
+  // Re-runs on mode change so the Liked tab never shows stale cross-mode rows.
+  const fetchLiked = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/ratings/history?rating=up&limit=100&mode=${currentMode}`)
+      if (res.ok) {
+        const data = await res.json()
+        // Render-time guard: filter any legacy rows that slipped through.
+        const filtered = (data.ratings || []).filter(r =>
+          isVideoForMode({ url: r.video_url, mode: r.mode }, currentMode)
+        )
+        setLikedVideos(filtered)
+      }
+    } catch { /* non-fatal */ }
+  }, [currentMode])
+
+  useEffect(() => { fetchLiked() }, [fetchLiked])
+
+  // Reload library when mode changes so videos array reflects only the
+  // current mode's content. nuclearFlush already clears the store; this
+  // pulls fresh server data.
+  useEffect(() => {
+    loadFromServer()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentMode])
 
   // Ctrl+Shift+D toggles debug panel
   useEffect(() => {
@@ -54,42 +85,68 @@ export default function LibraryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Mode firewall: every list of videos rendered on this page is filtered
+  // by the current mode at the source. Even if the store is stale or the
+  // server response is dirty, cross-mode items can't reach the screen.
+  const modeVideos = useMemo(
+    () => videos.filter((v) => isVideoForMode(v, currentMode)),
+    [videos, currentMode]
+  )
+
   // Continue Watching — videos with progress between 5% and 95%
   const continueWatching = useMemo(() => {
-    return videos
+    return modeVideos
       .filter((v) => v.watchProgress > 0.05 && v.watchProgress < 0.95)
       .sort((a, b) => new Date(b.lastWatched || 0) - new Date(a.lastWatched || 0))
       .slice(0, 20)
-  }, [videos])
+  }, [modeVideos])
 
   // Filtered videos based on active tab
   const filtered = useMemo(() => {
     switch (activeTab) {
+      case 'liked':
+        // Show liked videos from ratings API, mapped to card-compatible shape.
+        // likedVideos is already mode-filtered in fetchLiked but applying again
+        // is the cheap final guard.
+        return likedVideos
+          .filter(r => isVideoForMode({ url: r.video_url, mode: r.mode }, currentMode))
+          .map(r => ({
+            id: r.id,
+            url: r.video_url,
+            title: r.title || (r.creator ? `Liked from ${r.creator}` : 'Liked video'),
+            thumbnail: r.thumbnail || '',
+            source: r.surface_key || 'rated',
+            mode: r.mode,
+            tags: r.tags ? (typeof r.tags === 'string' ? JSON.parse(r.tags) : r.tags) : [],
+            favorite: true,
+            addedAt: r.rated_at,
+          }))
       case 'favorites':
-        return videos.filter((v) => v.favorite)
+        return modeVideos.filter((v) => v.favorite)
       case 'history':
-        return videos
+        return modeVideos
           .filter((v) => v.lastWatched)
           .sort((a, b) => new Date(b.lastWatched) - new Date(a.lastWatched))
       case 'watchLater':
-        return videos.filter((v) => v.watchLater)
+        return modeVideos.filter((v) => v.watchLater)
       case 'rated':
-        return videos
+        return modeVideos
           .filter((v) => v.rating)
           .sort((a, b) => b.rating - a.rating)
       default:
-        return videos
+        return modeVideos
     }
-  }, [videos, activeTab])
+  }, [modeVideos, activeTab, likedVideos, currentMode])
 
   // Tab counts for badges
   const counts = useMemo(() => ({
-    all: videos.length,
-    favorites: videos.filter((v) => v.favorite).length,
-    history: videos.filter((v) => v.lastWatched).length,
-    watchLater: videos.filter((v) => v.watchLater).length,
-    rated: videos.filter((v) => v.rating).length,
-  }), [videos])
+    all: modeVideos.length,
+    liked: likedVideos.length,
+    favorites: modeVideos.filter((v) => v.favorite).length,
+    history: modeVideos.filter((v) => v.lastWatched).length,
+    watchLater: modeVideos.filter((v) => v.watchLater).length,
+    rated: modeVideos.filter((v) => v.rating).length,
+  }), [modeVideos, likedVideos])
 
   return (
     <div className="min-h-screen bg-surface text-text-primary font-sans">
@@ -240,7 +297,7 @@ function ContinueWatchingCard({ item, onClick }) {
       onClick={onClick}
       className="flex-none w-card rounded-[10px] overflow-hidden bg-raised
         cursor-pointer relative transition-all duration-[220ms] ease-out
-        hover:scale-[1.03] hover:-translate-y-0.5 hover:shadow-card-hover"
+        hover:scale-[var(--hover-scale)] hover:-translate-y-0.5 hover:shadow-card-hover"
     >
       {/* Thumbnail */}
       <div className="relative">
@@ -289,33 +346,40 @@ function ContinueWatchingCard({ item, onClick }) {
 function LibraryEmptyState({ tab, onNavigate }) {
   const states = {
     all: {
-      icon: '📂',
+      illustration: 'library',
       title: 'Start building your library',
       desc: 'Add videos from the feed, search, or paste URLs directly.',
       cta: 'Browse Feed',
       action: () => onNavigate('/feed'),
     },
+    liked: {
+      illustration: 'liked',
+      title: 'No liked videos yet',
+      desc: 'Thumbs up videos you enjoy and they\'ll appear here.',
+      cta: 'Browse Feed',
+      action: () => onNavigate('/feed'),
+    },
     favorites: {
-      icon: '♡',
+      illustration: 'favorites',
       title: 'No favorites yet',
       desc: 'Heart videos you love and they\'ll show up here.',
       cta: null,
     },
     history: {
-      icon: '⏱',
+      illustration: 'history',
       title: 'No watch history',
       desc: 'Videos you watch will appear here so you can pick up where you left off.',
       cta: 'Browse Feed',
       action: () => onNavigate('/feed'),
     },
     watchLater: {
-      icon: '🔖',
+      illustration: 'watchLater',
       title: 'Watch Later is empty',
       desc: 'Save videos to watch later and find them all in one place.',
       cta: null,
     },
     rated: {
-      icon: '★',
+      illustration: 'rated',
       title: 'No rated videos',
       desc: 'Rate videos to build your personal rankings.',
       cta: null,
@@ -326,7 +390,10 @@ function LibraryEmptyState({ tab, onNavigate }) {
 
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
-      <span className="text-5xl mb-4 opacity-60">{s.icon}</span>
+      <EmptyIllustration
+        variant={s.illustration}
+        className="w-20 h-20 mb-4 text-text-muted opacity-70"
+      />
       <h3 className="font-display text-lg font-semibold text-text-primary mb-2">
         {s.title}
       </h3>

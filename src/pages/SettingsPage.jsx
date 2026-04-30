@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import useThemeStore from '../stores/themeStore'
 import useModeStore from '../stores/modeStore'
+import useHomeStore from '../stores/homeStore'
 import useToastStore from '../stores/toastStore'
 import useViewTransitionNavigate from '../hooks/useViewTransitionNavigate'
 import { getStorageUsage } from '../stores/safeStorage'
@@ -11,6 +12,10 @@ export default function SettingsPage() {
   const navigate = useViewTransitionNavigate()
   const { theme, toggleTheme } = useThemeStore()
   const { isSFW } = useModeStore()
+  const refreshing = useHomeStore(s => s.refreshing)
+  const shuffling = useHomeStore(s => s.shuffling)
+  const refreshHome = useHomeStore(s => s.refreshHome)
+  const shuffleHome = useHomeStore(s => s.shuffleHome)
   const showToast = useToastStore(s => s.showToast)
   const [sources, setSources] = useState([])
   const [adapterHealth, setAdapterHealth] = useState(null)
@@ -259,6 +264,33 @@ export default function SettingsPage() {
           </div>
         </section>
 
+        {/* Feed Controls */}
+        <section>
+          <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-3">Feed Controls</h2>
+          <div className="bg-surface-raised rounded-xl border border-surface-border p-4 space-y-3">
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={() => refreshHome(isSFW ? 'social' : 'nsfw')}
+                disabled={refreshing || shuffling}
+                className="px-4 py-2 rounded-lg text-sm bg-accent/90 text-white hover:bg-accent transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {refreshing ? 'Refreshing…' : 'Refresh feed'}
+              </button>
+              <button
+                onClick={() => shuffleHome(isSFW ? 'social' : 'nsfw')}
+                disabled={refreshing || shuffling}
+                className="px-4 py-2 rounded-lg text-sm bg-surface-overlay border border-surface-border text-text-primary hover:bg-surface-border transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {shuffling ? 'Shuffling…' : 'Shuffle feed'}
+              </button>
+            </div>
+            <p className="text-text-muted text-xs leading-relaxed">
+              <span className="text-text-secondary font-medium">Refresh</span> pulls fresh content from your subscriptions (this can take 30–60 s).{' '}
+              <span className="text-text-secondary font-medium">Shuffle</span> hides the cards you've seen and rotates in new ones from the cache. The first 5 cards in each row update instantly; the rest follow a moment later.
+            </p>
+          </div>
+        </section>
+
         {/* Tag Preferences */}
         <section>
           <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-3">Tag Preferences</h2>
@@ -495,7 +527,7 @@ export default function SettingsPage() {
                   }`}
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-text-primary font-medium">{src.label}</span>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase ${
                         src.mode === 'nsfw'
@@ -509,15 +541,33 @@ export default function SettingsPage() {
                           PAUSED
                         </span>
                       )}
+                      {/* Feed entry count badge */}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                        src.feed_entry_count > 0
+                          ? 'bg-green-500/15 text-green-400'
+                          : 'bg-surface-overlay text-text-muted'
+                      }`}>
+                        {src.feed_entry_count} in feed
+                      </span>
+                      {/* Creator sources: show creator count or needs-setup warning */}
+                      {src.query === '__creators__' && (
+                        src.creator_count > 0
+                          ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-semibold">
+                              {src.creator_count} creators
+                            </span>
+                          : <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-semibold">
+                              Needs setup
+                            </span>
+                      )}
                     </div>
                     <div className="text-text-muted text-xs mt-0.5 truncate">
-                      {src.domain} · query: "{src.query}" · weight: {src.weight}
+                      {src.domain} · weight: {src.weight}
                     </div>
-                    {src.last_fetched && (
-                      <div className="text-text-muted text-[10px] mt-0.5">
-                        Last fetched: {new Date(src.last_fetched + 'Z').toLocaleString()}
-                      </div>
-                    )}
+                    <div className="text-text-muted text-[10px] mt-0.5">
+                      {src.last_fetched
+                        ? `Last fetched: ${new Date(src.last_fetched + 'Z').toLocaleString()}`
+                        : 'Never fetched'}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 ml-4 shrink-0">
                     <button

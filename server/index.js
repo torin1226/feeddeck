@@ -17,6 +17,8 @@ import feedRoutes, { setRefillFeedCache } from './routes/feed.js'
 import tiktokRoutes from './routes/tiktok.js'
 import creatorsRoutes from './routes/creators.js'
 import subscriptionBackupRoutes from './routes/subscription-backup.js'
+import ratingsRoutes from './routes/ratings.js'
+import { modeFirewall } from './firewall.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -38,6 +40,10 @@ if (existsSync(distPath)) {
   app.use(express.static(distPath))
 }
 
+// Mode firewall: final-stage filter that strips cross-mode items from
+// any /api response when ?mode= is declared. See firewall.js for rules.
+app.use('/api', modeFirewall)
+
 // Mount route modules
 app.use(streamRoutes)
 app.use(libraryRoutes)
@@ -47,6 +53,7 @@ app.use(feedRoutes)
 app.use(tiktokRoutes)
 app.use(creatorsRoutes)
 app.use(subscriptionBackupRoutes)
+app.use(ratingsRoutes)
 
 // SPA catch-all: serve index.html for non-API routes (client-side routing)
 if (existsSync(distPath)) {
@@ -87,8 +94,8 @@ async function _refillFeedCacheImpl(mode) {
 
       // Two INSERT variants: one for videos with a pre-set stream URL (longer cache TTL
       // since the CDN URL is already known-good), one for videos that need yt-dlp resolution.
-      const COLS = 'id, source_domain, mode, url, stream_url, title, creator, thumbnail, duration, orientation, tags, fetched_at, expires_at'
-      const VALS = '?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime(\'now\')'
+      const COLS = 'id, source_domain, mode, url, stream_url, title, creator, thumbnail, duration, orientation, tags, view_count, like_count, subscriber_count, upload_date, fetched_at, expires_at'
+      const VALS = '?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime(\'now\')'
       const insertWithStream = db.prepare(
         `INSERT OR IGNORE INTO feed_cache (${COLS}) VALUES (${VALS}, datetime('now', '+7 days'))`
       )
@@ -101,7 +108,7 @@ async function _refillFeedCacheImpl(mode) {
       for (const v of videos) {
         try {
           const tags = Array.isArray(v.tags) ? JSON.stringify(v.tags) : (v.tags || '[]')
-          const params = [v.id, src.domain, mode, v.url, v.stream_url || null, v.title, v.uploader, v.thumbnail, v.duration, v.orientation, tags]
+          const params = [v.id, src.domain, mode, v.url, v.stream_url || null, v.title, v.uploader, v.thumbnail, v.duration, v.orientation, tags, v.view_count ?? null, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null]
           const stmt = v.stream_url ? insertWithStream : insertDefault
           const result = stmt.run(...params)
           if (result.changes > 0) {
@@ -157,6 +164,72 @@ async function _preResolveStreamUrls(videoUrls) {
 }
 
 // -----------------------------------------------------------
+// Cooldown introspection + one-shot warm scheduling
+// -----------------------------------------------------------
+// Returns { rowsCooling, nextEligibleAt } for the homepage warm-cache pass.
+// `nextEligibleAt` is null when at least one row is eligible right now
+// (either never-fetched or past its fetch_interval).
+export function getHomepageCooldownStatus(mode = 'all') {
+  try {
+    const sql = `
+      SELECT last_fetched, fetch_interval
+      FROM persistent_rows
+      WHERE active = 1${mode !== 'all' ? ' AND mode = ?' : ''}
+    `
+    const rows = mode !== 'all'
+      ? db.prepare(sql).all(mode)
+      : db.prepare(sql).all()
+    if (rows.length === 0) return { rowsCooling: 0, nextEligibleAt: null }
+    const nowMs = Date.now()
+    let cooling = 0
+    let soonest = Infinity
+    for (const r of rows) {
+      if (!r.last_fetched) {
+        // Never-fetched row exists — eligible now.
+        return { rowsCooling: 0, nextEligibleAt: null }
+      }
+      const iso = r.last_fetched.includes('T')
+        ? r.last_fetched
+        : r.last_fetched.replace(' ', 'T') + 'Z'
+      const eligibleAt = new Date(iso).getTime() + (r.fetch_interval || 3600) * 1000
+      if (eligibleAt > nowMs) {
+        cooling++
+        if (eligibleAt < soonest) soonest = eligibleAt
+      } else {
+        // At least one row is eligible right now.
+        return { rowsCooling: 0, nextEligibleAt: null }
+      }
+    }
+    return {
+      rowsCooling: cooling,
+      nextEligibleAt: soonest === Infinity ? null : new Date(soonest).toISOString(),
+    }
+  } catch (err) {
+    logger.error('getHomepageCooldownStatus failed:', { error: err.message })
+    return { rowsCooling: 0, nextEligibleAt: null }
+  }
+}
+
+// Dedup by mode key — prevents stacking timers from rapid clicks.
+const _oneShotWarms = new Map()
+export function scheduleOneShotWarm(mode, msUntil) {
+  if (_oneShotWarms.has(mode)) return false
+  const delay = Math.max(1000, msUntil)
+  logger.info(`  ⏲ Scheduling one-shot warm for mode=${mode} in ${Math.round(delay/1000)}s`)
+  const handle = setTimeout(async () => {
+    _oneShotWarms.delete(mode)
+    try {
+      const { runWarmCache } = await import('./scripts/warm-cache.js')
+      await runWarmCache({ mode, externalDb: true })
+    } catch (err) {
+      logger.error('One-shot warm failed:', { error: err.message })
+    }
+  }, delay)
+  _oneShotWarms.set(mode, handle)
+  return true
+}
+
+// -----------------------------------------------------------
 // Scheduled background tasks
 // -----------------------------------------------------------
 function startScheduledFeedRefill() {
@@ -197,13 +270,14 @@ function startScheduledTrendingRefresh() {
     try {
       const videos = await scraperAdapter.fetchTrending({ site, limit: 20 })
       const insert = db.prepare(`
-        INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, tags, fetched_at, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
+        INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, fetched_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
       `)
       let added = 0
       for (const v of videos) {
         try {
-          const result = insert.run(v.id, 'nsfw_trending', v.url, v.title, v.thumbnail, v.duration, v.source || site, v.uploader, v.view_count, JSON.stringify(v.tags || []))
+          const compositeId = `nsfw_trending_${v.id}`
+          const result = insert.run(compositeId, 'nsfw_trending', v.url, v.title, v.thumbnail, v.duration, v.source || site, v.uploader, v.view_count, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []))
           if (result.changes > 0) added++
         } catch { /* skip on schema error */ }
       }
@@ -342,4 +416,22 @@ app.listen(PORT, '0.0.0.0', () => {
       logger.info('  ✅ First boot: homepage cache population complete')
     })()
   }
+
+  // Warm-cache on every server start — refreshes subscriptions, fills
+  // homepage categories, and resolves stream URLs while the user is
+  // browsing. Runs in-process: spawning a second Node process to do
+  // this would corrupt the SQLite db on Windows (see
+  // _memory/errors/feeddeck-known-issues). Per-row cooldowns inside
+  // warm-cache (1hr persistent rows, INSERT OR IGNORE on cache tables)
+  // make repeated launches cheap.
+  ;(async () => {
+    try {
+      const { runWarmCache } = await import('./scripts/warm-cache.js')
+      logger.info('  🔥 Background warm-cache starting...')
+      const stats = await runWarmCache({ mode: 'all', externalDb: true })
+      logger.info('  🔥 Background warm-cache complete', stats)
+    } catch (err) {
+      logger.error('Background warm-cache failed:', { error: err.message })
+    }
+  })()
 })

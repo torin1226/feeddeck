@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import useHomeStore from '../stores/homeStore'
 import useModeStore from '../stores/modeStore'
 import useFeedStore from '../stores/feedStore'
+import useFocusPreview from '../hooks/useFocusPreview'
 import HomeHeader from '../components/home/HomeHeader'
 import HeroSection from '../components/home/HeroSection'
 import GalleryShelf from '../components/home/GalleryShelf'
@@ -19,6 +20,10 @@ import { SkeletonHero, SkeletonGalleryShelf } from '../components/Skeletons'
 export default function HomePage() {
   const { fetchHomepage, heroItem, theatreMode, fetchError } = useHomeStore()
   const isSFW = useModeStore((s) => s.isSFW)
+
+  // App-level singleton: subscribe to homeStore.focusedItem and drive
+  // the hover-preview lifecycle for the currently-focused card.
+  useFocusPreview()
 
   // Fetch homepage data on mount and when mode changes.
   // Small delay ensures nuclearFlush (async) completes before re-fetching,

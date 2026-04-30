@@ -201,26 +201,17 @@ router.get('/api/proxy-stream', async (req, res) => {
       if (val) res.setHeader(h, val)
     }
 
-    // Pipe the body using Node streams (more robust than manual reader pump)
+    // Pipe the body using Node streams (more robust than manual reader pump).
+    // FALLBACK: cleanup happens via res.on('close') when client disconnects.
+    // HYDRATION: do NOT add a per-chunk timeout here -- when the browser fills
+    // its media buffer (~30s), it stops draining and pipe() applies backpressure,
+    // pausing the readable. A "no data for N seconds" timer cannot distinguish
+    // backpressure (normal) from upstream stall (bad), so it kills healthy
+    // streams mid-playback. Match the HLS proxy pattern below.
     const nodeStream = Readable.fromWeb(upstream.body)
-
-    // Per-chunk timeout: if no data arrives for 30s, abort the stalled stream
-    let chunkTimer = null
-    const resetChunkTimer = () => {
-      clearTimeout(chunkTimer)
-      chunkTimer = setTimeout(() => {
-        logger.warn('Proxy stream stalled (no data for 30s), aborting')
-        nodeStream.destroy()
-        if (!res.writableEnded) res.end()
-      }, 30_000)
-    }
-    resetChunkTimer()
-    nodeStream.on('data', resetChunkTimer)
-    nodeStream.on('end', () => clearTimeout(chunkTimer))
-
     nodeStream.pipe(res)
-    nodeStream.on('error', () => { clearTimeout(chunkTimer); if (!res.writableEnded) res.end() })
-    res.on('close', () => { clearTimeout(chunkTimer); nodeStream.destroy() })
+    nodeStream.on('error', () => { if (!res.writableEnded) res.end() })
+    res.on('close', () => { nodeStream.destroy() })
   } catch (err) {
     logger.error('Proxy stream error:', { error: err.message })
     if (!res.headersSent) res.status(500).send('Stream proxy failed')

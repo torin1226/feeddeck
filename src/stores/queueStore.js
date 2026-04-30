@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { safeStorage } from './safeStorage'
+import useModeStore from './modeStore'
+import { modeFromIsSFW, isVideoForMode } from '../utils/mode'
 
 // ============================================================
 // Queue Store (Server-Backed with Offline Persistence)
@@ -12,6 +14,17 @@ import { safeStorage } from './safeStorage'
 // ============================================================
 
 const API = '/api'
+
+/** Resolve current mode from modeStore, format for API. */
+function currentMode() {
+  return modeFromIsSFW(useModeStore.getState().isSFW)
+}
+
+/** Build a URL with the current mode appended. */
+function modeUrl(path) {
+  const sep = path.includes('?') ? '&' : '?'
+  return `${API}${path}${sep}mode=${currentMode()}`
+}
 
 // Debounce reorder server sync to prevent race conditions from rapid drags.
 // Optimistic changes apply instantly; server sync fires after 300ms of no new drags.
@@ -40,10 +53,13 @@ const useQueueStore = create(persist((set, get) => ({
   // -----------------------------------------------------------
   fetchQueue: async () => {
     try {
-      const res = await fetch(`${API}/queue`)
+      const mode = currentMode()
+      const res = await fetch(modeUrl('/queue'))
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
-      const serverQueue = normalizeQueue(data.queue)
+      // Belt-and-suspenders: server already filters by mode, but apply
+      // the client guard too in case the server response is stale.
+      const serverQueue = normalizeQueue(data.queue).filter(it => isVideoForMode(it, mode))
 
       set((state) => {
         // Preserve currentIndex if the queue item still exists
@@ -72,7 +88,8 @@ const useQueueStore = create(persist((set, get) => ({
   // -----------------------------------------------------------
   addToQueue: async (video) => {
     try {
-      const res = await fetch(`${API}/queue`, {
+      const mode = currentMode()
+      const res = await fetch(modeUrl('/queue'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -85,7 +102,7 @@ const useQueueStore = create(persist((set, get) => ({
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
-      set({ queue: normalizeQueue(data.queue), online: true, lastSynced: Date.now() })
+      set({ queue: normalizeQueue(data.queue).filter(it => isVideoForMode(it, mode)), online: true, lastSynced: Date.now() })
     } catch {
       set({ online: false })
     }
@@ -99,7 +116,8 @@ const useQueueStore = create(persist((set, get) => ({
     const insertPos = currentIndex + 1
 
     try {
-      const res = await fetch(`${API}/queue`, {
+      const mode = currentMode()
+      const res = await fetch(modeUrl('/queue'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -113,7 +131,7 @@ const useQueueStore = create(persist((set, get) => ({
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
-      set({ queue: normalizeQueue(data.queue), online: true, lastSynced: Date.now() })
+      set({ queue: normalizeQueue(data.queue).filter(it => isVideoForMode(it, mode)), online: true, lastSynced: Date.now() })
     } catch {
       set({ online: false })
     }
@@ -129,10 +147,11 @@ const useQueueStore = create(persist((set, get) => ({
     const removeId = item?.id || id
 
     try {
-      const res = await fetch(`${API}/queue/${removeId}`, { method: 'DELETE' })
+      const mode = currentMode()
+      const res = await fetch(modeUrl(`/queue/${removeId}`), { method: 'DELETE' })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
-      const newQueue = normalizeQueue(data.queue)
+      const newQueue = normalizeQueue(data.queue).filter(it => isVideoForMode(it, mode))
 
       set((state) => {
         const removeIdx = state.queue.findIndex(q => q.id === removeId)
@@ -188,14 +207,15 @@ const useQueueStore = create(persist((set, get) => ({
       _reorderTimer = null
       const { queue: finalQueue } = get()
       try {
-        const res = await fetch(`${API}/queue`, {
+        const mode = currentMode()
+        const res = await fetch(modeUrl('/queue'), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ order: finalQueue.map(item => item.id) }),
         })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
-        _lastConfirmedQueue = normalizeQueue(data.queue)
+        _lastConfirmedQueue = normalizeQueue(data.queue).filter(it => isVideoForMode(it, mode))
         _lastConfirmedIndex = get().currentIndex
         set({ queue: _lastConfirmedQueue, online: true, lastSynced: Date.now() })
       } catch {
@@ -233,11 +253,13 @@ const useQueueStore = create(persist((set, get) => ({
   // -----------------------------------------------------------
   clearQueue: async () => {
     try {
-      const res = await fetch(`${API}/queue`, { method: 'DELETE' })
+      const res = await fetch(modeUrl('/queue'), { method: 'DELETE' })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       set({ queue: [], currentIndex: -1, online: true, lastSynced: Date.now() })
     } catch {
-      set({ online: false })
+      // Server unreachable -- still clear local state for the firewall.
+      // Next reconnect will sync.
+      set({ queue: [], currentIndex: -1, online: false })
     }
   },
 

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import useModeStore from './modeStore'
 import { safeStorage } from './safeStorage'
+import { inferMode } from '../utils/mode'
 
 // ============================================================
 // Library Store
@@ -19,20 +20,24 @@ const useLibraryStore = create(
       error: null,
 
       // -----------------------------------------------------------
-      // Add a video to the library (from URL submission)
+      // Add a video to the library (from URL submission).
+      // Mode is derived from the URL via inferMode() so the firewall
+      // can filter cross-mode entries on read.
       // -----------------------------------------------------------
       addVideo: (video) => {
+        const url = video.url || ''
         set((state) => ({
           videos: [
             {
               id: video.id || crypto.randomUUID(),
-              url: video.url || '',
+              url,
               title: video.title || 'Untitled',
               thumbnail: video.thumbnail || '',
               duration: video.duration || 0,
               durationFormatted: video.durationFormatted || '0:00',
               tags: video.tags || [],
               source: video.source || 'unknown',
+              mode: video.mode || inferMode(url || video.source),
               addedAt: new Date().toISOString(),
               lastWatched: null,
               watchCount: 0,
@@ -121,7 +126,10 @@ const useLibraryStore = create(
       },
 
       // -----------------------------------------------------------
-      // Load from server (future — for now returns empty)
+      // Load from server. Mode-scoped: only returns videos for the
+      // currently active mode. Replacing videos with the server set
+      // also discards stale cross-mode entries that might have been
+      // persisted before the firewall existed.
       // -----------------------------------------------------------
       loadFromServer: async () => {
         set({ loading: true })
@@ -131,7 +139,9 @@ const useLibraryStore = create(
           if (res.ok) {
             const data = await res.json()
             if (data.videos?.length) {
-              set({ videos: data.videos })
+              // Tag each row with mode so render-time guards can confirm.
+              const tagged = data.videos.map(v => ({ ...v, mode: v.mode || mode }))
+              set({ videos: tagged })
             }
           }
         } catch {
@@ -140,6 +150,13 @@ const useLibraryStore = create(
           set({ loading: false })
         }
       },
+
+      // -----------------------------------------------------------
+      // Clear all library entries. Called by nuclearFlush on mode switch.
+      // The persisted localStorage copy is overwritten with an empty list,
+      // preventing pre-firewall (untagged) entries from re-appearing.
+      // -----------------------------------------------------------
+      clearLibrary: () => set({ videos: [] }),
 
       // -----------------------------------------------------------
       // Seed demo data (so the app isn't empty on first load)

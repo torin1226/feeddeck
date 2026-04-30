@@ -5,6 +5,7 @@ import { db } from '../database.js'
 import { registry, ytdlp as ytdlpAdapter, scraper as scraperAdapter } from '../sources/index.js'
 import { logger } from '../logger.js'
 import { getMode, formatDuration } from '../utils.js'
+import { scoreVideos } from '../scoring.js'
 
 const router = Router()
 
@@ -121,8 +122,52 @@ router.get('/api/search', (req, res) => {
   })
 
   const limit = parseInt(count, 10)
+  const mode = getMode(req)
 
-  // Use the yt-dlp adapter's streaming search for SSE
+  // NSFW: scraper adapter has no native streaming search, so we await the
+  // batched result and emit each video as an SSE event with a setImmediate
+  // yield so the client can render progressively.
+  if (mode === 'nsfw') {
+    // Flush headers immediately as text/event-stream. Without this, a slow
+    // (e.g. cold-start Puppeteer) or rejected scraperAdapter.searchAll would
+    // let Express finalize the response with default 500/text-plain headers.
+    res.write(': searching\n\n')
+    if (typeof res.flush === 'function') res.flush()
+
+    let cancelled = false
+    req.on('close', () => { cancelled = true })
+
+    const closeWithError = (err) => {
+      if (cancelled || res.writableEnded) return
+      logger.error('Search error (nsfw):', { error: err?.message || String(err) })
+      try {
+        res.write(`event: error\ndata: ${JSON.stringify({ error: err?.message || 'Search failed' })}\n\n`)
+        res.write('data: [done]\n\n')
+      } catch {}
+      try { res.end() } catch {}
+    }
+
+    ;(async () => {
+      try {
+        const videos = await scraperAdapter.searchAll(q, { limit })
+        for (const v of videos) {
+          if (cancelled || res.writableEnded) return
+          res.write(`data: ${JSON.stringify({ ...v, durationFormatted: formatDuration(v.duration) })}\n\n`)
+          await new Promise(r => setImmediate(r))
+        }
+        if (!cancelled && !res.writableEnded) {
+          res.write('data: [done]\n\n')
+          res.end()
+        }
+      } catch (err) {
+        closeWithError(err)
+      }
+    })().catch(closeWithError)
+
+    return
+  }
+
+  // SFW: yt-dlp adapter's streaming search for SSE
   const stream = ytdlpAdapter.streamSearch(q, { site, limit })
 
   stream.onVideo((video) => {
@@ -154,28 +199,120 @@ router.get('/api/search', (req, res) => {
 router.get('/api/search/multi', async (req, res) => {
   const { q, limit = 10 } = req.query
   const mode = getMode(req)
+  const finalLimit = parseInt(limit, 10)
   if (!q) return res.status(400).json({ error: 'Search query required' })
 
   try {
-    let videos
+    // Fan out to every relevant search-capable adapter for the current mode,
+    // in parallel, tolerating individual source failures.
+    // Each source over-fetches modestly so the reranker has a richer pool.
+    const sourceCalls = []
     if (mode === 'nsfw') {
-      // NSFW: hit all scraper sites in parallel
-      videos = await scraperAdapter.searchAll(q, { limit: parseInt(limit, 10) })
+      // All NSFW scraper sites in parallel (each gets a healthy pool of its own)
+      sourceCalls.push(
+        scraperAdapter.searchAll(q, { limit: Math.max(finalLimit, 10) })
+          .then(vs => ({ source: 'scraper', videos: vs }))
+          .catch(err => ({ source: 'scraper', videos: [], error: err.message }))
+      )
     } else {
-      // Social: use yt-dlp YouTube search (scraper only has NSFW sites)
-      videos = await registry.search(q, { site: 'youtube.com', limit: parseInt(limit, 10) })
+      // SFW: yt-dlp YouTube search (only keyword-search-capable SFW adapter today)
+      sourceCalls.push(
+        registry.search(q, { adapter: 'yt-dlp', limit: finalLimit })
+          .then(vs => ({ source: 'yt-dlp', videos: vs }))
+          .catch(err => ({ source: 'yt-dlp', videos: [], error: err.message }))
+      )
     }
+
+    const settled = await Promise.all(sourceCalls)
+
+    // Merge, dedupe by URL (keep first occurrence)
+    const seen = new Set()
+    const merged = []
+    const errors = []
+    for (const r of settled) {
+      if (r.error) errors.push(`${r.source}: ${r.error}`)
+      for (const v of r.videos) {
+        if (!v?.url || seen.has(v.url)) continue
+        seen.add(v.url)
+        merged.push(v)
+      }
+    }
+
+    if (merged.length === 0 && errors.length > 0) {
+      logger.error('Multi-site search: all sources failed', { errors })
+      return res.status(502).json({ error: `All sources failed: ${errors.join('; ')}` })
+    }
+
+    // Rerank by taste: liked tags, subscriptions, recency, etc.
+    // excludeDownvoted is on by default — never surface downvoted items.
+    const ranked = scoreVideos(merged, 'search').slice(0, finalLimit)
+
     res.json({
       query: q,
-      count: videos.length,
-      videos: videos.map(v => ({
+      count: ranked.length,
+      videos: ranked.map(v => ({
         ...v,
         durationFormatted: formatDuration(v.duration),
       })),
+      ...(errors.length > 0 ? { partialErrors: errors } : {}),
     })
   } catch (err) {
     logger.error('Multi-site search error:', { error: err.message })
-    res.status(500).json({ error: 'Multi-site search failed' })
+    res.status(500).json({ error: err.message || 'Multi-site search failed' })
+  }
+})
+
+// -----------------------------------------------------------
+// Search history
+// Records every completed search; powers the empty-state fallback
+// and feeds future taste-profile signals.
+// -----------------------------------------------------------
+
+function normalizeQuery(q) {
+  return String(q).trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+router.post('/api/search/history', express.json(), (req, res) => {
+  const { query, mode, result_count } = req.body || {}
+  if (!query?.trim()) return res.status(400).json({ error: 'query required' })
+  const m = mode === 'nsfw' ? 'nsfw' : 'social'
+  try {
+    const result = db.prepare(
+      `INSERT INTO search_history (query, query_normalized, mode, result_count, source)
+       VALUES (?, ?, ?, ?, 'manual')`
+    ).run(query.trim(), normalizeQuery(query), m, parseInt(result_count, 10) || 0)
+    res.json({ id: result.lastInsertRowid })
+  } catch (err) {
+    logger.error('Search history insert error', { error: err.message })
+    res.status(500).json({ error: 'Failed to record search' })
+  }
+})
+
+router.patch('/api/search/history/:id/click', (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10)
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'invalid id' })
+    db.prepare('UPDATE search_history SET clicked_count = clicked_count + 1 WHERE id = ?').run(id)
+    res.status(204).end()
+  } catch (err) {
+    logger.error('Search history click error', { error: err.message })
+    res.status(500).json({ error: 'Failed to record click' })
+  }
+})
+
+router.get('/api/search/history', (req, res) => {
+  const mode = getMode(req)
+  const limit = Math.min(parseInt(req.query.limit, 10) || 5, 50)
+  const hasResults = req.query.has_results === 'true'
+  try {
+    const sql = hasResults
+      ? 'SELECT id, query, mode, result_count, clicked_count, searched_at FROM search_history WHERE mode = ? AND result_count > 0 ORDER BY searched_at DESC LIMIT ?'
+      : 'SELECT id, query, mode, result_count, clicked_count, searched_at FROM search_history WHERE mode = ? ORDER BY searched_at DESC LIMIT ?'
+    const rows = db.prepare(sql).all(mode, limit)
+    res.json({ history: rows })
+  } catch (err) {
+    logger.error('Search history fetch error', { error: err.message })
+    res.json({ history: [] })
   }
 })
 
@@ -283,7 +420,32 @@ router.get('/api/sources/list', (req, res) => {
     } else {
       sources = db.prepare('SELECT * FROM sources ORDER BY mode, weight DESC').all()
     }
-    res.json({ sources })
+
+    // Attach feed_cache entry counts and creator counts for each source
+    const feedCounts = db.prepare(`
+      SELECT source_domain, COUNT(*) as entry_count
+      FROM feed_cache
+      WHERE watched = 0 AND (expires_at IS NULL OR expires_at > datetime('now'))
+      GROUP BY source_domain
+    `).all()
+    const feedCountMap = Object.fromEntries(feedCounts.map(r => [r.source_domain, r.entry_count]))
+
+    const creatorCounts = db.prepare(`
+      SELECT platform || '.com' as domain, COUNT(*) as creator_count
+      FROM creators
+      WHERE active = 1
+      GROUP BY platform
+    `).all()
+    const creatorCountMap = Object.fromEntries(creatorCounts.map(r => [r.domain, r.creator_count]))
+
+    const enriched = sources.map(s => ({
+      ...s,
+      feed_entry_count: feedCountMap[s.domain] ?? 0,
+      // Only relevant for __creators__ sources
+      creator_count: s.query === '__creators__' ? (creatorCountMap[s.domain] ?? 0) : null,
+    }))
+
+    res.json({ sources: enriched })
   } catch (err) {
     logger.error('List sources error', { error: err.message })
     res.status(500).json({ error: 'Failed to list sources' })
@@ -389,24 +551,104 @@ router.delete('/api/sources/:domain', (req, res) => {
 // Returns cached videos grouped by category.
 // Falls back to placeholder data if cache is empty.
 // -----------------------------------------------------------
+let _homepageCategoriesStmt, _homepageVideosStmt, _homepageVideosFallbackStmt
+let _persistentRowsStmt, _persistentItemsStmt
+function getHomepageStmts() {
+  if (!_homepageCategoriesStmt) {
+    _homepageCategoriesStmt = db.prepare(
+      'SELECT key, label, query FROM categories WHERE mode = ? ORDER BY sort_order'
+    )
+    // Primary: fresh AND unviewed. Filtering viewed=0 here is what
+    // makes Settings → Shuffle actually hide watched items.
+    _homepageVideosStmt = db.prepare(
+      `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, fetched_at, tags, viewed
+       FROM homepage_cache
+       WHERE category_key = ? AND viewed = 0 AND expires_at > datetime('now')
+       ORDER BY fetched_at DESC
+       LIMIT 20`
+    )
+    // Fallback: unviewed but possibly expired. Serves stale entries
+    // when warm-cache hasn't run yet or every fresh entry was just
+    // marked viewed (e.g. immediately after a shuffle).
+    _homepageVideosFallbackStmt = db.prepare(
+      `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, fetched_at, tags, viewed
+       FROM homepage_cache
+       WHERE category_key = ? AND viewed = 0
+       ORDER BY fetched_at DESC
+       LIMIT 20`
+    )
+    _persistentRowsStmt = db.prepare(
+      `SELECT key, label FROM persistent_rows
+       WHERE mode = ? AND active = 1
+       ORDER BY sort_order`
+    )
+    _persistentItemsStmt = db.prepare(
+      `SELECT video_url AS url, title, thumbnail, duration, uploader,
+              view_count, like_count, upload_date, tags, liked_at, added_at
+       FROM persistent_row_items
+       WHERE row_key = ?
+       ORDER BY COALESCE(liked_at, added_at) DESC
+       LIMIT 30`
+    )
+  }
+  return {
+    categories: _homepageCategoriesStmt,
+    videos: _homepageVideosStmt,
+    videosFallback: _homepageVideosFallbackStmt,
+    persistentRows: _persistentRowsStmt,
+    persistentItems: _persistentItemsStmt,
+  }
+}
+
 router.get('/api/homepage', (req, res) => {
   const mode = req.query.mode === 'nsfw' ? 'nsfw' : 'social'
 
   try {
-    // Get categories for this mode
-    const categories = db.prepare(
-      'SELECT key, label, query FROM categories WHERE mode = ? ORDER BY sort_order'
-    ).all(mode)
+    const stmts = getHomepageStmts()
 
-    // Get cached videos for each category
-    const result = categories.map(cat => {
-      const videos = db.prepare(
-        `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, tags, viewed
-         FROM homepage_cache
-         WHERE category_key = ? AND expires_at > datetime('now')
-         ORDER BY fetched_at DESC
-         LIMIT 20`
-      ).all(cat.key)
+    // Persistent rows (sticky shelves like "My PornHub Likes") lead the response.
+    // Empty rows are dropped so we don't render placeholder shelves.
+    let persistent = []
+    try {
+      const prRows = stmts.persistentRows.all(mode)
+      persistent = prRows
+        .map(pr => {
+          const items = stmts.persistentItems.all(pr.key)
+          if (items.length === 0) return null
+          return {
+            key: pr.key,
+            label: pr.label,
+            pinned: true,
+            videos: items.map(v => ({
+              id: v.url,
+              url: v.url,
+              title: v.title,
+              thumbnail: v.thumbnail,
+              duration: v.duration,
+              source: 'pornhub.com',
+              uploader: v.uploader,
+              view_count: v.view_count,
+              like_count: v.like_count,
+              subscriber_count: null,
+              upload_date: v.upload_date,
+              tags: v.tags ? JSON.parse(v.tags) : [],
+              durationFormatted: formatDuration(v.duration),
+              viewed: 0,
+            })),
+          }
+        })
+        .filter(Boolean)
+    } catch (err) {
+      // Non-fatal: persistent_rows table may not exist on older DBs
+      logger.warn(`Homepage: persistent rows lookup failed: ${err.message}`)
+    }
+
+    const categories = stmts.categories.all(mode)
+    const categoryRows = categories.map(cat => {
+      let videos = stmts.videos.all(cat.key)
+      if (videos.length === 0) {
+        videos = stmts.videosFallback.all(cat.key)
+      }
 
       return {
         key: cat.key,
@@ -419,12 +661,31 @@ router.get('/api/homepage', (req, res) => {
       }
     })
 
-    // Check if any category needs refill (below 8 videos)
-    const needsRefill = result.some(cat => cat.videos.length < 8)
+    // Deduplicate: same video URL can land in multiple categories via
+    // different search queries. First category (higher sort_order priority) wins.
+    // Persistent rows are exempt — they're user-curated and take priority.
+    const claimedUrls = new Set()
+    for (const row of persistent) {
+      for (const v of row.videos) {
+        claimedUrls.add(v.url || v.id)
+      }
+    }
+    for (const row of categoryRows) {
+      row.videos = row.videos.filter(v => {
+        const key = v.url || v.id
+        if (claimedUrls.has(key)) return false
+        claimedUrls.add(key)
+        return true
+      })
+    }
 
-    // Trigger async refill for any sparse categories (fire-and-forget)
+    const result = [...persistent, ...categoryRows.filter(r => r.videos.length > 0)]
+
+    // Check if any category needs refill (below 8 videos). Persistent rows
+    // refill on a different schedule (warm-cache Phase 1.5) and aren't included.
+    const needsRefill = categoryRows.some(cat => cat.videos.length < 8)
     if (needsRefill) {
-      for (const cat of result) {
+      for (const cat of categoryRows) {
         if (cat.videos.length < 8) {
           refillCategory(cat.key).catch(err =>
             logger.error('Refill error:', { error: err.message })
@@ -441,27 +702,83 @@ router.get('/api/homepage', (req, res) => {
 })
 
 // -----------------------------------------------------------
+// GET /api/homepage/status?mode=social|nsfw
+// Per-category hydration counts. fresh_unviewed mirrors what
+// GET /api/homepage actually surfaces; the other counts help
+// distinguish "nothing cached" from "everything is stale" or
+// "everything is marked viewed".
+// -----------------------------------------------------------
+let _homepageStatusStmt
+function getHomepageStatusStmt() {
+  if (!_homepageStatusStmt) {
+    _homepageStatusStmt = db.prepare(`
+      SELECT
+        c.key,
+        c.label,
+        COALESCE(SUM(CASE WHEN hc.viewed = 0 AND hc.expires_at > datetime('now') THEN 1 ELSE 0 END), 0) AS fresh_unviewed,
+        COALESCE(SUM(CASE WHEN hc.viewed = 0 THEN 1 ELSE 0 END), 0) AS unviewed_total,
+        COUNT(hc.id) AS total
+      FROM categories c
+      LEFT JOIN homepage_cache hc ON hc.category_key = c.key
+      WHERE c.mode = ?
+      GROUP BY c.key, c.label
+      ORDER BY c.sort_order
+    `)
+  }
+  return _homepageStatusStmt
+}
+
+router.get('/api/homepage/status', (req, res) => {
+  const mode = req.query.mode === 'nsfw' ? 'nsfw' : 'social'
+  try {
+    const rows = getHomepageStatusStmt().all(mode)
+    res.json({
+      mode,
+      categories: rows.map(r => ({
+        key: r.key,
+        label: r.label,
+        fresh_unviewed: r.fresh_unviewed,
+        unviewed_total: r.unviewed_total,
+        total: r.total,
+      })),
+    })
+  } catch (err) {
+    logger.error('Homepage status error:', { error: err.message })
+    res.status(500).json({ error: 'Failed to load homepage status' })
+  }
+})
+
+// -----------------------------------------------------------
 // POST /api/homepage/viewed
 // Marks a homepage_cache video as viewed. Triggers async refill
 // if the category drops below the threshold.
 // -----------------------------------------------------------
+let _markViewedStmt, _getCategoryStmt, _unviewedCountStmt
+function getViewedStmts() {
+  if (!_markViewedStmt) {
+    _markViewedStmt = db.prepare('UPDATE homepage_cache SET viewed = 1 WHERE id = ?')
+    _getCategoryStmt = db.prepare('SELECT category_key FROM homepage_cache WHERE id = ?')
+    _unviewedCountStmt = db.prepare(
+      `SELECT COUNT(*) as n FROM homepage_cache
+       WHERE category_key = ? AND viewed = 0 AND expires_at > datetime('now')`
+    )
+  }
+  return { markViewed: _markViewedStmt, getCategory: _getCategoryStmt, unviewedCount: _unviewedCountStmt }
+}
+
 router.post('/api/homepage/viewed', (req, res) => {
   const { id } = req.query
   if (!id) return res.status(400).json({ error: 'Video ID required' })
 
   try {
-    db.prepare('UPDATE homepage_cache SET viewed = 1 WHERE id = ?').run(id)
+    const stmts = getViewedStmts()
+    stmts.markViewed.run(id)
 
-    // Check if the category needs refill
-    const video = db.prepare('SELECT category_key FROM homepage_cache WHERE id = ?').get(id)
+    const video = stmts.getCategory.get(id)
     if (video) {
-      const unviewed = db.prepare(
-        `SELECT COUNT(*) as n FROM homepage_cache
-         WHERE category_key = ? AND viewed = 0 AND expires_at > datetime('now')`
-      ).get(video.category_key)
+      const unviewed = stmts.unviewedCount.get(video.category_key)
 
       if (unviewed.n < 8) {
-        // Trigger async refill (fire-and-forget)
         refillCategory(video.category_key).catch(err =>
           logger.error('Refill error:', { error: err.message })
         )
@@ -476,23 +793,86 @@ router.post('/api/homepage/viewed', (req, res) => {
 })
 
 // -----------------------------------------------------------
+// POST /api/homepage/warm
+// Manually trigger a full warm-cache pass (subscription fetchers
+// across all sources). Single-flight: returns 429 if a pass is
+// already in progress. Runs in-process (externalDb: true) because
+// multi-process SQLite writes corrupt the db on Windows.
+// -----------------------------------------------------------
+let _warmInFlight = false
+router.post('/api/homepage/warm', async (req, res) => {
+  const mode = req.query.mode === 'nsfw' ? 'nsfw' : req.query.mode === 'social' ? 'social' : 'all'
+  // Lazy import to avoid circular dependency at module load time.
+  const { getHomepageCooldownStatus, scheduleOneShotWarm } = await import('../index.js')
+  if (_warmInFlight) {
+    return res.status(429).json({
+      error: 'Warm-cache pass already in progress',
+      cooldown: getHomepageCooldownStatus(mode),
+    })
+  }
+  _warmInFlight = true
+  try {
+    const { runWarmCache } = await import('../scripts/warm-cache.js')
+    const stats = await runWarmCache({ mode, externalDb: true })
+    const cooldown = getHomepageCooldownStatus(mode)
+    // If the warm produced nothing and rows are still cooling, schedule a
+    // one-shot warm for the soonest cooldown expiry so the user's intent is
+    // honored before the next 60s scheduler tick.
+    if ((stats.added || 0) === 0 && cooldown.nextEligibleAt) {
+      const ms = new Date(cooldown.nextEligibleAt).getTime() - Date.now()
+      scheduleOneShotWarm(mode, ms)
+    }
+    res.json({ ok: true, stats, cooldown })
+  } catch (err) {
+    logger.error('Manual warm-cache failed:', { error: err.message })
+    res.status(500).json({ error: 'Warm-cache failed', detail: err.message })
+  } finally {
+    _warmInFlight = false
+  }
+})
+
+// -----------------------------------------------------------
 // Async refill: fetch new videos for a category via yt-dlp
 // -----------------------------------------------------------
+let _refillStmts
+function getRefillStmts() {
+  if (!_refillStmts) {
+    _refillStmts = {
+      getCat: db.prepare('SELECT query, mode FROM categories WHERE key = ?'),
+      countUnviewed: db.prepare('SELECT COUNT(*) as n FROM homepage_cache WHERE category_key = ? AND viewed = 0'),
+      purgeViewed: db.prepare('DELETE FROM homepage_cache WHERE category_key = ? AND viewed = 1'),
+      insert: db.prepare(`
+        INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, fetched_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
+      `),
+    }
+  }
+  return _refillStmts
+}
+
 async function refillCategory(categoryKey) {
-  const cat = db.prepare('SELECT query, mode FROM categories WHERE key = ?').get(categoryKey)
+  const stmts = getRefillStmts()
+  const cat = stmts.getCat.get(categoryKey)
   if (!cat) return
+
+  // Purge viewed entries so stable search queries (ytsearch10:) can re-insert
+  // the same composite IDs with fresh metadata instead of being blocked by
+  // INSERT OR IGNORE on already-viewed rows.
+  const { n: unviewed } = stmts.countUnviewed.get(categoryKey)
+  if (unviewed < 8) {
+    const purged = stmts.purgeViewed.run(categoryKey)
+    if (purged.changes > 0) {
+      logger.info(`  🧹 Purged ${purged.changes} viewed entries from ${categoryKey}`)
+    }
+  }
 
   const query = cat.query
 
   logger.info(`  🔄 Refilling category: ${categoryKey} (query: "${query}")`)
 
   try {
-    // Use yt-dlp for YouTube/search queries. For NSFW site URLs, use the
-    // registry fallback chain (scraper → yt-dlp) since yt-dlp can't always
-    // extract from NSFW sites directly.
     let videos
     if (cat.mode === 'nsfw' && query.startsWith('http')) {
-      // Extract domain from URL for site-specific routing
       try {
         const domain = new URL(query).hostname.replace(/^www\./, '')
         videos = await registry.search(query, { site: domain, limit: 12 })
@@ -503,15 +883,11 @@ async function refillCategory(categoryKey) {
       videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
     }
 
-    const insert = db.prepare(`
-      INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, tags, fetched_at, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
-    `)
-
     let added = 0
     for (const v of videos) {
       try {
-        const result = insert.run(v.id, categoryKey, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, JSON.stringify(v.tags || []))
+        const compositeId = `${categoryKey}_${v.id}`
+        const result = stmts.insert.run(compositeId, categoryKey, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []))
         if (result.changes > 0) added++
       } catch (err) {
         logger.warn(`  ⚠️ Insert failed for ${v.id} in ${categoryKey}:`, { error: err.message })
