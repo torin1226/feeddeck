@@ -37,6 +37,13 @@ let _swapVersion = 0 // Guards against mode-change racing with refresh/shuffle s
 // offset isn't reset by store wipes; it does reset on full reload.
 const _pinnedOffsets = new Map() // row key -> integer offset
 
+// IDs that shuffleHome marked viewed but whose POST may still be in
+// flight. fetchHomepage filters these out of every category so the
+// rotation persists across /home navigation even when the server
+// hasn't committed the viewed flag yet (mark-viewed POSTs are
+// fire-and-forget and can lag behind a fast nav).
+const _recentlyHidden = new Set()
+
 // Pinned rows that should NEVER shuffle. The user's saved likes are
 // curated content; users care about their order, not novelty.
 const PINNED_NO_SHUFFLE = new Set(['ph_likes'])
@@ -380,7 +387,13 @@ const useHomeStore = create((set, get) => ({
         .filter(cat => cat.videos.length > 0)
         .map(cat => {
           const isPinned = !!cat.pinned
-          const mapped = cat.videos.map(mapVideo)
+          const mapped = cat.videos
+            // Strip ids that shuffleHome just marked viewed but whose
+            // server POST may still be in flight. Without this, a fast
+            // /home navigation re-surfaces the same items the user just
+            // shuffled past.
+            .filter(v => !_recentlyHidden.has(v.id))
+            .map(mapVideo)
           let items = isPinned ? mapped : mapped.filter(isFresh)
           if (!isPinned && items.length === 0) items = mapped
           items.sort((a, b) => {
@@ -678,12 +691,32 @@ const useHomeStore = create((set, get) => ({
         return { ...cat, items: [...items.slice(step), ...items.slice(0, step)] }
       })
       dbg('info', `mapped: ${rotatedCount} rotated, skipped likes=${skippedReasons.likes} small=${skippedReasons.oneOrZero} stepZero=${skippedReasons.stepZero}`)
-      set({ categories: rotated })
-      dbg('info', `set categories — new state cats=${(get().categories || []).length}`)
+      // Also rotate the carousel/hero so the hero video and "Up Next"
+      // carousel actually change visibly (these are what dominate the
+      // top of the homepage and ignore `categories` updates).
+      const oldCarousel = get().carouselItems || []
+      const oldHero = get().heroItem
+      let newCarousel = oldCarousel
+      if (oldCarousel.length > 1) {
+        const cstep = oldCarousel.length > ROTATE_BY ? ROTATE_BY : oldCarousel.length - 1
+        if (cstep > 0) {
+          newCarousel = [...oldCarousel.slice(cstep), ...oldCarousel.slice(0, cstep)]
+        }
+      }
+      const newHero = newCarousel[0] || oldHero
+      const heroActuallyChanged = newHero?.id !== oldHero?.id || newHero?.url !== oldHero?.url
+      dbg('info', `hero ${oldHero?.title?.slice(0, 25) || '(none)'} → ${newHero?.title?.slice(0, 25) || '(none)'} changed=${heroActuallyChanged}`)
+      set({ categories: rotated, carouselItems: newCarousel, heroItem: newHero })
+      dbg('info', `set categories cats=${rotated.length} carousel=${newCarousel.length}`)
       // Fire-and-forget: mark-viewed POSTs run in the background. The
       // optimistic rotation is already on screen; these just persist it.
+      // We also record idsToHide in `_recentlyHidden` so fetchHomepage
+      // filters them out client-side until the POSTs commit (otherwise
+      // a fast /home navigation re-fetches and re-surfaces them).
       for (const id of idsToHide) {
+        _recentlyHidden.add(id)
         fetch(`/api/homepage/viewed?id=${encodeURIComponent(id)}`, { method: 'POST' })
+          .then(() => _recentlyHidden.delete(id))
           .catch(() => {})
       }
       if (rotatedCount > 0) {

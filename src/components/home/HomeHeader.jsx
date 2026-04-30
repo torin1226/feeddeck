@@ -17,6 +17,9 @@ export default function HomeHeader() {
   const location = useLocation()
   const [urlParams] = useSearchParams()
   const { setHeroItem, toggleTheatre } = useHomeStore()
+  const shuffleHome = useHomeStore(s => s.shuffleHome)
+  const shuffling = useHomeStore(s => s.shuffling)
+  const refreshing = useHomeStore(s => s.refreshing)
   const { isSFW, toggleMode } = useModeStore()
   const { theme, toggleTheme } = useThemeStore()
 
@@ -357,6 +360,23 @@ export default function HomeHeader() {
         </div>
 
         <div className="w-px h-5 bg-white/10" aria-hidden="true" />
+
+        {/* Shuffle (rotates first 5 cards in every row except Likes) */}
+        <button
+          onClick={() => shuffleHome(isSFW ? 'social' : 'nsfw')}
+          disabled={shuffling || refreshing}
+          className="p-2 rounded-lg text-text-secondary hover:text-text-primary transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Shuffle homepage"
+          aria-label="Shuffle homepage"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={shuffling ? 'animate-spin' : ''}>
+            <polyline points="16 3 21 3 21 8" />
+            <line x1="4" y1="20" x2="21" y2="3" />
+            <polyline points="21 16 21 21 16 21" />
+            <line x1="15" y1="15" x2="21" y2="21" />
+            <line x1="4" y1="4" x2="9" y2="9" />
+          </svg>
+        </button>
 
         <button
           onClick={() => navigate('/settings')}

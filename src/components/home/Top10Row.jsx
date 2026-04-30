@@ -137,43 +137,41 @@ export default function Top10Row() {
 // useRef inside a map callback.
 function Top10Card({ item, onClick, onFocus }) {
   const previewVideoRef = useRef(null)
-  const containerRef = useRef(null)
 
   useEffect(() => {
     const id = item?.id
     const el = previewVideoRef.current
     if (!id || !el) return undefined
-    return registerPreviewTarget(id, el)
-  }, [item?.id])
+    // Register video target AND kick off viewport-aware prefetch via the
+    // video's parent (the card itself). See PosterCard for rationale.
+    const cleanups = [registerPreviewTarget(id, el)]
 
-  // Prefetch stream URL on viewport entry — see PosterCard for rationale.
-  useEffect(() => {
-    const id = item?.id
     const url = item?.url
-    const container = containerRef.current
-    if (!id || !url || !container) return undefined
-    if (typeof IntersectionObserver === 'undefined') return undefined
-    let prefetched = false
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting && !prefetched) {
-            prefetched = true
-            prefetchStreamUrl(id, url)
-            io.disconnect()
-            break
+    const container = el.parentElement
+    if (url && container && typeof IntersectionObserver !== 'undefined') {
+      let prefetched = false
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting && !prefetched) {
+              prefetched = true
+              prefetchStreamUrl(id, url)
+              io.disconnect()
+              break
+            }
           }
-        }
-      },
-      { rootMargin: '200px 600px', threshold: 0.01 }
-    )
-    io.observe(container)
-    return () => io.disconnect()
+        },
+        { rootMargin: '300px 1000px', threshold: 0.01 }
+      )
+      io.observe(container)
+      cleanups.push(() => io.disconnect())
+    }
+
+    return () => cleanups.forEach((fn) => fn())
   }, [item?.id, item?.url])
 
   return (
     <div
-      ref={containerRef}
       role="button"
       tabIndex={0}
       onClick={onClick}

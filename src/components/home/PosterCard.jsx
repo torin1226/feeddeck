@@ -44,42 +44,40 @@ const PosterCard = memo(
     const isToastPaused = useRatingsStore((s) => s.isToastPaused)
     const showToast = useToastStore((s) => s.showToast)
     const previewVideoRef = useRef(null)
-    const containerRef = useRef(null)
 
     useEffect(() => {
       const id = item?.id
       const el = previewVideoRef.current
       if (!id || !el) return undefined
-      return registerPreviewTarget(id, el)
-    }, [item?.id])
+      // Register video target AND kick off a viewport-aware prefetch via
+      // the video's parent (which is the card element itself). Observing
+      // the parent — already laid out by the time this effect fires — is
+      // simpler than threading a separate forwarded-ref combiner and
+      // avoids race conditions where the container ref is briefly null.
+      const cleanups = [registerPreviewTarget(id, el)]
 
-    // Prefetch the stream URL when this card scrolls within ~1 viewport
-    // of being visible. By the time the user hovers, /api/stream-url has
-    // resolved and the cached entry attaches in <300ms instead of waiting
-    // 5-8s on yt-dlp. The 60s URL cache TTL means a single observation is
-    // enough — no need to refetch on each scroll-by.
-    useEffect(() => {
-      const id = item?.id
       const url = item?.url
-      const container = containerRef.current
-      if (!id || !url || !container) return undefined
-      if (typeof IntersectionObserver === 'undefined') return undefined
-      let prefetched = false
-      const io = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            if (entry.isIntersecting && !prefetched) {
-              prefetched = true
-              prefetchStreamUrl(id, url)
-              io.disconnect()
-              break
+      const container = el.parentElement
+      if (url && container && typeof IntersectionObserver !== 'undefined') {
+        let prefetched = false
+        const io = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (entry.isIntersecting && !prefetched) {
+                prefetched = true
+                prefetchStreamUrl(id, url)
+                io.disconnect()
+                break
+              }
             }
-          }
-        },
-        { rootMargin: '200px 600px', threshold: 0.01 }
-      )
-      io.observe(container)
-      return () => io.disconnect()
+          },
+          { rootMargin: '300px 1000px', threshold: 0.01 }
+        )
+        io.observe(container)
+        cleanups.push(() => io.disconnect())
+      }
+
+      return () => cleanups.forEach((fn) => fn())
     }, [item?.id, item?.url])
 
     const orient = item?.orient || 'h'
@@ -265,17 +263,8 @@ const PosterCard = memo(
       border: 'none',
     }
 
-    // Compose forwarded ref + local container ref for IntersectionObserver.
-    // The forwarded ref is used by GalleryRow / Top10Row for scroll math;
-    // the local ref drives the prefetch observer.
-    const setContainerRef = (el) => {
-      containerRef.current = el
-      if (typeof ref === 'function') ref(el)
-      else if (ref) ref.current = el
-    }
-
     return (
-      <div ref={setContainerRef} style={containerStyle} className={isFocused ? 'poster-card-focused' : undefined}
+      <div ref={ref} style={containerStyle} className={isFocused ? 'poster-card-focused' : undefined}
         onClick={onClick} role="button" tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.() } }}
         onMouseEnter={() => isFocused && !isExpanded && setShowThumbs(true)}

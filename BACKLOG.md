@@ -304,6 +304,7 @@ For backlog management protocol, see `.claude/skills/backlog/SKILL.md`.
 ### 3.11 Mobile Device Testing Gate
 
 > **MANUAL CHECKPOINT.** Do not proceed to Milestone 4 (Pi deployment) until this is done. Prompt the user to test on a real phone over local WiFi (setup from 2.6) and sign off.
+> **Target: week of May 5-9.** Beelink deployment deadline moved to **May 15** (was May 1).
 
 - [ ] Claude Code: prompt user to run full manual test on phone (homepage, playback, theatre mode, queue, search, swipe feed)
 - [ ] User sign-off that mobile experience is acceptable before Pi migration begins

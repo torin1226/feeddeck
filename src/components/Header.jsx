@@ -5,6 +5,7 @@ import ModeToggle from './ModeToggle'
 import AddVideoModal from './AddVideoModal'
 import useModeStore from '../stores/modeStore'
 import useThemeStore from '../stores/themeStore'
+import useHomeStore from '../stores/homeStore'
 
 // ============================================================
 // Header
@@ -23,6 +24,9 @@ export default function Header({ onSearch, onSearchSubmit }) {
   const location = useLocation()
   const { isSFW } = useModeStore()
   const { theme, toggleTheme } = useThemeStore()
+  const shuffleHome = useHomeStore(s => s.shuffleHome)
+  const shuffling = useHomeStore(s => s.shuffling)
+  const refreshing = useHomeStore(s => s.refreshing)
   const [showAdd, setShowAdd] = useState(false)
   const [query, setQuery] = useState('')
 
@@ -104,6 +108,23 @@ export default function Header({ onSearch, onSearchSubmit }) {
                 <span className="hidden sm:block">Add</span>
               </button>
             )}
+
+            {/* Shuffle (rotates first 5 cards in every row except Likes) */}
+            <button
+              onClick={() => shuffleHome(isSFW ? 'social' : 'nsfw')}
+              disabled={shuffling || refreshing}
+              className="w-11 h-11 flex items-center justify-center rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-overlay transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Shuffle homepage"
+              aria-label="Shuffle homepage"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={shuffling ? 'animate-spin' : ''}>
+                <polyline points="16 3 21 3 21 8" />
+                <line x1="4" y1="20" x2="21" y2="3" />
+                <polyline points="21 16 21 21 16 21" />
+                <line x1="15" y1="15" x2="21" y2="21" />
+                <line x1="4" y1="4" x2="9" y2="9" />
+              </svg>
+            </button>
 
             <button
               onClick={toggleTheme}

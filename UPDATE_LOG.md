@@ -1,5 +1,34 @@
 # FeedDeck Update Log
 
+## 2026-04-29 - Skeleton Hydration: SkeletonFeedSlide for FeedPage
+
+### Completed
+- Finished the skeleton-hydration pass: `[~]` Content-aware skeleton shapes is now `[x]` in BACKLOG.md "Promoted from Design Reviews".
+- New `SkeletonFeedSlide` in `src/components/Skeletons.jsx` mirrors `FeedVideo`'s shape: `h-dvh w-full snap-start` black surface, full-bleed gradient shimmer, centered 64px play affordance, bottom-aligned title (`h-3.5 w-2/3`) + meta (`h-2.5 w-1/3`) shimmer bars at `bottom-20`. Replaces the two `SkeletonCard`s previously rendered inside FeedPage's loading slot.
+- `src/pages/FeedPage.jsx`: import swapped (`SkeletonCard` → `SkeletonFeedSlide`), loading branch collapsed from a flex-col stacking two cards inside a wrapper to a single `<SkeletonFeedSlide />`.
+
+### Audited (no change needed)
+- **`SkeletonLibrary` Continue Watching** already matches the real card. Skeleton at `Skeletons.jsx:151-152` uses `w-card + h-[124px]`; real `ContinueWatchingCard` at `LibraryPage.jsx:298,308` uses the same dimensions. The user's prompt suggested it used `aspect-video` — that's not in the file.
+- **`w-card` / `h-card-thumb` "ghost token" theory** disproven. All four are defined in `tailwind.config.js:83-91` (`w-card` 200px, `w-card-lg` 230px, `h-card-thumb` 113px, `h-card-thumb-lg` 130px). Verified via runtime `getBoundingClientRect()` on the live preview server. No replacement needed in HeroCarousel or LibraryPage.
+
+### Decisions Made
+- Render exactly one `SkeletonFeedSlide` (not two stacked) since each snap slot is a single full-screen slide. The previous two-card stack inside one snap-start container was already structurally wrong.
+
+### Issues & Blockers
+- `preview_screenshot` repeatedly timed out at 30s during verification (suspect: always-on shimmer + body grain `feTurbulence` overlay keeps the renderer from settling). Worked around with `getBoundingClientRect` + computed-style probes. This is the third recurrence of the `preview_screenshot` timeout previously noted in the 2026-04-26 update log. Worth filing or living with as a known limitation.
+- A background sync daemon committed mid-session (`01b5959 sync: commit uncommitted work from prior session`, 17:40:56). It bundled my Skeleton/FeedPage/BACKLOG changes alongside unrelated carried work (poster card, gallery row, top10row, useFocusPreview, search-page-spec). Working tree is now clean for these files.
+
+### Key Files Changed
+- `src/components/Skeletons.jsx` — `+SkeletonFeedSlide` (16 lines)
+- `src/pages/FeedPage.jsx` — import + loading branch (12 lines diff)
+- `BACKLOG.md` — `[~]` → `[x]` with completion note
+
+### Next Session Should
+- Pick the next `[ ]` design-review item from the "Promoted from Design Reviews" block (lightweight detail card on hover, editorial row variety, card hover expansion, maturity badges, or "More Like This") — those are the four remaining open items there.
+- Or pivot to the M0/Beelink track if the May 1 deadline is the priority (per `_memory/sessions/2026-04-29-director.md`).
+
+---
+
 ## 2026-04-26 - 5c.7 FloatingQueue Glass (Scheduled Agent — Daily Dev Crusher)
 
 ### Milestone: 5c.7 FloatingQueue — Glass Elevated

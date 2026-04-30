@@ -8,6 +8,8 @@ export default function ShuffleDebugOverlay() {
   const refreshing = useHomeStore(s => s.refreshing)
   const shuffling = useHomeStore(s => s.shuffling)
   const categories = useHomeStore(s => s.categories)
+  const heroItem = useHomeStore(s => s.heroItem)
+  const carouselItems = useHomeStore(s => s.carouselItems)
   const [tick, setTick] = useState(0)
 
   // Bump tick whenever the global debug log changes so we re-render.
@@ -61,6 +63,14 @@ export default function ShuffleDebugOverlay() {
       <div>refreshing: <span style={{ color: refreshing ? '#f88' : '#0f0' }}>{String(refreshing)}</span></div>
       <div>shuffling: <span style={{ color: shuffling ? '#f88' : '#0f0' }}>{String(shuffling)}</span></div>
       <div>cats.length: {categories?.length ?? 'null'}</div>
+      <div>carousel.length: {carouselItems?.length ?? 'null'}</div>
+      <div style={{ color: '#ff0', marginTop: 4 }}>HERO:</div>
+      <div style={{ color: '#fff', wordBreak: 'break-all' }}>
+        id={heroItem?.id?.slice(-16) || '(null)'}
+      </div>
+      <div style={{ color: '#ddd' }}>
+        title={heroItem?.title?.slice(0, 35) || '(null)'}
+      </div>
       <div style={{ marginTop: 6, color: '#ff0' }}>top of first 5 rows:</div>
       {sample.map((s, i) => (
         <div key={i} style={{ color: '#aaf' }}>
