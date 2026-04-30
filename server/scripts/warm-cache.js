@@ -105,7 +105,11 @@ const homepageStalePurged = db.prepare(`
   WHERE fetched_at < datetime('now', '-3 days')
 `).run()
 stats.purged = homepageStalePurged.changes
-console.log(`  Purged ${homepageStalePurged.changes} homepage entries older than 3 days\n`)
+console.log(`  Purged ${homepageStalePurged.changes} homepage entries older than 3 days`)
+
+// Checkpoint WAL after purge to avoid "database is locked" during Phase 1 inserts
+db.prepare('PRAGMA wal_checkpoint(PASSIVE)').get()
+console.log(`  WAL checkpoint complete\n`)
 
 // --- Phase 1: Refill homepage categories ---
 console.log('--- Phase 1: Homepage Categories ---')
