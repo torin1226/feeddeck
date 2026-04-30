@@ -309,6 +309,24 @@ For backlog management protocol, see `.claude/skills/backlog/SKILL.md`.
 - [ ] Claude Code: prompt user to run full manual test on phone (homepage, playback, theatre mode, queue, search, swipe feed)
 - [ ] User sign-off that mobile experience is acceptable before Pi migration begins
 
+### 3.13 Cache Smartening — follow-ups
+
+> Identified by the 2026-04-29 cache audit. The multi-search topic pipeline plan
+> (`~/.claude/plans/velvety-wandering-sloth.md`) addresses the bulk of the audit
+> in three phases. NSFW row deduplication folds into Phase 3. The two below
+> are deferred to a dedicated milestone session.
+
+- [ ] **Diagnose `ph_model_rawz` empty.** Top-boosted NSFW creator (RawZ, +0.25)
+      has 0 items in persistent_row_items despite the row existing and
+      last_fetched updating. Likely slug mismatch or auth issue in the
+      `ph_model` fetcher (server/sources/pornhub-personal.js). Add logging,
+      diagnose, fix.
+- [ ] **Decision: don't burn time refilling more aggressively.** Cache freshness
+      is good (most rows refilled within ~6h, scheduled refresh every 30m).
+      Future hydration work focuses on selection logic — score, dedup,
+      taste-align — not refill cadence. Acknowledge in routine docs and
+      flip to [x].
+
 ---
 
 ## Milestone 4: Deploy & Advanced
