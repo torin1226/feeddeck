@@ -8,13 +8,14 @@ import { logger } from './logger.js'
 // from a set of signals, then a divisive age penalty is applied.
 //
 // Priority order (highest to lowest, additive points stack):
-//   1. From a subscribed creator (+SUBSCRIBER)
-//   2. Each matching liked tag (+LIKED_TAG_PER_MATCH, stacks)
+//   1. From a subscribed creator (+100)
+//   1b. Creator boost from engagement history (+boostScore*40, cap 30)
+//   2. Each matching liked tag (+30, stacks) / disliked tag (-15, stacks)
 //   3. Video like_count (log-scaled, capped at +25)
-//   4. Recent (uploaded in last 30 days) (+RECENT_30D)
+//   4. Recent (uploaded in last 30 days) (+20)
 //   5. View count (log-scaled, capped at +15)
-//   6. From a saved manual search (+SYSTEM_SEARCH)
-//   7. Older than 30 days (-OLDER_30D)
+//   6. From a saved manual search (+10)
+//   7. Older than 30 days (-5)
 //   8. Older than 2 years: divide final score by ageYears
 //
 // Videos below MIN_VISIBLE_SCORE are filtered out by callers
@@ -23,7 +24,10 @@ import { logger } from './logger.js'
 
 const POINTS = {
   subscriber: 100,
+  creatorBoostMultiplier: 40,
+  creatorBoostCap: 30,
   likedTagPerMatch: 30,
+  dislikedTagPerMatch: -15,
   recent30d: 20,
   systemSearch: 10,
   older30d: -5,
@@ -32,12 +36,6 @@ const POINTS = {
 const LIKE_CAP = 25
 const VIEW_CAP = 15
 const SUBSCRIBER_COUNT_CAP = 5
-// Reserved for an upcoming creator-boost component in scoreVideo.
-// _loadProfile already returns a creatorBoosts Map; the scoring
-// path has not been wired yet. Prefixed `_` to silence unused-var
-// while keeping the planned shape visible.
-const _CREATOR_BOOST_MULTIPLIER = 40
-const _CREATOR_BOOST_CAP = 30
 const AGE_PENALTY_MIN_YEARS = 2
 const MS_PER_DAY = 86_400_000
 const MS_PER_YEAR = 365.25 * MS_PER_DAY
@@ -124,11 +122,19 @@ export function scoreVideo(video, _surfaceKey = null, profile = null, opts = {})
   // 1. Subscribed creator
   if (opts.isSubscribed) points += POINTS.subscriber
 
+  // 1b. Creator boost (from thumbs-up engagement history)
+  const creator = video.creator || video.uploader
+  if (creator && p.creatorBoosts.has(creator)) {
+    points += Math.min(POINTS.creatorBoostCap, p.creatorBoosts.get(creator) * POINTS.creatorBoostMultiplier)
+  }
+
   // 2. Liked tags (each match stacks)
   const tags = _parseTags(video.tags)
   for (const t of tags) {
     if (typeof t !== 'string') continue
-    if (p.likedTagSet.has(t.toLowerCase())) points += POINTS.likedTagPerMatch
+    const tl = t.toLowerCase()
+    if (p.likedTagSet.has(tl)) points += POINTS.likedTagPerMatch
+    else if (p.dislikedTagSet.has(tl)) points += POINTS.dislikedTagPerMatch
   }
 
   // 3. Video likes (log-scaled, capped)
@@ -206,9 +212,17 @@ export function getScoreBreakdown(video, surfaceKey = null, opts = {}) {
   const tags = _parseTags(video.tags)
 
   const subscriberPts = opts.isSubscribed ? POINTS.subscriber : 0
+  const creator = video.creator || video.uploader
+  const creatorBoostPts = (creator && p.creatorBoosts.has(creator))
+    ? Math.min(POINTS.creatorBoostCap, p.creatorBoosts.get(creator) * POINTS.creatorBoostMultiplier)
+    : 0
   let likedTagPts = 0
+  let dislikedTagPts = 0
   for (const t of tags) {
-    if (typeof t === 'string' && p.likedTagSet.has(t.toLowerCase())) likedTagPts += POINTS.likedTagPerMatch
+    if (typeof t !== 'string') continue
+    const tl = t.toLowerCase()
+    if (p.likedTagSet.has(tl)) likedTagPts += POINTS.likedTagPerMatch
+    else if (p.dislikedTagSet.has(tl)) dislikedTagPts += POINTS.dislikedTagPerMatch
   }
   const likePts = video.like_count > 0 ? Math.min(LIKE_CAP, Math.log10(video.like_count + 1) * 5) : 0
   const viewPts = video.view_count > 0 ? Math.min(VIEW_CAP, Math.log10(video.view_count + 1) * 2) : 0
@@ -220,13 +234,15 @@ export function getScoreBreakdown(video, surfaceKey = null, opts = {}) {
   const ageYears = ageMs !== null ? ageMs / MS_PER_YEAR : null
   const recencyPts = ageDays === null ? 0 : (ageDays <= 30 ? POINTS.recent30d : POINTS.older30d)
 
-  const beforePenalty = subscriberPts + likedTagPts + likePts + recencyPts + viewPts + savedSearchPts + subCountPts
+  const beforePenalty = subscriberPts + creatorBoostPts + likedTagPts + dislikedTagPts + likePts + recencyPts + viewPts + savedSearchPts + subCountPts
   const ageDivisor = (ageYears !== null && ageYears > AGE_PENALTY_MIN_YEARS && beforePenalty > 0) ? ageYears : 1
   const final = scoreVideo(video, surfaceKey, p, opts)
 
   return {
     subscriberPts: +subscriberPts.toFixed(2),
+    creatorBoostPts: +creatorBoostPts.toFixed(2),
     likedTagPts: +likedTagPts.toFixed(2),
+    dislikedTagPts: +dislikedTagPts.toFixed(2),
     likePts: +likePts.toFixed(2),
     recencyPts: +recencyPts.toFixed(2),
     viewPts: +viewPts.toFixed(2),
