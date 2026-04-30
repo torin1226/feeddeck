@@ -106,12 +106,8 @@ export default function SearchPage() {
       } catch {}
     }
 
-    es.addEventListener('error', () => {
-      // 'error' event emitted by server before close
-      setStreamError('Search failed')
-    })
-
     es.onerror = () => {
+      setStreamError('Search failed')
       setStreaming(false)
       es.close()
     }
