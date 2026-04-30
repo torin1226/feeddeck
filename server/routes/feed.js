@@ -102,6 +102,7 @@ router.get('/api/feed/next', (req, res) => {
       v._score = scoreVideo(v, 'feed', null, {
         isSubscribed: !!v.is_subscribed,
         fromSavedSearch: !!v.from_saved_search,
+        mode,
       })
     }
 

@@ -17,7 +17,7 @@ import { logger } from '../logger.js'
 // Lazy import: puppeteer-extra + stealth plugin for Cloudflare bypass.
 // Falls back to plain puppeteer if puppeteer-extra is not installed.
 let puppeteer = null
-async function getPuppeteer() {
+export async function getPuppeteer() {
   if (!puppeteer) {
     try {
       const extra = await import('puppeteer-extra')
