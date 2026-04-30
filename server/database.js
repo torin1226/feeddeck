@@ -744,6 +744,284 @@ export function initDatabase() {
     logger.error('taste_profile migration failed:', { error: err.message })
   }
 
+  // ============================================================
+  // DYNAMIC TASTE MODEL MIGRATIONS (2026-04-30)
+  // Phase 1 of the multi-search topic pipeline plan.
+  // tag_preferences gains `weight` (accumulated strength) and
+  // `last_seen` (for recency decay). New table `tag_associations`
+  // tracks tag co-occurrence so liking similar things lifts
+  // adjacent content automatically.
+  // ============================================================
+  try {
+    const cols = new Set(db.prepare("PRAGMA table_info(tag_preferences)").all().map(c => c.name))
+    if (!cols.has('weight')) {
+      db.exec("ALTER TABLE tag_preferences ADD COLUMN weight REAL DEFAULT 1.0")
+      logger.info('Added tag_preferences.weight column')
+    }
+    if (!cols.has('last_seen')) {
+      db.exec("ALTER TABLE tag_preferences ADD COLUMN last_seen TEXT")
+      // Backfill last_seen from updated_at for existing rows
+      db.exec("UPDATE tag_preferences SET last_seen = updated_at WHERE last_seen IS NULL")
+      logger.info('Added tag_preferences.last_seen column (backfilled from updated_at)')
+    }
+  } catch (err) {
+    logger.error('tag_preferences dynamic-model migration failed:', { error: err.message })
+  }
+
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS tag_associations (
+      tag_a TEXT NOT NULL,
+      tag_b TEXT NOT NULL,
+      co_occurrences INTEGER DEFAULT 1,
+      last_seen DATETIME DEFAULT (datetime('now')),
+      PRIMARY KEY (tag_a, tag_b)
+    )`)
+    db.exec("CREATE INDEX IF NOT EXISTS idx_assoc_a ON tag_associations(tag_a, co_occurrences DESC)")
+    db.exec("CREATE INDEX IF NOT EXISTS idx_assoc_b ON tag_associations(tag_b, co_occurrences DESC)")
+  } catch (err) {
+    logger.error('tag_associations table creation failed:', { error: err.message })
+  }
+
+  // ============================================================
+  // TOPIC PIPELINE MIGRATIONS (2026-04-30, Phase 2)
+  //
+  // categories gains topic_sources + fallback_queries (JSON arrays).
+  // New tables: discovered_creators (per-row creator history),
+  // trends_cache (in-DB cache for trends24/twitter/eporner scrapes).
+  // ============================================================
+  try {
+    const catCols = new Set(db.prepare("PRAGMA table_info(categories)").all().map(c => c.name))
+    if (!catCols.has('topic_sources')) {
+      db.exec("ALTER TABLE categories ADD COLUMN topic_sources TEXT DEFAULT '[]'")
+      logger.info('Added categories.topic_sources column')
+    }
+    if (!catCols.has('fallback_queries')) {
+      db.exec("ALTER TABLE categories ADD COLUMN fallback_queries TEXT DEFAULT '[]'")
+      logger.info('Added categories.fallback_queries column')
+    }
+  } catch (err) {
+    logger.error('categories topic-pipeline migration failed:', { error: err.message })
+  }
+
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS discovered_creators (
+      creator TEXT NOT NULL,
+      platform TEXT NOT NULL DEFAULT 'youtube',
+      row_key TEXT NOT NULL,
+      source TEXT NOT NULL,
+      channel_url TEXT,
+      first_seen_at DATETIME DEFAULT (datetime('now')),
+      last_seen_at  DATETIME DEFAULT (datetime('now')),
+      times_seen INTEGER DEFAULT 1,
+      PRIMARY KEY (platform, creator, row_key)
+    )`)
+    db.exec("CREATE INDEX IF NOT EXISTS idx_discovered_row ON discovered_creators(row_key, times_seen DESC)")
+  } catch (err) {
+    logger.error('discovered_creators table creation failed:', { error: err.message })
+  }
+
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS trends_cache (
+      source_key TEXT PRIMARY KEY,
+      fetched_at DATETIME NOT NULL DEFAULT (datetime('now')),
+      payload_json TEXT NOT NULL,
+      ttl_minutes INTEGER NOT NULL DEFAULT 360
+    )`)
+  } catch (err) {
+    logger.error('trends_cache table creation failed:', { error: err.message })
+  }
+
+  // Social row layout migration. Marker key: social_news. Drops 8 stale
+  // single-keyword/disliked-tag/penalized-creator rows, adds 6 new rows
+  // wired to the topic pipeline, retrofits existing topical rows with
+  // topic_sources configs. Keyed on absence of social_news so it runs
+  // once and never re-triggers.
+  try {
+    const haveNews = db.prepare("SELECT 1 FROM categories WHERE key = 'social_news'").get()
+    if (!haveNews) {
+      const drop = [
+        'social_trending', 'social_viral', 'social_satisfying',
+        'social_nature', 'social_fireship', 'social_tiktok_fyp',
+        'social_reddit_satis', 'social_shorts',
+      ]
+      const dropCache = db.prepare("DELETE FROM homepage_cache WHERE category_key = ?")
+      const dropCat   = db.prepare("DELETE FROM categories WHERE key = ?")
+      for (const k of drop) {
+        try { dropCache.run(k) } catch {}
+        try { dropCat.run(k) } catch {}
+      }
+
+      // Reseed/insert. INSERT OR REPLACE so a re-run of this block (after
+      // a fresh DB rebuild) won't choke on existing rows. Use a synthetic
+      // legacy `query` field — kept for backward compat with code paths
+      // that haven't been migrated yet; the pipeline reads topic_sources.
+      const upsert = db.prepare(
+        `INSERT INTO categories (key, label, query, mode, sort_order, topic_sources, fallback_queries)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET
+           label = excluded.label,
+           query = excluded.query,
+           sort_order = excluded.sort_order,
+           topic_sources = excluded.topic_sources,
+           fallback_queries = excluded.fallback_queries`
+      )
+      const SOCIAL_LAYOUT = [
+        // [key, label, legacy_query, sort_order, topic_sources_json, fallback_queries_json]
+        ['social_news',           'News',                  'topic:trends24:news-and-politics',
+          0, '["trends24:news-and-politics","liked_tags:news"]',
+          '["ytsearch10:top news today"]'],
+        ['social_subscriptions',  'My Subscriptions',      'https://www.youtube.com/feed/subscriptions',
+          1, '[]', '[]'],
+        ['social_what_now',       "What's Trending Now",   'topic:trends24:all',
+          2, '["trends24:all"]', '[]'],
+        ['social_ai',             'AI & Coding',           'topic:liked_tags:ai',
+          3, '["liked_tags:ai,vibe coding,claude tutorial,claude routines","trends24:science-and-technology"]',
+          '["ytsearch10:AI coding tutorial 2026"]'],
+        ['social_tech',           'Tech & Gadgets',        'ytsearch10:best new tech gadgets',
+          4, '["trends24:science-and-technology","liked_tags:tech"]',
+          '["ytsearch10:best new tech gadgets"]'],
+        ['social_design',         'Design',                'ytsearch10:UI UX design tips',
+          5, '["liked_tags:design,ux","trends24:howto-and-style","boosted_creators:5"]',
+          '["ytsearch10:UI UX design tips"]'],
+        ['social_late_night',     'Late Night Comedy',     'topic:trends24:comedy',
+          6, '["trends24:comedy","liked_tags:comedy,funny","boosted_creators:5"]',
+          '["ytsearch10:late night show interview clip"]'],
+        ['social_gaming',         'Gaming',                'topic:trends24:gaming',
+          7, '["trends24:gaming","liked_tags:ps5,new video games"]',
+          '["ytsearch10:gaming highlights this week"]'],
+        ['social_reddit_stories', 'Reddit Stories',        'topic:liked_tags:reddit_stories',
+          8, '["liked_tags:reddit stories,ok storytime"]',
+          '["ytsearch10:reddit stories ok storytime narrated"]'],
+        ['social_music',          'Music',                 'ytsearch10:tiny desk concert',
+          9, '["trends24:music","boosted_creators:5"]',
+          '["ytsearch10:tiny desk concert"]'],
+        ['social_sports',         'Sports Highlights',     'ytsearch10:best sports highlights this week',
+          10, '["trends24:sports","liked_tags:carolina panthers,unc tar heels"]',
+          '["ytsearch10:sports highlights this week"]'],
+        ['social_cooking',        'Cooking',               'ytsearch10:cooking recipe short',
+          11, '["trends24:howto-and-style","liked_tags:cooking"]',
+          '["ytsearch10:cooking recipe short"]'],
+        ['social_reddit_unexp',   'Reddit Unexpected',     'https://www.reddit.com/r/Unexpected/hot',
+          12, '[]', '[]'],
+        ['social_reddit_nfl',     'Reddit NextLevel',      'https://www.reddit.com/r/nextfuckinglevel/hot',
+          13, '[]', '[]'],
+        ['social_explainers',     'Explainers',            'ytsearch10:explained in 5 minutes',
+          14, '["trends24:howto-and-style","liked_tags:tutorial,documentary"]',
+          '["ytsearch10:explained in 5 minutes"]'],
+        ['social_film',           'Film & TV',             'topic:trends24:film-and-animation',
+          15, '["trends24:film-and-animation","liked_tags:new in theaters,scifi"]',
+          '["ytsearch10:movie trailer 2026"]'],
+        ['social_podcasts',       'Podcast Clips',         'topic:liked_tags:podcast',
+          16, '["liked_tags:podcast","trends24:people-and-blogs"]',
+          '["ytsearch10:podcast interview clip"]'],
+        ['social_city_walks',     'City Walks',            'ytsearch10:city walking tour 4K',
+          17, '["liked_tags:travel"]',
+          '["ytsearch10:city walking tour 4K"]'],
+      ]
+      for (const row of SOCIAL_LAYOUT) {
+        // SOCIAL_LAYOUT shape: [key, label, query, sort_order, topic_sources, fallback_queries]
+        // The categories table column order is: (key, label, query, mode, sort_order, topic_sources, fallback_queries)
+        try { upsert.run(row[0], row[1], row[2], 'social', row[3], row[4], row[5]) }
+        catch (err) { logger.warn('social row upsert failed', { key: row[0], error: err.message }) }
+      }
+      logger.info('Migrated social row layout to topic-pipeline configs', { added: SOCIAL_LAYOUT.length, dropped: drop.length })
+    }
+  } catch (err) {
+    logger.error('social row layout migration failed:', { error: err.message })
+  }
+
+  // NSFW row layout migration. Marker key: nsfw_for_you. Drops 18 stale
+  // rows (heavy-duplication PH search keywords + redundant aggregator rows),
+  // upserts 13 retrofitted/new rows wired to the topic pipeline. Phase 3
+  // resolvers (subscribed_models, likes_pool, eporner_api, cross_site)
+  // power the new rows.
+  try {
+    const haveForYou = db.prepare("SELECT 1 FROM categories WHERE key = 'nsfw_for_you'").get()
+    if (!haveForYou) {
+      const drop = [
+        // Heavy-duplication PH search keyword rows (folded into nsfw_for_you / cross_site)
+        'nsfw_trending', 'nsfw_hot', 'nsfw_mostviewed', 'nsfw_solo',
+        'nsfw_realcouples', 'nsfw_sensual', 'nsfw_compilation',
+        'nsfw_verified', 'nsfw_popular_women', 'nsfw_new',
+        'nsfw_casting', 'nsfw_massage', 'nsfw_cosplay', 'nsfw_fitness',
+        'nsfw_asmr',
+        // Redundant aggregator rows (folded)
+        'nsfw_xvideos_best', 'nsfw_xvideos_new', 'nsfw_xvideos_hits',
+        'nsfw_spankbang_new',
+        'nsfw_redgifs_clips', 'nsfw_redgifs_amatr', 'nsfw_redgifs_couple',
+        'nsfw_redgifs_pov', 'nsfw_redgifs_solo', 'nsfw_redgifs_trend',
+        'nsfw_fikfap_new', 'nsfw_fikfap_trend',
+      ]
+      const dropCacheStmt = db.prepare("DELETE FROM homepage_cache WHERE category_key = ?")
+      const dropCatStmt   = db.prepare("DELETE FROM categories WHERE key = ?")
+      for (const k of drop) {
+        try { dropCacheStmt.run(k) } catch {}
+        try { dropCatStmt.run(k) } catch {}
+      }
+
+      const upsertNsfw = db.prepare(
+        `INSERT INTO categories (key, label, query, mode, sort_order, topic_sources, fallback_queries)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET
+           label = excluded.label,
+           query = excluded.query,
+           sort_order = excluded.sort_order,
+           topic_sources = excluded.topic_sources,
+           fallback_queries = excluded.fallback_queries`
+      )
+      // [key, label, query, sort_order, topic_sources, fallback_queries]
+      const NSFW_LAYOUT = [
+        ['nsfw_for_you',     'For You',
+          'topic:nsfw_for_you',
+          0, '["liked_tags:","subscribed_models:nsfw_for_you","likes_pool","cross_site:trending"]', '[]'],
+        ['nsfw_top_rated',   'Top Rated This Week',
+          'topic:eporner:top-rated',
+          1, '["eporner_api:top-rated","eporner_api:top-monthly","cross_site:top-rated"]', '[]'],
+        ['nsfw_amateur',     'Amateur',
+          'https://www.pornhub.com/video/search?search=amateur+homemade&hd=1&o=tr',
+          2, '["liked_tags:amateur,homemade,verified amateurs","cross_site:amateur","eporner_api:top-weekly"]',
+          '["https://www.pornhub.com/video/search?search=amateur+homemade&hd=1&o=tr"]'],
+        ['nsfw_recommended', 'PH Recommended',
+          'https://www.pornhub.com/recommended',
+          3, '[]', '[]'],  // auth-driven; legacy path
+        ['nsfw_japanese',    'Japanese',
+          'topic:liked_tags:japanese',
+          4, '["liked_tags:japanese,asian,japanese big tits","cross_site:japanese"]', '[]'],
+        ['nsfw_petite',      'Petite & Young Adult',
+          'topic:liked_tags:petite',
+          5, '["liked_tags:petite,18-25","cross_site:petite"]', '[]'],
+        ['nsfw_pov',         'POV',
+          'topic:liked_tags:pov',
+          6, '["liked_tags:pov","cross_site:pov"]', '[]'],
+        ['nsfw_couples',     'Couples',
+          'topic:liked_tags:couple',
+          7, '["liked_tags:real couples,homemade","cross_site:couple"]', '[]'],
+        ['nsfw_fresh',       'Fresh Picks',
+          'topic:cross_site:newest',
+          8, '["cross_site:newest","liked_tags:"]', '[]'],
+        ['nsfw_redgifs',     'RedGifs',
+          'https://www.redgifs.com/trending',
+          9, '[]', '["https://www.redgifs.com/trending"]'],  // legacy path; cross_site covers richer aggregation
+        ['nsfw_xvideos',     'XVideos',
+          'https://www.xvideos.com/best',
+          10, '[]', '["https://www.xvideos.com/best"]'],
+        ['nsfw_spankbang',   'SpankBang',
+          'https://spankbang.com/trending_videos/',
+          11, '[]', '["https://spankbang.com/trending_videos/"]'],
+        ['nsfw_fikfap',      'FikFap',
+          'https://fikfap.com/trending',
+          12, '[]', '["https://fikfap.com/trending"]'],
+      ]
+      for (const row of NSFW_LAYOUT) {
+        try { upsertNsfw.run(row[0], row[1], row[2], 'nsfw', row[3], row[4], row[5]) }
+        catch (err) { logger.warn('nsfw row upsert failed', { key: row[0], error: err.message }) }
+      }
+      logger.info('Migrated NSFW row layout to topic-pipeline configs', { added: NSFW_LAYOUT.length, dropped: drop.length })
+    }
+  } catch (err) {
+    logger.error('NSFW row layout migration failed:', { error: err.message })
+  }
+
   logger.info('Database initialized', { path: DB_PATH })
   return db
 }

@@ -2,7 +2,7 @@ import { Router } from 'express'
 import express from 'express'
 import { db } from '../database.js'
 import { logger } from '../logger.js'
-import { invalidateProfileCache, scoreVideos, getScoreBreakdown } from '../scoring.js'
+import { invalidateProfileCache, scoreVideos, getScoreBreakdown, recordEngagement } from '../scoring.js'
 import { inferMode, getMode } from '../utils.js'
 
 const router = Router()
@@ -135,7 +135,9 @@ router.post('/api/ratings', express.json(), (req, res) => {
       throw txErr
     }
 
-    invalidateProfileCache()
+    // Dynamic taste model: bumps tag_preferences weight + last_seen, increments
+    // tag_associations co-occurrence, invalidates profile cache.
+    recordEngagement({ rating, tags: Array.isArray(tags) ? tags : [], mode: videoMode })
 
     res.json({ ok: true, rating })
   } catch (err) {

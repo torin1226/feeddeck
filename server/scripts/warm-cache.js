@@ -111,6 +111,12 @@ console.log(`  Purged ${homepageStalePurged.changes} homepage entries older than
 console.log('--- Phase 1: Homepage Categories ---')
 const modes = modeArg === 'all' ? ['social', 'nsfw'] : [modeArg]
 
+// Single sessionCache shared across all categories in this warm run,
+// so a topic appearing in multiple rows (e.g. "ai" used by social_ai
+// AND social_tech) only runs yt-dlp once per topic.
+const { refillCategory } = await import('../routes/content.js')
+const warmSessionCache = new Map()
+
 for (const mode of modes) {
   const categories = db.prepare('SELECT key, query, mode FROM categories WHERE mode = ?').all(mode)
   console.log(`  ${mode}: ${categories.length} categories`)
@@ -118,38 +124,11 @@ for (const mode of modes) {
   for (const cat of categories) {
     try {
       console.log(`    🔄 ${cat.key}...`)
-      let videos
-      const query = cat.query
-
-      if (cat.mode === 'nsfw' && query.startsWith('http')) {
-        videos = await withRetry(cat.key, async () => {
-          try {
-            const domain = new URL(query).hostname.replace(/^www\./, '')
-            return await registry.search(query, { site: domain, limit: 12 })
-          } catch {
-            return await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
-          }
-        })
-      } else {
-        videos = await withRetry(cat.key, () => registry.search(query, { adapter: 'yt-dlp', limit: 12 }))
-      }
-
-      const insert = db.prepare(`
-        INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, fetched_at, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
-      `)
-
-      let added = 0
-      for (const v of videos) {
-        try {
-          const compositeId = `${cat.key}_${v.id}`
-          const result = insert.run(compositeId, cat.key, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []))
-          if (result.changes > 0) added++
-        } catch (err) {
-          console.log(`      ⚠️ Insert failed for ${v.url?.substring(0, 60)}: ${err.message.substring(0, 60)}`)
-        }
-      }
-      console.log(`    ✅ +${added} new videos (${videos.length} fetched)`)
+      const before = db.prepare('SELECT COUNT(*) as n FROM homepage_cache WHERE category_key = ?').get(cat.key).n
+      await withRetry(cat.key, () => refillCategory(cat.key, warmSessionCache))
+      const after = db.prepare('SELECT COUNT(*) as n FROM homepage_cache WHERE category_key = ?').get(cat.key).n
+      const added = Math.max(0, after - before)
+      console.log(`    ✅ +${added} new videos`)
       stats.categoriesRefilled++
       stats.added += added
     } catch (err) {
