@@ -1041,6 +1041,23 @@ export function initDatabase() {
     logger.warn('twitter_trends wiring migration failed', { error: err.message })
   }
 
+  // Phase 4.5 — Drop the last lazy-categorization row. social_fails was
+  // a single ytsearch10:best fails compilation that returned AFV / FailArmy
+  // — both penalized at -0.15 in creator_boosts. The "Late Night Comedy"
+  // row already covers comedy/funny via boosted_creators + trends24:comedy,
+  // so dropping social_fails removes a guaranteed-thumbs-down surface
+  // without losing comedy coverage.
+  try {
+    const have = db.prepare("SELECT 1 FROM categories WHERE key = 'social_fails'").get()
+    if (have) {
+      db.prepare("DELETE FROM homepage_cache WHERE category_key = 'social_fails'").run()
+      db.prepare("DELETE FROM categories WHERE key = 'social_fails'").run()
+      logger.info('Dropped social_fails (lazy categorization, dominant penalized creators)')
+    }
+  } catch (err) {
+    logger.warn('social_fails drop migration failed', { error: err.message })
+  }
+
   // Phase 4 — Auto-deprecation table. Tracks per-row engagement (impressions
   // and thumbs-down) so the daily hydration routine can flag rows where the
   // user is bouncing off without us writing a heuristic into the runtime.

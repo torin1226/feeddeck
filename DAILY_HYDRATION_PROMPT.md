@@ -97,6 +97,20 @@ const tagPrefs = db.prepare('SELECT COUNT(*) as count FROM tag_preferences').get
 
 Don't try to do everything every day. Pick 1-2 based on what the health check reveals and what was done in recent sessions.
 
+> **Guiding principle (post-2026-04-30 cache audit):** *Selection logic, not
+> refill cadence.* The cache is fresh — most rows refill within 6h, and the
+> 30-min scheduled refresh is plenty. Future hydration work should improve
+> **what** content gets selected (scoring weights, topic_sources mix, lazy-row
+> drops, taste-aligned creator promotion), not **when** content gets fetched.
+> If you find yourself reaching for "tighten the refill interval" or "add
+> another scheduled job", stop and ask whether the deeper problem is selection.
+>
+> **First diagnostic each session:** `curl localhost:3001/api/rows/health`.
+> `underperformingRows` (≥0.4 thumbs-down ratio over 30d, ≥5 impressions) are
+> deprecation candidates — propose drops in BACKLOG 3.13. `emergentClusters`
+> (tag co-occurrences not covered by any row's topic_sources) are new-row
+> candidates — propose additions.
+
 #### A. Personalization Depth
 - Analyze watch history patterns: which sources/tags/creators get watched vs skipped
 - Tune source weights in the `sources` table based on actual engagement data
