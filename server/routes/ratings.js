@@ -139,6 +139,24 @@ router.post('/api/ratings', express.json(), (req, res) => {
     // tag_associations co-occurrence, invalidates profile cache.
     recordEngagement({ rating, tags: Array.isArray(tags) ? tags : [], mode: videoMode })
 
+    // Phase 4 — row engagement tally. Used by /api/rows/health (and the
+    // daily hydration routine) to surface rows the user keeps bouncing
+    // off. Skips when no surfaceKey is supplied (non-row surfaces).
+    if (surfaceKey) {
+      try {
+        db.prepare(
+          `INSERT INTO row_engagement (row_key, day, impressions, thumbs_down, thumbs_up)
+           VALUES (?, date('now'), 1, ?, ?)
+           ON CONFLICT(row_key, day) DO UPDATE SET
+             impressions = impressions + 1,
+             thumbs_down = thumbs_down + excluded.thumbs_down,
+             thumbs_up   = thumbs_up   + excluded.thumbs_up`
+        ).run(surfaceKey, rating === 'down' ? 1 : 0, rating === 'up' ? 1 : 0)
+      } catch (engErr) {
+        logger.debug('row_engagement update failed (non-fatal)', { error: engErr.message })
+      }
+    }
+
     res.json({ ok: true, rating })
   } catch (err) {
     logger.error('Rating save error:', { error: err.message })
@@ -334,6 +352,70 @@ router.get('/api/ratings/history', (req, res) => {
   } catch (err) {
     logger.error('Rating history error:', { error: err.message })
     res.json({ ratings: [] })
+  }
+})
+
+// -----------------------------------------------------------
+// GET /api/rows/health
+// Phase 4 — surface deprecation candidates + emergent tag clusters.
+//
+// Returns:
+//   underperformingRows[] — rows over the last 30 days where
+//     thumbs_down/impressions ≥ 0.4 with at least 5 impressions.
+//     The hydration routine eyeballs these and proposes drops.
+//
+//   emergentClusters[] — tag co-occurrence pairs above a threshold
+//     that aren't represented by any row's topic_sources csv yet.
+//     Used to spot organic theme growth without writing heuristics.
+//
+// Both lists are read-only signals; nothing in here mutates rows
+// or auto-deprecates. Low intervention by design — the user (or
+// Claude in a routine pass) decides what to do.
+// -----------------------------------------------------------
+router.get('/api/rows/health', (_req, res) => {
+  try {
+    const thirtyDaysAgo = "date('now', '-30 days')"
+    const rows = db.prepare(
+      `SELECT row_key,
+              SUM(impressions) AS impressions,
+              SUM(thumbs_down) AS thumbs_down,
+              SUM(thumbs_up)   AS thumbs_up
+       FROM row_engagement
+       WHERE day >= ${thirtyDaysAgo}
+       GROUP BY row_key
+       ORDER BY impressions DESC`
+    ).all()
+    const underperformingRows = rows
+      .filter(r => r.impressions >= 5 && (r.thumbs_down / r.impressions) >= 0.4)
+      .map(r => ({
+        row_key: r.row_key,
+        impressions: r.impressions,
+        thumbs_down: r.thumbs_down,
+        thumbs_up: r.thumbs_up,
+        downRatio: +(r.thumbs_down / r.impressions).toFixed(3),
+      }))
+
+    // Cluster detection: tag pairs with >=3 co-occurrences whose
+    // joined form ("ai claude", "japanese asian") doesn't show up
+    // in any existing row's topic_sources csv.
+    const pairs = db.prepare(
+      `SELECT tag_a, tag_b, co_occurrences FROM tag_associations
+       WHERE co_occurrences >= 3 ORDER BY co_occurrences DESC LIMIT 30`
+    ).all()
+    const allTopicSourcesText = db.prepare(
+      `SELECT topic_sources FROM categories WHERE topic_sources IS NOT NULL`
+    ).all().map(r => (r.topic_sources || '').toLowerCase()).join(' ')
+    const emergentClusters = pairs
+      .filter(p => {
+        const a = p.tag_a.toLowerCase(); const b = p.tag_b.toLowerCase()
+        return !allTopicSourcesText.includes(a) || !allTopicSourcesText.includes(b)
+      })
+      .map(p => ({ tag_a: p.tag_a, tag_b: p.tag_b, co_occurrences: p.co_occurrences }))
+
+    res.json({ underperformingRows, emergentClusters })
+  } catch (err) {
+    logger.error('rows/health error:', { error: err.message })
+    res.status(500).json({ error: err.message })
   }
 })
 

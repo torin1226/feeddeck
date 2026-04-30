@@ -141,6 +141,31 @@ function resolveBoostedCreators(nStr, mode) {
 }
 
 // ----------------------------------------------------------------
+// Resolver: twitter_trends:<region> — Phase 4 trending source.
+// Backed by server/sources/twitter-trends.js using the existing
+// Twitter cookie + bearer auth from subscription-backup.js.
+// 1h trends_cache TTL; cookie failure / rotated API fails open.
+// Currently only "us" is implemented; other regions return empty.
+// ----------------------------------------------------------------
+async function resolveTwitterTrends(region) {
+  const reg = (region || 'us').toLowerCase()
+  if (reg !== 'us') return { topics: [], creators: [], directVideos: [] }
+  const sourceKey = `twitter_trends:${reg}`
+  const cached = readTrendsCache(sourceKey)
+  if (cached) return cached
+  try {
+    const mod = await import('./sources/twitter-trends.js')
+    const topics = await mod.fetchUsTrends()
+    const payload = { topics, creators: [], directVideos: [] }
+    writeTrendsCache(sourceKey, payload, 60) // 1h
+    return payload
+  } catch (err) {
+    logger.warn('twitter_trends resolver failed', { region: reg, error: err.message })
+    return { topics: [], creators: [], directVideos: [] }
+  }
+}
+
+// ----------------------------------------------------------------
 // Resolver: discovered_creators:<row_key> — fallback layer
 // ----------------------------------------------------------------
 function resolveDiscoveredCreators(rowKey) {
@@ -179,6 +204,7 @@ export async function resolveTopics(sources, ctx = {}) {
     try {
       switch (kind) {
         case 'trends24':           return await resolveTrends24(arg)
+        case 'twitter_trends':     return await resolveTwitterTrends(arg)
         case 'liked_tags':         return resolveLikedTags(arg, mode)
         case 'boosted_creators':   return resolveBoostedCreators(arg, mode)
         case 'discovered_creators':return resolveDiscoveredCreators(arg || rowKey)

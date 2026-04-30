@@ -1022,6 +1022,45 @@ export function initDatabase() {
     logger.error('NSFW row layout migration failed:', { error: err.message })
   }
 
+  // Phase 4 — Wire twitter_trends:us into the trending-flavoured social rows
+  // (News, What's Trending Now). Idempotent: only updates if the topic_sources
+  // string doesn't already contain "twitter_trends".
+  try {
+    const targets = ['social_news', 'social_what_now']
+    for (const key of targets) {
+      const row = db.prepare("SELECT topic_sources FROM categories WHERE key = ?").get(key)
+      if (!row) continue
+      let sources = []
+      try { sources = JSON.parse(row.topic_sources || '[]') } catch { sources = [] }
+      if (sources.some(s => typeof s === 'string' && s.startsWith('twitter_trends'))) continue
+      sources.push('twitter_trends:us')
+      db.prepare("UPDATE categories SET topic_sources = ? WHERE key = ?")
+        .run(JSON.stringify(sources), key)
+    }
+  } catch (err) {
+    logger.warn('twitter_trends wiring migration failed', { error: err.message })
+  }
+
+  // Phase 4 — Auto-deprecation table. Tracks per-row engagement (impressions
+  // and thumbs-down) so the daily hydration routine can flag rows where the
+  // user is bouncing off without us writing a heuristic into the runtime.
+  // Engagement events are recorded by the rating handler; the daily job
+  // (or a manual /api/rows/health endpoint) computes ratios and surfaces
+  // rows above 0.4 thumbs-down/impressions for review.
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS row_engagement (
+      row_key TEXT NOT NULL,
+      day TEXT NOT NULL,
+      impressions INTEGER NOT NULL DEFAULT 0,
+      thumbs_down INTEGER NOT NULL DEFAULT 0,
+      thumbs_up INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (row_key, day)
+    )`)
+    db.exec("CREATE INDEX IF NOT EXISTS idx_row_engagement_day ON row_engagement(day)")
+  } catch (err) {
+    logger.error('row_engagement table creation failed:', { error: err.message })
+  }
+
   logger.info('Database initialized', { path: DB_PATH })
   return db
 }
