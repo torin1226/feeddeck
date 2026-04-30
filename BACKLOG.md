@@ -29,7 +29,7 @@ For backlog management protocol, see `.claude/skills/backlog/SKILL.md`.
 | M4: Deploy & Advanced | Waiting | 23/35 (66%) | Social pipeline, AI recs, extension |
 | M5: Design Polish | Active | 47/52 (90%) | Color tokens, glass materials, logo |
 | M5a: Playback | Blocked | 10/18 (56%) | Needs manual browser testing (8 [?]) |
-| Discovered Tasks | Mixed | 42/50 (84%) | Editorial design polish, deferred items |
+| Discovered Tasks | Mixed | 43/50 (86%) | Editorial design polish, deferred items |
 
 > **Archive:** 135+ completed tasks moved to [`BACKLOG-ARCHIVE.md`](BACKLOG-ARCHIVE.md) on 2026-04-25.
 
@@ -313,19 +313,22 @@ For backlog management protocol, see `.claude/skills/backlog/SKILL.md`.
 
 > Identified by the 2026-04-29 cache audit. The multi-search topic pipeline plan
 > (`~/.claude/plans/velvety-wandering-sloth.md`) addresses the bulk of the audit
-> in three phases. NSFW row deduplication folds into Phase 3. The two below
-> are deferred to a dedicated milestone session.
+> in three phases (1: scoring, 2: social pipeline, 3: NSFW pipeline) plus
+> Phase 4 (Twitter trends + auto-deprecation signal). NSFW row deduplication
+> folded into Phase 3. **All sub-items closed 2026-04-30.**
 
-- [ ] **Diagnose `ph_model_rawz` empty.** Top-boosted NSFW creator (RawZ, +0.25)
-      has 0 items in persistent_row_items despite the row existing and
-      last_fetched updating. Likely slug mismatch or auth issue in the
-      `ph_model` fetcher (server/sources/pornhub-personal.js). Add logging,
-      diagnose, fix.
-- [ ] **Decision: don't burn time refilling more aggressively.** Cache freshness
+- [x] **`ph_model_rawz` empty — resolved organically.** The Phase 3 warm-cache
+      run filled the row to 29 items without any code change; the audit's
+      "0 items" snapshot caught it mid-refill. No fetcher bug. Closing.
+- [x] **Decision: don't burn time refilling more aggressively.** Cache freshness
       is good (most rows refilled within ~6h, scheduled refresh every 30m).
       Future hydration work focuses on selection logic — score, dedup,
-      taste-align — not refill cadence. Acknowledge in routine docs and
-      flip to [x].
+      taste-align — not refill cadence. Acknowledged in
+      `DAILY_HYDRATION_PROMPT.md` (selection-logic-over-refill principle).
+- [x] **Final lazy-row sweep.** `social_fails` was the last single-ytsearch
+      row whose top creators were both penalized (AFV / FailArmy at −0.15).
+      Dropped via idempotent migration; comedy coverage preserved by
+      `social_late_night` (boosted_creators + trends24:comedy + liked_tags).
 
 ---
 
@@ -590,7 +593,6 @@ _Open items from archived design review runs. Completed review items in [`BACKLO
 
 - [x] **Content-aware skeleton shapes** -- Match skeleton layout to actual component dimensions. _2026-04-26: HomePage skeletons (`SkeletonHero` + `SkeletonGalleryShelf`) now mirror real dimensions — Hero `min-h-[600px]` to match `HeroSection`, title clamp height + extra "+" button placeholder; GalleryShelf restructured to mirror `GalleryRow` (left-aligned header with "See all" pill, 50vh card heights matching `PosterCard.WIDTH` + `'50vh'`, 35vw scroll padding, 4px-tall windowed dots) plus a `PosterPeekRow` placeholder strip below._ _2026-04-29: FeedPage loading hint replaced — new `SkeletonFeedSlide` (h-dvh full-bleed black surface, centered 64px play affordance, bottom-aligned title/meta shimmer bars) mirrors `FeedVideo`'s actual shape; FeedPage's two `SkeletonCard` instances inside the snap container swapped for a single `<SkeletonFeedSlide />`. Audited `SkeletonLibrary` Continue Watching — already correct (skeleton uses `w-card` + `h-[124px]`, real `ContinueWatchingCard` at LibraryPage.jsx:298,308 uses `w-card` + `h-[124px]`; same dimensions). Audited the "ghost token" theory — `w-card` (200px), `w-card-lg` (230px), `h-card-thumb` (113px), `h-card-thumb-lg` (130px) are all defined in `tailwind.config.js:83-91` (verified via runtime getBoundingClientRect on live preview); no replacement needed. Build clean._
 - [ ] **Editorial row variety** -- Increase from 3-5 to 8-10 rows: "Fresh Today", "Long Watches", "Quick Hits", "Most Viewed", source highlights.
-- [ ] **Card hover expansion animation** -- Scale + translate + info reveal (Netflix pattern).
 - [ ] **Maturity/content rating badges** -- Source-specific ratings on cards and hero.
 - [ ] **"More Like This" related content** -- Suggest similar videos after watching.
 
@@ -600,6 +602,7 @@ _Open items from archived design review runs. Completed review items in [`BACKLO
 
 > Full history: [`BACKLOG-ARCHIVE.md`](BACKLOG-ARCHIVE.md)
 
+- [x] (2026-04-30) **Discovered: Card hover expansion animation — already shipped** — Stale design-review item from `## Promoted from Design Reviews`. The Netflix-pattern hover expansion (scale + translate + info reveal) was implemented in M0.1 (`8647e21`) + M0.2 (`01b5959`) + the 2026-04-24 PosterCard overlay refactor and was already verified by the 2026-04-29 closure of its sibling "Lightweight detail card on hover" entry. Confirmed in `PosterCard.jsx`: focused card width animates 420→600 (h-orient) or 320→420 (v-orient) via spring easing 450ms (`PosterCard.jsx:97-124`); adjacent cards apply distance-based scale 0.98/0.96/… via `distProps()` (`PosterCard.jsx:28-33,91`); `isExpanded` mode reveals genre/duration pills (`:328-333`), display-font title (`:335`), views + uploader meta row (`:337-345`), 2-line clamped synopsis (`:347-360`), and Play / Queue / Thumbs action buttons (`:362-406`). Marked complete.
 - [x] (2026-04-29) **Discovered: Lightweight detail card on hover — already shipped** — Stale design-review item from `docs/design-reviews/2026-04-08-competitive-comparison.md` (item #11). The Netflix-signature hover-detail card was implemented in commits `8647e21` (M0.1 focusedItem state) + `01b5959` (M0.2 hover-preview wire-up) + the 2026-04-24 PosterCard overlay refactor. `PosterCard.jsx:153` enters `isExpanded` mode when `isFocused && variant !== 'landscape'` and renders the full Netflix-style detail panel: genre/duration pills (`PosterCard.jsx:328-333`), title with larger display font (`:335`), meta row with views + uploader (`:337-345`), 2-line clamped synopsis from `item.desc` (`:347-360`), and action buttons before committing to Theatre — `▶ Play` (sets `heroItem` + `theatreMode=true`), `+ Queue` (calls `addToQueue`), and inline thumbs up/down (calls `handleRate`) (`:362-406`). Hover triggers via `GalleryRow.jsx:387-393` `onMouseEnter` calling `setFocusedItem`; keyboard arrow nav uses the same flow with `inputKind: 'keyboard'` (`GalleryRow.jsx:297-308`). Width animates 420→600px on focus with spring easing (450ms, `cubic-bezier(0.34, 1.56, 0.64, 1)`). Top 10 row uses a deliberately distinct treatment (giant rank numbers, no detail panel). Marked complete.
 - [x] (2026-04-28) **Discovered: Noise/grain texture — already shipped** — Stale design-review item. Surface grain overlay was implemented in commit `54bede5` (5c.4 glass header + 5c.5 motion tokens). `body::before` in `src/index.css` paints a fixed-position SVG fractal noise (`feTurbulence`, baseFrequency 0.65, 3 octaves, stitched 300×300 tile) at 2.5% opacity with `mix-blend-mode: overlay` and `pointer-events: none` over the entire viewport. Cinematic texture on dark surfaces, no readability impact. Marked complete.
 - [x] (2026-04-28) **Discovered: Content-aware hero gradient — already shipped** — Stale design-review item; duplicate of the 2026-04-26 "Ambient color extraction for hero gradient" entry below. `useAmbientColor` (`src/hooks/useAmbientColor.js`) samples a 24×24 canvas of `heroItem.thumbnail`, weighting saturated mid-luminance pixels and caching by URL. `HeroSection.jsx` consumes the `[r,g,b]` and exposes it as the `--hero-ambient-rgb` CSS custom property used by the screen-blend gradient overlay. CORS-tainted CDNs return null → falls back cleanly to the neutral gradient. Marked complete.
@@ -609,4 +612,3 @@ _Open items from archived design review runs. Completed review items in [`BACKLO
 - [x] (2026-04-26) **Discovered: Cookie-health PornHub probe — already fixed** — Stale backlog item. Commit `63b5dd9` (2026-04-25) replaced the dead probe URL (`view_video.php?viewkey=ph5f8b3c7a21a28`) with `/video?o=tr` (trending page) and surfaces yt-dlp's `ERROR:` line up to 250 chars. Probe now returns 'healthy', the scary 🔴 is gone. Marked complete.
 - [x] (2026-04-26) **Feed Controls: Refresh + Shuffle buttons in Settings** — `POST /api/homepage/warm` endpoint (single-flight 429 guard) triggers `runWarmCache`; `refreshHome` + `shuffleHome` + `_swapInFreshContent` added to `homeStore`; staged replacement swaps leftmost-5 cards immediately, tail at +600ms; pinned rows untouched; `_swapVersion` race guard cancels stale swaps on mode toggle. Also fixed `_homepageVideosStmt` missing `AND viewed = 0` (shuffle-marked items were re-appearing on next GET).
 - [x] (2026-04-25) **Discovered: Vertical scroll hijack — already fixed** — Stale backlog item. `GalleryRow.jsx:142` already says "Scroll hijacking REMOVED — vertical wheel scrolls the page, not the row." Resolved in commit `2cd9422`. Marked complete.
-- [x] (2026-04-25) **Discovered: "Viral This Week" landscape rows scaled up** — `PosterCard.jsx` landscape cap bumped `min(50vh, 360px)` → `min(50vh, 420px)`. On 1080p the landscape cards now render at 420px (was 360px), narrowing the visual-weight gap with poster shelves at 540px.

@@ -6,6 +6,7 @@
 
 ## Completed Tasks
 
+- [x] (2026-04-25) **Discovered: "Viral This Week" landscape rows scaled up** — `PosterCard.jsx` landscape cap bumped `min(50vh, 360px)` → `min(50vh, 420px)`. On 1080p the landscape cards now render at 420px (was 360px), narrowing the visual-weight gap with poster shelves at 540px.
 - [x] (2026-04-25) **Discovered: Top 10 row scaled up** — `Top10Row.jsx` switched from fixed `w-[130px]/h-[185px]/text-[80px]` to clamp-based responsive sizing. On 1080p: card 189×270 (was 130×185), rank 156px (was 80px). Aspect ratio 0.703 preserved across all viewport sizes.
 - [x] (2026-03-22) 4.1 Deployment, 4.3 Theme, 4.8 Source Management (committed from previous session)
 - [x] (2026-03-22) 5.9 Library Page Upgrade: font-display headers, tab bar (All/Favorites/History/Watch Later/Top Rated) with count badges, Continue Watching horizontal row with progress bars, per-tab empty states with CTAs, watchProgress tracking in libraryStore
