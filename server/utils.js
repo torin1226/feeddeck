@@ -56,6 +56,13 @@ export function getMode(req) {
   return 'social'
 }
 
+/** Pull a URL-like string off any video-shaped object.
+ *  Returns null if no URL field is present. */
+export function urlOf(item) {
+  if (!item || typeof item !== 'object') return null
+  return item.url || item.video_url || item.streamUrl || item.stream_url || item.source || null
+}
+
 /** Helper: seconds → "3:45" */
 export function formatDuration(seconds) {
   if (!seconds) return '0:00'
