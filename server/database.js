@@ -460,17 +460,13 @@ export function initDatabase() {
     _seedCategories(db)
   }
 
-  // Migrate: replace old/generic category seeds with curated ones from CONTENT_QUERIES.md
-  try {
-    const hasNewSeeds = db.prepare("SELECT COUNT(*) as n FROM categories WHERE key = 'nsfw_trending'").get()
-    if (hasNewSeeds.n === 0) {
-      db.exec("DELETE FROM homepage_cache")
-      db.exec("DELETE FROM categories")
-      _seedCategories(db)
-    }
-  } catch (err) {
-    logger.error('Category migration failed -- DB may have stale seeds:', { error: err.message })
-  }
+  // [Removed 2026-04-30] Obsolete CONTENT_QUERIES.md migration. The block
+  // used `nsfw_trending` as its "do I have curated seeds?" marker, but the
+  // social_news + nsfw_for_you layout migrations below DROP `nsfw_trending`
+  // — so the marker check fired on every boot, wiping homepage_cache to
+  // zero and causing the placeholder-dogs symptom users saw after every
+  // server restart. The new topic-pipeline layout migrations are the
+  // successor; this block is archaeology.
 
   // Seed default feed sources if empty
   const srcCount = db.prepare('SELECT COUNT(*) as n FROM sources').get()
@@ -836,9 +832,18 @@ export function initDatabase() {
   // wired to the topic pipeline, retrofits existing topical rows with
   // topic_sources configs. Keyed on absence of social_news so it runs
   // once and never re-triggers.
+  //
+  // Wrapped in a transaction so /api/homepage can never observe a
+  // half-migrated state — if the process crashes mid-migration, ROLLBACK
+  // restores the prior layout and the marker check re-triggers it on
+  // next boot. Without this, an interrupted migration could leave the
+  // marker present (categories partially inserted) but homepage_cache
+  // dropped, putting the app into a permanently-empty cold state.
   try {
     const haveNews = db.prepare("SELECT 1 FROM categories WHERE key = 'social_news'").get()
     if (!haveNews) {
+      db.exec('BEGIN')
+      try {
       const drop = [
         'social_trending', 'social_viral', 'social_satisfying',
         'social_nature', 'social_fireship', 'social_tiktok_fyp',
@@ -925,6 +930,11 @@ export function initDatabase() {
         catch (err) { logger.warn('social row upsert failed', { key: row[0], error: err.message }) }
       }
       logger.info('Migrated social row layout to topic-pipeline configs', { added: SOCIAL_LAYOUT.length, dropped: drop.length })
+        db.exec('COMMIT')
+      } catch (txErr) {
+        db.exec('ROLLBACK')
+        throw txErr
+      }
     }
   } catch (err) {
     logger.error('social row layout migration failed:', { error: err.message })
@@ -935,9 +945,14 @@ export function initDatabase() {
   // upserts 13 retrofitted/new rows wired to the topic pipeline. Phase 3
   // resolvers (subscribed_models, likes_pool, eporner_api, cross_site)
   // power the new rows.
+  //
+  // Wrapped in a transaction (mirrors the social_news migration above) so
+  // an interrupted run doesn't leave the DB in a partially-migrated state.
   try {
     const haveForYou = db.prepare("SELECT 1 FROM categories WHERE key = 'nsfw_for_you'").get()
     if (!haveForYou) {
+      db.exec('BEGIN')
+      try {
       const drop = [
         // Heavy-duplication PH search keyword rows (folded into nsfw_for_you / cross_site)
         'nsfw_trending', 'nsfw_hot', 'nsfw_mostviewed', 'nsfw_solo',
@@ -1017,6 +1032,11 @@ export function initDatabase() {
         catch (err) { logger.warn('nsfw row upsert failed', { key: row[0], error: err.message }) }
       }
       logger.info('Migrated NSFW row layout to topic-pipeline configs', { added: NSFW_LAYOUT.length, dropped: drop.length })
+        db.exec('COMMIT')
+      } catch (txErr) {
+        db.exec('ROLLBACK')
+        throw txErr
+      }
     }
   } catch (err) {
     logger.error('NSFW row layout migration failed:', { error: err.message })

@@ -715,7 +715,15 @@ router.get('/api/homepage', (req, res) => {
       }
     }
 
-    res.json({ categories: result, needsRefill })
+    // `state` is the self-describing signal the client uses to decide
+    // whether to render skeletons + retry vs. render content. Without
+    // this, the client can't distinguish "cache empty, refill running"
+    // from "no content exists" — a distinction that turned every cold
+    // boot into a "show fake dogs" event.
+    const totalVideos = result.reduce((sum, r) => sum + r.videos.length, 0)
+    const state = totalVideos === 0 ? 'warming' : 'ready'
+
+    res.json({ categories: result, needsRefill, state })
   } catch (err) {
     logger.error('Homepage error:', { error: err.message })
     res.status(500).json({ error: 'Failed to load homepage' })

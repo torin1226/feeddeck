@@ -29,6 +29,20 @@ let idCounter = 100
 let _fetchVersion = 0 // Guards against nuclearFlush/resetHome racing with fetchHomepage
 let _swapVersion = 0 // Guards against mode-change racing with refresh/shuffle swaps
 
+// Self-healing retry for cold-cache / warming windows. Each retry attempt
+// re-enters fetchHomepage with attempt+1 so a fresh /api/homepage call
+// goes out. Cancelled by mode change (version bump) and resetHome.
+const RETRY_BASE_MS = 1000
+const RETRY_MAX_MS = 15000
+const RETRY_MAX_ATTEMPTS = 12   // ~2 min total worst case at 15s cap
+let _warmingTimer = null
+const _cancelWarmingRetry = () => {
+  if (_warmingTimer) {
+    clearTimeout(_warmingTimer)
+    _warmingTimer = null
+  }
+}
+
 // Per-pinned-row rotation offset, advanced by shuffleHome.
 // persistent_row_items has no `viewed` flag, so pinned rows can't be
 // rotated server-side like homepage_cache rows. We rotate client-side
@@ -170,6 +184,11 @@ const useHomeStore = create((set, get) => ({
   inlinePlay: false, // true = video playing in hero area, categories still visible
   // Error from last failed homepage fetch (null = no error)
   fetchError: null,
+  // Lifecycle state of the homepage fetch:
+  //   'ready'   — content rendered (heroItem populated)
+  //   'warming' — backend cache empty / retry pending; show skeletons
+  //   'error'   — retry budget exhausted; show banner with manual retry
+  homepageState: 'ready',
 
   // Single source of truth for "what card is the user looking at right now."
   // Owned by whichever surface most recently took focus (hero, gallery row,
@@ -238,7 +257,10 @@ const useHomeStore = create((set, get) => ({
     set({ focusedItem: next })
   },
 
-  // Generate placeholder data (fallback when API has no cached content)
+  // Generate dummy "fluffy dog" placeholder data. Kept for design preview
+  // only — fetchHomepage NEVER calls this anymore. The old behavior
+  // (rendering fake dogs whenever the cache was warming) made the app
+  // look broken; the homepage now shows skeletons + auto-retries instead.
   generateData: () => {
     idCounter = 100
     const carouselItems = genItems(24)
@@ -266,6 +288,7 @@ const useHomeStore = create((set, get) => ({
   // Nuclear reset: clear all content (used on mode switch)
   resetHome: () => {
     _fetchVersion++ // Invalidate any in-flight fetchHomepage
+    _cancelWarmingRetry()
     set({
       heroItem: null,
       carouselItems: [],
@@ -274,6 +297,8 @@ const useHomeStore = create((set, get) => ({
       loadedCategoryIndices: [],
       top10: [],
       focusedItem: null,
+      homepageState: 'ready',
+      fetchError: null,
     })
   },
 
@@ -303,11 +328,21 @@ const useHomeStore = create((set, get) => ({
     return true
   },
 
-  // Fetch real data from backend. Falls back to placeholders if empty.
-  fetchHomepage: async (mode = 'social') => {
+  // Fetch real data from backend.
+  //
+  // Self-healing: when the backend returns no content (cache warming after
+  // server boot or migration), we DON'T render placeholder dogs — that
+  // misled users into thinking the app was broken. Instead we leave
+  // heroItem null (so HomePage shows skeletons), set homepageState to
+  // 'warming', and schedule an exponential-backoff retry that re-enters
+  // this function. Retry is cancelled by mode change (via _fetchVersion)
+  // and resetHome (via _cancelWarmingRetry).
+  fetchHomepage: async (mode = 'social', _attempt = 0) => {
     const version = ++_fetchVersion
-    // Clear stale content immediately so UI shows loading state
-    set({ heroItem: null, carouselItems: [], categories: [], loadedCategoryIndices: [], top10: [], fetchError: null, focusedItem: null })
+    _cancelWarmingRetry()
+    if (_attempt === 0) {
+      set({ heroItem: null, carouselItems: [], categories: [], loadedCategoryIndices: [], top10: [], fetchError: null, focusedItem: null, homepageState: 'warming' })
+    }
     try {
       const res = await fetch(`/api/homepage?mode=${mode}`)
       if (version !== _fetchVersion) return // Stale fetch (mode changed or resetHome called)
@@ -362,9 +397,19 @@ const useHomeStore = create((set, get) => ({
         }))
       )
 
-      if (allVideos.length === 0) {
-        // No cached content yet — fall back to placeholders
-        get().generateData()
+      if (data.state === 'warming' || allVideos.length === 0) {
+        // Backend cache is warming. Schedule a self-healing retry instead
+        // of rendering placeholder dogs that look like real broken content.
+        if (_attempt < RETRY_MAX_ATTEMPTS) {
+          const delay = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** _attempt)
+          _warmingTimer = setTimeout(() => {
+            _warmingTimer = null
+            if (version === _fetchVersion) get().fetchHomepage(mode, _attempt + 1)
+          }, delay)
+          set({ homepageState: 'warming' })
+        } else {
+          set({ homepageState: 'error', fetchError: 'Content is still loading. Click retry in a moment.' })
+        }
         return
       }
 
@@ -537,11 +582,22 @@ const useHomeStore = create((set, get) => ({
           .slice(0, INITIAL_POOL_CATEGORIES)
           .map((_, i) => i),
         top10: top10.length >= 3 ? top10 : [],
+        homepageState: 'ready',
+        fetchError: null,
       })
     } catch (err) {
-      console.warn('Homepage fetch failed, using placeholders:', err.message)
-      set({ fetchError: 'Server unreachable — showing sample content' })
-      get().generateData()
+      if (version !== _fetchVersion) return
+      console.warn('Homepage fetch failed:', err.message)
+      if (_attempt < RETRY_MAX_ATTEMPTS) {
+        const delay = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** _attempt)
+        _warmingTimer = setTimeout(() => {
+          _warmingTimer = null
+          if (version === _fetchVersion) get().fetchHomepage(mode, _attempt + 1)
+        }, delay)
+        set({ fetchError: 'Server unreachable — retrying…', homepageState: 'warming' })
+      } else {
+        set({ fetchError: 'Server unreachable. Click retry to try again.', homepageState: 'error' })
+      }
     }
   },
 

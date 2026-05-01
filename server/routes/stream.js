@@ -13,7 +13,7 @@ const execFileAsync = promisify(execFile)
 const router = Router()
 
 // -----------------------------------------------------------
-// Health check
+// Liveness check — process is alive
 // -----------------------------------------------------------
 router.get('/api/health', async (req, res) => {
   const ytdlpAvailable = ytdlpAdapter.isAvailable()
@@ -24,6 +24,30 @@ router.get('/api/health', async (req, res) => {
     adapters: registry.adapters.map(a => a.name),
     database: db ? 'connected' : 'disconnected',
   })
+})
+
+// -----------------------------------------------------------
+// Readiness check — server can serve content
+//
+// 200 = ready: warm-cache has completed AND homepage_cache has
+//       at least one fresh-unviewed row (i.e. /api/homepage will
+//       return content, not state:'warming').
+// 503 = not ready: still cold-starting. Deployment platforms
+//       (systemd, Beelink ship) should wait before routing traffic.
+// -----------------------------------------------------------
+let _readyStmt
+router.get('/api/health/ready', async (_req, res) => {
+  if (!_readyStmt) {
+    _readyStmt = db.prepare(
+      `SELECT COUNT(*) AS n FROM homepage_cache
+       WHERE viewed = 0 AND expires_at > datetime('now')`
+    )
+  }
+  const cacheCount = _readyStmt.get().n
+  const { isFirstWarmComplete } = await import('../index.js')
+  const warmComplete = isFirstWarmComplete()
+  const ready = warmComplete && cacheCount > 0
+  res.status(ready ? 200 : 503).json({ ready, warmComplete, cacheCount })
 })
 
 // -----------------------------------------------------------
