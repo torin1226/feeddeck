@@ -1,5 +1,40 @@
 # FeedDeck Update Log
 
+## 2026-04-30 PM - Homepage Placeholder-Dogs Bug: Five-Layer Fix
+
+### Completed
+- **Killed the placeholder-dogs bug at the root.** Users were seeing fake "Tiny Golden Retriever at the Beach" content on `/home` (social) instead of real videos. Investigation found three compounding bugs, all fixed in commit `58bbe6c`:
+  1. **Migration wipe loop** (root cause): `server/database.js` had a guard at line ~463 that wiped `homepage_cache` if `nsfw_trending` was missing from categories — but the new `nsfw_for_you` layout migration drops that key, so the guard fired on every boot. Cache stayed empty for 30-180s after every restart. Block deleted (it was archaeology — the new layout migrations supersede it).
+  2. **Silent placeholder fallback** in `homeStore.fetchHomepage`: when API returned empty, `generateData()` rendered random dogs with no banner and no retry. Replaced with skeleton-rendering self-healing retry (exponential backoff, 1s→2s→4s→8s, cap 15s, max 12 attempts).
+  3. **No readiness probe**: nothing told deployment platforms or the client that the cache was warming. Added `/api/health/ready` (503 until first warm-cache completes AND cache has fresh-unviewed rows; 200 thereafter).
+- **Layout migrations now transactional.** Both `social_news` and `nsfw_for_you` migrations wrapped in BEGIN/COMMIT/ROLLBACK so an interrupted run can't half-migrate.
+- **API self-describing.** `/api/homepage` now returns `state: 'warming'|'ready'` so the client doesn't have to infer warming-state from `categories.length`.
+- **Readiness flag persisted** to `data/.warm-complete` (file mtime, 10-min validity) so `node --watch` (dev) and fast restarts (prod incidents) don't flap the readiness probe. The on-disk cache survives restarts; the readiness gate now reflects that. `data/` is gitignored so the file doesn't leak between branches.
+- **Regression test added.** `src/__tests__/homeStore-empty-response.test.js` (7 tests). Greps for breed names in `heroItem.title` so any future regression to dog-placeholders fails loudly. Tests 159 → 166.
+
+### Decisions Made
+- `_memory/decisions/2026-04-30-homepage-readiness-and-self-healing.md` written. Captures: marker-keys-must-not-be-touched-by-other-migrations rule, no-silent-placeholder-fallbacks-in-prod rule, persist-readiness-state principle. Linked from FeedDeck error/decision memory plus user's auto-memory at `~/.claude/projects/.../memory/debug_placeholder_dogs_migration_loop.md`.
+- 10-min validity window for `data/.warm-complete` is a guess. Revisit after real-use signal.
+
+### Issues & Blockers
+- **Orphan NSFW category keys** (`nsfw_redgifs_pov`, `nsfw_redgifs_solo`, `nsfw_xvideos_new`, `nsfw_xvideos_hits`, `nsfw_spankbang_new`, `nsfw_fikfap_new`) — leftovers from pre-fix wipe-loop cycles. They have no `topic_sources`, no inserter targets them, `/api/homepage` filters out empty categories. User-invisible. Filed P3 in Discovered Tasks for an idempotent one-shot DELETE.
+- This work landed during the May 1 ship-freeze window. Per the 2026-04-27 director decision, net-new feature work is supposed to be blocked. This is a **bug fix for a user-visible regression**, not a feature, so it qualifies — but the May 1 director should retrospect whether the work should hold for post-ship Day 1+ given proximity to deploy. Tests + lint + build all clean, so the deploy risk is low.
+
+### Key Files Changed
+- `src/stores/homeStore.js` — kill silent fallback, add retry orchestration, `homepageState` field
+- `src/__tests__/homeStore-empty-response.test.js` — new regression suite (7 tests)
+- `server/routes/content.js` — `state` field on `/api/homepage`
+- `server/routes/stream.js` — new `/api/health/ready` endpoint
+- `server/database.js` — delete obsolete migration wipe loop, wrap layout migrations in transactions
+- `server/index.js` — `_firstWarmComplete` flag + `data/.warm-complete` persist/read
+
+### Next Session Should
+- Run the live homepage in browser after a fresh server restart (without `node --watch`) to confirm the readiness probe gate works end-to-end and flips to 200 once warm-cache completes. The `node --watch` dev loop made it hard to observe a stable warm-complete cycle in this session.
+- Consider whether to add the orphan-category cleanup (Discovered Tasks P3) before May 1 ship or after. It's user-invisible so deferral is fine.
+- VideoDetailPage decision still pending Torin (carried 120+h, deadline today EOD per the morning director session).
+
+---
+
 ## 2026-04-29 - Skeleton Hydration: SkeletonFeedSlide for FeedPage
 
 ### Completed
