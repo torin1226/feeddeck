@@ -59,6 +59,12 @@ export default function VideoDetailPage() {
     if (item?.id) markWatched(item.id)
   }, [item?.id, markWatched])
 
+  // Defensive: clear stale home-page theatre state on mount so going Back
+  // doesn't drop the user into an in-place theatre overlay.
+  useEffect(() => {
+    useHomeStore.getState().setTheatreMode(false)
+  }, [])
+
   // Track watch progress
   useEffect(() => {
     const vid = videoRef.current
@@ -251,7 +257,7 @@ export default function VideoDetailPage() {
                 <RelatedVideoCard
                   key={rv.id}
                   item={rv}
-                  onNavigate={() => navigate(`/video/${rv.id}`)}
+                  onNavigate={() => navigate(`/watch/${rv.id}`)}
                   onQueue={() => handleAddToQueue(rv)}
                 />
               ))}

@@ -176,7 +176,7 @@ export default function SearchPage() {
     if (historyIdRef.current) {
       fetch(`/api/search/history/${historyIdRef.current}/click`, { method: 'PATCH' }).catch(() => {})
     }
-    navigate(`/video/${encodeURIComponent(id)}`)
+    navigate(`/watch/${encodeURIComponent(id)}`)
   }
 
   // Library grid (mode-filtered, capped)
@@ -318,7 +318,7 @@ export default function SearchPage() {
                   <VideoCard
                     key={video.id || video.url}
                     video={video}
-                    onClick={(v) => navigate(`/video/${encodeURIComponent(v.id || v.url)}`)}
+                    onClick={(v) => navigate(`/watch/${encodeURIComponent(v.id || v.url)}`)}
                   />
                 ))}
               </div>

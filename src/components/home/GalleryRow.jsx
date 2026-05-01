@@ -1,4 +1,5 @@
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import useHomeStore from '../../stores/homeStore'
 import PosterCard from './PosterCard'
 import CategoryDivider from './CategoryDivider'
@@ -54,7 +55,8 @@ export default function GalleryRow({
   surfaceKey,
   surface,
 }) {
-  const { setHeroItem, setTheatreMode, setFocusedItem } = useHomeStore()
+  const { setFocusedItem } = useHomeStore()
+  const navigate = useNavigate()
   const scrollRef = useRef(null)
   const cardsRef = useRef([])
   const rafRef = useRef(null)
@@ -230,10 +232,8 @@ export default function GalleryRow({
       adjacentItems: buildAdjacentItems(index),
     })
     if (index === activeIndexRef.current) {
-      // Theatre mode: set hero + scroll to top
-      setHeroItem(item)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-      setTheatreMode(true)
+      // Navigate to watch page
+      navigate(`/watch/${item.id}`)
     } else {
       // Scroll the clicked card to center
       const card = cardsRef.current[index]
@@ -241,7 +241,7 @@ export default function GalleryRow({
         card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
       }
     }
-  }, [items, setHeroItem, setTheatreMode, setFocusedItem, rowSurface, buildAdjacentItems])
+  }, [items, navigate, setFocusedItem, rowSurface, buildAdjacentItems])
 
   // Scroll by one card width — skips dividers so arrow nav advances to
   // the next non-divider neighbor.

@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route, useLocation } from 'react-router-dom'
+import { Routes, Route, useLocation, Navigate, useParams } from 'react-router-dom'
 import useKeyboard from '../hooks/useKeyboard'
 import useQueueSync from '../hooks/useQueueSync'
 import useDeviceStore from '../stores/deviceStore'
@@ -17,6 +17,12 @@ const FeedPage = lazy(() => import('../pages/FeedPage'))
 const SettingsPage = lazy(() => import('../pages/SettingsPage'))
 const VideoDetailPage = lazy(() => import('../pages/VideoDetailPage'))
 const SearchPage = lazy(() => import('../pages/SearchPage'))
+
+// Legacy /video/:id → /watch/:id permanent redirect.
+function RedirectVideoToWatch() {
+  const { id } = useParams()
+  return <Navigate to={`/watch/${id}`} replace />
+}
 
 // ============================================================
 // AppShell
@@ -59,7 +65,8 @@ export default function AppShell() {
             <Route path="/library" element={<ErrorBoundary name="Library"><LibraryPage /></ErrorBoundary>} />
             <Route path="/feed" element={<ErrorBoundary name="Feed"><FeedPage /></ErrorBoundary>} />
             <Route path="/settings" element={<ErrorBoundary name="Settings"><SettingsPage /></ErrorBoundary>} />
-            <Route path="/video/:id" element={<ErrorBoundary name="Video"><VideoDetailPage /></ErrorBoundary>} />
+            <Route path="/watch/:id" element={<ErrorBoundary name="Video"><VideoDetailPage /></ErrorBoundary>} />
+            <Route path="/video/:id" element={<RedirectVideoToWatch />} />
             <Route path="/search" element={<ErrorBoundary name="Search"><SearchPage /></ErrorBoundary>} />
           </Routes>
         </Suspense>

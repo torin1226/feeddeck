@@ -1,4 +1,5 @@
 import { forwardRef, memo, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import useHomeStore from '../../stores/homeStore'
 import useQueueStore from '../../stores/queueStore'
 import useRatingsStore from '../../stores/ratingsStore'
@@ -35,8 +36,7 @@ function distProps(dist) {
 const PosterCard = memo(
   forwardRef(function PosterCard({ item, dist, isFocused, onClick, loading = 'lazy', variant = 'poster', progressPercent, surfaceKey, onRated }, ref) {
     const [showThumbs, setShowThumbs] = useState(false)
-    const setHeroItem = useHomeStore((s) => s.setHeroItem)
-    const setTheatreMode = useHomeStore((s) => s.setTheatreMode)
+    const navigate = useNavigate()
     const markViewed = useHomeStore((s) => s.markViewed)
     const addToQueue = useQueueStore((s) => s.addToQueue)
     const recordRating = useRatingsStore((s) => s.recordRating)
@@ -362,7 +362,7 @@ const PosterCard = memo(
               <div style={{ display: 'flex', gap: '7px', alignItems: 'center' }}>
                 <button
                   style={{ ...btnBase, backgroundColor: 'rgba(30,58,138,0.55)', backdropFilter: 'blur(8px)', border: '1px solid rgba(30,58,138,0.3)', color: '#fff', padding: '7px 16px', gap: '5px' }}
-                  onClick={(e) => { e.stopPropagation(); markViewed(item.id); setHeroItem(item); window.scrollTo({ top: 0, behavior: 'smooth' }); setTheatreMode(true) }}
+                  onClick={(e) => { e.stopPropagation(); markViewed(item.id); navigate(`/watch/${item.id}`) }}
                 >
                   ▶ Play
                 </button>

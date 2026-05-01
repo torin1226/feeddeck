@@ -16,7 +16,6 @@ export default function HomeHeader() {
   const navigate = useViewTransitionNavigate()
   const location = useLocation()
   const [urlParams] = useSearchParams()
-  const { setHeroItem, toggleTheatre } = useHomeStore()
   const shuffleHome = useHomeStore(s => s.shuffleHome)
   const shuffling = useHomeStore(s => s.shuffling)
   const refreshing = useHomeStore(s => s.refreshing)
@@ -168,23 +167,14 @@ export default function HomeHeader() {
   }, [doSearch])
 
   const handleResultClick = useCallback((item) => {
-    // Set as hero item and enter theatre mode to play it
-    setHeroItem({
-      ...item,
-      thumbnailSm: item.thumbnail,
-      desc: item.title,
-      genre: item.source || 'Video',
-      rating: '8.0',
-      daysAgo: 1,
-    })
-    // Navigate home if not already there, then enter theatre
-    if (location.pathname !== '/') {
-      navigate('/')
+    const id = item.id || item.url
+    if (!id) {
+      closeSearch()
+      return
     }
-    // Small delay to let hero update, then enter theatre
-    setTimeout(() => toggleTheatre(), 50)
     closeSearch()
-  }, [setHeroItem, toggleTheatre, closeSearch, navigate, location.pathname])
+    navigate(`/watch/${encodeURIComponent(id)}`)
+  }, [closeSearch, navigate])
 
   const navItems = [
     { label: 'Home', path: '/' },

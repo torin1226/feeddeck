@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import useHomeStore from '../../stores/homeStore'
 import usePlayerStore from '../../stores/playerStore'
 import useQueueStore from '../../stores/queueStore'
@@ -19,6 +20,10 @@ import HeroCarousel from './HeroCarousel'
 
 export default function HeroSection() {
   const { heroItem, theatreMode, toggleTheatre, setFocusedItem } = useHomeStore()
+  const navigate = useNavigate()
+  const goWatch = useCallback(() => {
+    if (heroItem?.id) navigate(`/watch/${heroItem.id}`)
+  }, [heroItem?.id, navigate])
   const { addToQueue, advance, queue } = useQueueStore()
   const {
     setActiveVideo, isPlaying, setPlaying,
@@ -438,23 +443,19 @@ export default function HeroSection() {
         {/* Actions */}
         <div className="flex items-center gap-2.5">
           <button
-            onClick={toggleTheatre}
+            onClick={goWatch}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-accent text-white
               text-sm font-semibold hover:bg-accent-hover hover:-translate-y-px transition-all"
           >
             &#9654; &nbsp;Play
           </button>
           <button
-            onClick={toggleTheatre}
-            className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg
+            onClick={goWatch}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg
               text-sm font-semibold backdrop-blur-lg transition-all
-              ${
-                theatreMode
-                  ? 'bg-accent/15 border border-accent/40 text-red-300'
-                  : 'bg-white/10 border border-white/15 text-text-primary hover:bg-white/[0.16]'
-              }`}
+              bg-white/10 border border-white/15 text-text-primary hover:bg-white/[0.16]"
           >
-            {theatreMode ? '\u229E \u00A0Exit Theatre' : '\u26F6 \u00A0Theatre'}
+            {'\u26F6 \u00A0Open'}
           </button>
           <button
             onClick={() => addToQueue(heroItem)}
