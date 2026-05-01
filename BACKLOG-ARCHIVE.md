@@ -6,6 +6,8 @@
 
 ## Completed Tasks
 
+- [x] (2026-04-26) **Discovered: Cookie-health PornHub probe — already fixed** — Stale backlog item. Commit `63b5dd9` (2026-04-25) replaced the dead probe URL (`view_video.php?viewkey=ph5f8b3c7a21a28`) with `/video?o=tr` (trending page) and surfaces yt-dlp's `ERROR:` line up to 250 chars. Probe now returns 'healthy', the scary 🔴 is gone. Marked complete.
+- [x] (2026-04-25) **Discovered: Vertical scroll hijack — already fixed** — Stale backlog item. `GalleryRow.jsx:142` already says "Scroll hijacking REMOVED — vertical wheel scrolls the page, not the row." Resolved in commit `2cd9422`. Marked complete.
 - [x] (2026-04-25) **Discovered: "Viral This Week" landscape rows scaled up** — `PosterCard.jsx` landscape cap bumped `min(50vh, 360px)` → `min(50vh, 420px)`. On 1080p the landscape cards now render at 420px (was 360px), narrowing the visual-weight gap with poster shelves at 540px.
 - [x] (2026-04-25) **Discovered: Top 10 row scaled up** — `Top10Row.jsx` switched from fixed `w-[130px]/h-[185px]/text-[80px]` to clamp-based responsive sizing. On 1080p: card 189×270 (was 130×185), rank 156px (was 80px). Aspect ratio 0.703 preserved across all viewport sizes.
 - [x] (2026-03-22) 4.1 Deployment, 4.3 Theme, 4.8 Source Management (committed from previous session)

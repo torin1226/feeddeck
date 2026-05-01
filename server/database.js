@@ -507,22 +507,23 @@ export function initDatabase() {
     }
   } catch {}
 
-  // Migrate: add diversifying NSFW categories if missing (Phase 1.4)
+  // Cleanup: drop orphan NSFW category keys left over from the Phase 1.4
+  // diversifying-rows seed. The 2026-04 NSFW row layout migration replaced
+  // these with topic-pipeline configs, but the seed kept re-inserting them
+  // every boot via INSERT OR IGNORE, leaving inert rows with no
+  // topic_sources and no inserter. /api/homepage filters them out, so the
+  // bug was user-invisible — this just keeps the categories table tidy.
   try {
-    const insertCat = db.prepare('INSERT OR IGNORE INTO categories (key, label, query, mode, sort_order) VALUES (?, ?, ?, ?, ?)')
-    const extraCategories = [
-      ['nsfw_redgifs_pov',   'POV Clips',     'https://www.redgifs.com/search?query=pov&order=trending',  'nsfw', 25],
-      ['nsfw_redgifs_solo',  'RedGifs Solo',  'https://www.redgifs.com/search?query=solo&order=trending', 'nsfw', 26],
-      ['nsfw_xvideos_new',   'XVideos New',   'https://www.xvideos.com/new',                              'nsfw', 27],
-      ['nsfw_xvideos_hits',  'XVideos Hits',  'https://www.xvideos.com/hits',                             'nsfw', 28],
-      ['nsfw_spankbang_new', 'SpankBang New', 'https://spankbang.com/new_videos',                         'nsfw', 29],
-      ['nsfw_fikfap_new',    'FikFap New',    'https://fikfap.com/new',                                   'nsfw', 30],
+    const orphans = [
+      'nsfw_redgifs_pov', 'nsfw_redgifs_solo',
+      'nsfw_xvideos_new', 'nsfw_xvideos_hits',
+      'nsfw_spankbang_new', 'nsfw_fikfap_new',
     ]
-    for (const row of extraCategories) {
-      insertCat.run(...row)
-    }
+    const placeholders = orphans.map(() => '?').join(',')
+    db.prepare(`DELETE FROM homepage_cache WHERE category_key IN (${placeholders})`).run(...orphans)
+    db.prepare(`DELETE FROM categories WHERE key IN (${placeholders})`).run(...orphans)
   } catch (err) {
-    logger.error('Diversifying NSFW category seed failed:', { error: err.message })
+    logger.warn('orphan NSFW category cleanup failed', { error: err.message })
   }
 
   // Seed system_searches if empty (Phase 1.3): saved searches that boost feed scoring (+10 pts via scoring.js).
