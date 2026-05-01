@@ -58,6 +58,27 @@ export async function checkCookieHealth() {
   return results
 }
 
+// Map a yt-dlp domain (e.g. youtube.com, youtu.be, pornhub.com) to a probe key.
+const DOMAIN_TO_PROBE_KEY = {
+  'youtube.com': 'youtube',
+  'youtu.be': 'youtube',
+  'pornhub.com': 'pornhub',
+}
+
+/**
+ * Probe a single cookie domain. Used by ytdlp.js to verify that a stderr
+ * "cookies are no longer valid" warning is real before poisoning the skip set.
+ * Returns the same shape as a single entry in checkCookieHealth(), or null if
+ * the domain has no configured probe (caller should fall back to TTL-only).
+ */
+export async function probeCookieForDomain(domain) {
+  const probeKey = DOMAIN_TO_PROBE_KEY[domain]
+  if (!probeKey || !PROBES[probeKey]) return null
+  return _probeOneDomain(probeKey, PROBES[probeKey])
+}
+
+export { DOMAIN_TO_PROBE_KEY }
+
 async function _probeOneDomain(key, probe) {
   // Check if cookies exist for this domain
   const cookieArgs = getCookieArgs(probe.testUrl)

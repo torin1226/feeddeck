@@ -11,6 +11,7 @@ import { SourceAdapter } from './base.js'
 import { getCookieArgs } from '../cookies.js'
 import { logger } from '../logger.js'
 import { cacheSubscriptionChannels, buildSubscriptionFallbackQueries } from '../sub-channel-cache.js'
+import { probeCookieForDomain } from '../cookie-health.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -20,16 +21,71 @@ const YTDLP_TIMEOUT = 30_000
 const YTDLP_SEARCH_TIMEOUT = 120_000
 const MAX_BUFFER = 50 * 1024 * 1024
 
-// Track domains with expired cookies to skip them immediately on subsequent calls
-const _expiredCookieDomains = new Set()
+// Domains we believe have expired cookies, mapped to the wall-clock time
+// at which the entry expires. After expiry the domain is eligible to retry
+// with cookies. Bounds blast radius: a transient stderr warning can no
+// longer disable cookies for the entire process lifetime (see
+// 2026-04-30 hydration session).
+const COOKIE_EXPIRED_TTL_MS = 10 * 60 * 1000 // 10 minutes
+const _expiredCookieDomains = new Map()
+
+// Domains with an in-flight async verification probe — dedupes concurrent
+// probes when many requests hit the same warning at once.
+const _verifyingDomains = new Set()
+
+function _isCookieExpired(domain) {
+  if (!domain) return false
+  const expireAt = _expiredCookieDomains.get(domain)
+  if (!expireAt) return false
+  if (Date.now() >= expireAt) {
+    _expiredCookieDomains.delete(domain)
+    return false
+  }
+  return true
+}
+
+function _markCookieExpired(domain) {
+  if (!domain) return
+  _expiredCookieDomains.set(domain, Date.now() + COOKIE_EXPIRED_TTL_MS)
+}
+
+// On stderr-only "cookies are no longer valid" signals (the call still
+// succeeded), don't trust the warning blindly. Run a real cookie probe;
+// only mark the domain expired if the probe also says expired. If no probe
+// exists for the domain (e.g. xvideos, fikfap), fall back to immediate
+// TTL'd marking — the warning is the only signal we have.
+function _verifyAndMarkExpired(domain) {
+  if (!domain || _verifyingDomains.has(domain)) return
+  _verifyingDomains.add(domain)
+  ;(async () => {
+    try {
+      const probe = await probeCookieForDomain(domain)
+      if (probe == null) {
+        _markCookieExpired(domain)
+        logger.warn(`yt-dlp: ${domain} cookies marked expired (no probe; TTL ${COOKIE_EXPIRED_TTL_MS / 60000}min)`)
+        return
+      }
+      if (probe.status === 'expired' || probe.status === 'missing') {
+        _markCookieExpired(domain)
+        logger.warn(`yt-dlp: ${domain} cookies confirmed ${probe.status} by probe (TTL ${COOKIE_EXPIRED_TTL_MS / 60000}min)`)
+      } else {
+        logger.info(`yt-dlp: stderr warning for ${domain} but probe reports ${probe.status} — not poisoning skip set`)
+      }
+    } catch (err) {
+      logger.warn(`yt-dlp: cookie probe for ${domain} threw (${err.message}); not marking expired`)
+    } finally {
+      _verifyingDomains.delete(domain)
+    }
+  })()
+}
 
 // Safe yt-dlp execution — uses execFile (no shell) to prevent command injection
 // Routes cookies per-domain based on the URL being fetched
 // Accepts optional mode ('social'|'nsfw') for mode-specific cookie file fallback
 async function ytdlp(args, url, options = {}) {
-  // Skip cookies if we already know they're expired for this domain
+  // Skip cookies if we already know they're expired for this domain (TTL'd).
   const domain = _extractDomain(url)
-  const skipCookies = domain && _expiredCookieDomains.has(domain)
+  const skipCookies = _isCookieExpired(domain)
   const cookieArgs = skipCookies ? [] : getCookieArgs(url, options.mode)
   const finalArgs = ['--js-runtimes', 'node', ...cookieArgs, ...args]
   try {
@@ -39,25 +95,27 @@ async function ytdlp(args, url, options = {}) {
       maxBuffer: options.maxBuffer || MAX_BUFFER,
       windowsHide: true,
     })
-    // Check stderr for cookie warnings even on success (yt-dlp warns but continues)
+    // Stderr warning on a *successful* run is weak evidence — yt-dlp still
+    // returned valid output. Don't poison the skip set on warnings alone;
+    // schedule an async verification probe instead.
     if (stderr?.includes('cookies are no longer valid') && domain) {
-      _expiredCookieDomains.add(domain)
-      logger.warn(`yt-dlp: marking ${domain} cookies as expired (will skip in future)`)
+      _verifyAndMarkExpired(domain)
     }
     return stdout
   } catch (err) {
     // With --ignore-errors, yt-dlp may exit non-zero but still produce valid output
     if (args.includes('--ignore-errors') && err.stdout?.trim()) {
-      // Still check for cookie warnings
+      // Stderr warning on a partial-success run is also weak — verify async.
       if (err.stderr?.includes('cookies are no longer valid') && domain) {
-        _expiredCookieDomains.add(domain)
+        _verifyAndMarkExpired(domain)
       }
       return err.stdout
     }
-    // If cookies are expired/invalid, mark domain and retry without them
+    // If cookies are expired/invalid AND the call hard-failed, mark immediately:
+    // the failure itself is evidence; no probe round-trip needed.
     const errMsg = err.stderr || err.message || ''
     if (cookieArgs.length > 0 && errMsg.includes('cookies are no longer valid')) {
-      if (domain) _expiredCookieDomains.add(domain)
+      _markCookieExpired(domain)
       logger.warn(`yt-dlp: cookies expired for ${domain}, retrying without cookies`)
       const noCookieArgs = ['--js-runtimes', 'node', ...args]
       try {
@@ -86,8 +144,24 @@ function _extractDomain(url) {
   try { return new URL(url).hostname.replace(/^www\./, '') } catch { return null }
 }
 
-// Export the raw yt-dlp exec helper so other adapters (e.g., CreatorAdapter) can reuse it
-export { ytdlp as ytdlpExec, _extractDomain, YTDLP_TIMEOUT, YTDLP_SEARCH_TIMEOUT }
+// Export the raw yt-dlp exec helper so other adapters (e.g., CreatorAdapter) can reuse it.
+// _isCookieExpired / _markCookieExpired / _resetExpiredCookieDomains / COOKIE_EXPIRED_TTL_MS
+// are exported for tests and for callers that want to consult/clear the skip set.
+function _resetExpiredCookieDomains() {
+  _expiredCookieDomains.clear()
+  _verifyingDomains.clear()
+}
+export {
+  ytdlp as ytdlpExec,
+  _extractDomain,
+  YTDLP_TIMEOUT,
+  YTDLP_SEARCH_TIMEOUT,
+  _isCookieExpired,
+  _markCookieExpired,
+  _verifyAndMarkExpired,
+  _resetExpiredCookieDomains,
+  COOKIE_EXPIRED_TTL_MS,
+}
 
 export class YtDlpAdapter extends SourceAdapter {
   constructor() {
@@ -179,8 +253,8 @@ export class YtDlpAdapter extends SourceAdapter {
       if (isSubscriptionFeed) {
         // Subscription feed: try with cookies first, fall back to cached channels
         const domain = _extractDomain(query)
-        if (domain && _expiredCookieDomains.has(domain)) {
-          // Cookies already known expired: use channel cache fallback
+        if (_isCookieExpired(domain)) {
+          // Cookies already known expired (within TTL): use channel cache fallback
           return this._subscriptionFallback(limit)
         }
         // Try the real feed; if it fails, catch and fallback below
