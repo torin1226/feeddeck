@@ -289,7 +289,16 @@ for (const mode of modes) {
       console.log(`    🔄 ${src.label}...`)
       const query = src.query
 
-      const videos = await withRetry(src.label, () => registry.search(query, { site: src.domain, limit: 20 }))
+      let videos = await withRetry(src.label, () => registry.search(query, { site: src.domain, limit: 20 }))
+
+      // Drop clickbait-farm titles from social sources before insert.
+      if (mode === 'social') {
+        const { isClickbaitTitle } = await import('../content-filters.js')
+        const before = videos.length
+        videos = videos.filter(v => !isClickbaitTitle(v.title))
+        const dropped = before - videos.length
+        if (dropped > 0) console.log(`    🚫 Dropped ${dropped} clickbait titles`)
+      }
 
       const insert = db.prepare(`
         INSERT OR IGNORE INTO feed_cache (id, source_domain, mode, url, title, creator, thumbnail, duration, orientation, tags, view_count, like_count, subscriber_count, upload_date, fetched_at, expires_at)

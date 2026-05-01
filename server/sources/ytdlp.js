@@ -11,6 +11,7 @@ import { SourceAdapter } from './base.js'
 import { getCookieArgs } from '../cookies.js'
 import { logger } from '../logger.js'
 import { cacheSubscriptionChannels, buildSubscriptionFallbackQueries } from '../sub-channel-cache.js'
+import { isFromSubscribedYouTubeChannel } from '../content-filters.js'
 import { probeCookieForDomain } from '../cookie-health.js'
 
 const execFileAsync = promisify(execFile)
@@ -294,34 +295,41 @@ export class YtDlpAdapter extends SourceAdapter {
     return this._fetchPlaylist(searchUrl, limit)
   }
 
-  // Fetch subscription feed and cache the channels we see for fallback use
+  // Fetch subscription feed and cache the channels we see for fallback use.
+  // YouTube injects "Recommended for you" rows into the subscription feed
+  // alongside actual subs — those entries pollute social with clickbait.
+  // Filter to channel_ids that exist in subscription_backups.
   async _fetchPlaylistWithChannelCache(url, limit) {
     if (!this.isAvailable()) throw new Error('yt-dlp not installed')
 
+    // Pull more than `limit` so the post-filter result still meets quota.
+    const fetchLimit = Math.max(limit * 3, limit + 20)
+
     const stdout = await ytdlp(
-      ['--dump-json', '--playlist-end', String(limit), '--no-download', '--ignore-errors', url],
+      ['--dump-json', '--playlist-end', String(fetchLimit), '--no-download', '--ignore-errors', url],
       url,
       { timeout: YTDLP_SEARCH_TIMEOUT }
     )
 
     const lines = stdout.trim().split('\n').filter(l => l.trim())
     const rawEntries = []
-    const videos = []
-
     for (const line of lines) {
-      try {
-        const raw = JSON.parse(line)
-        rawEntries.push(raw)
-        videos.push(this.normalizeVideo(raw))
-      } catch { /* skip malformed lines */ }
+      try { rawEntries.push(JSON.parse(line)) } catch { /* skip malformed lines */ }
     }
 
-    // Cache the channels we just saw for fallback use
-    if (rawEntries.length > 0) {
-      cacheSubscriptionChannels(rawEntries)
+    // Cache the channels we just saw for fallback use (record real subs only;
+    // recommended-injection entries don't have stable channel_ids worth caching
+    // separately — cacheSubscriptionChannels skips entries without channel_id).
+    if (rawEntries.length > 0) cacheSubscriptionChannels(rawEntries)
+
+    const before = rawEntries.length
+    const filtered = rawEntries.filter(isFromSubscribedYouTubeChannel)
+    const dropped = before - filtered.length
+    if (dropped > 0) {
+      logger.info(`yt-dlp: subscription feed dropped ${dropped} non-subscribed entries (kept ${filtered.length}/${before})`)
     }
 
-    return videos
+    return filtered.slice(0, limit).map(raw => this.normalizeVideo(raw))
   }
 
   // Fallback: use cached subscription channels to approximate the subscription feed

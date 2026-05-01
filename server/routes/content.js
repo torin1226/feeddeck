@@ -7,6 +7,7 @@ import { logger } from '../logger.js'
 import { getMode, formatDuration } from '../utils.js'
 import { scoreVideos } from '../scoring.js'
 import { resolveTopics, recordDiscoveredCreators } from '../topics.js'
+import { isClickbaitTitle } from '../content-filters.js'
 
 const router = Router()
 
@@ -1018,6 +1019,16 @@ async function refillCategory(categoryKey, sessionCache = new Map()) {
     })
     if (deduped.length < before) {
       logger.info(`  🚫 Filtered ${before - deduped.length} non-NSFW URLs from ${categoryKey}`)
+    }
+  }
+
+  // Social categories: drop clickbait farm titles ("Try Not To Laugh — Top 100",
+  // "FUNNY VIDEOS Compilation 2026 #109", #viral.*#trending.*#shorts spam).
+  if (cat.mode === 'social') {
+    const before = deduped.length
+    deduped = deduped.filter(v => !isClickbaitTitle(v.title))
+    if (deduped.length < before) {
+      logger.info(`  🚫 Filtered ${before - deduped.length} clickbait titles from ${categoryKey}`)
     }
   }
 
