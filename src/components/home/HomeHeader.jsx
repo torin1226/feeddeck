@@ -290,7 +290,7 @@ export default function HomeHeader() {
               {/* Error */}
               {searchError && !searching && (
                 <div className="px-4 py-5 text-center">
-                  <div className="text-rose-400 text-sm font-medium">Search failed</div>
+                  <div className="text-blue-400 text-sm font-medium">Search failed</div>
                   <div className="text-text-muted/70 text-xs mt-1 break-words">{searchError}</div>
                 </div>
               )}

@@ -55,7 +55,7 @@ const labelStyle = {
 }
 
 const arrowStyle = {
-  color: 'var(--color-accent, #f43f5e)',
+  color: 'var(--color-accent, #1e3a8a)',
   fontSize: '13px',
   lineHeight: 1,
   fontWeight: 700,

@@ -234,8 +234,8 @@ export default function SearchPage() {
 
           {showError && (
             <div className="py-12 flex flex-col items-center text-center">
-              <EmptyIllustration variant="error" className="w-20 h-20 mb-3 text-rose-400" />
-              <div className="text-sm text-rose-400 font-medium mb-1">{streamError}</div>
+              <EmptyIllustration variant="error" className="w-20 h-20 mb-3 text-blue-400" />
+              <div className="text-sm text-blue-400 font-medium mb-1">{streamError}</div>
               <button
                 onClick={() => {
                   setStreamError(null)

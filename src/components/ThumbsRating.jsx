@@ -162,7 +162,7 @@ export default function ThumbsRating({
             transition: `transform 350ms ${EASE_SPRING}`,
           }}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill={animating === 'up' ? '#f43f5e' : 'none'} stroke={animating === 'up' ? '#f43f5e' : 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/80" style={{ transition: 'fill 300ms, stroke 300ms' }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill={animating === 'up' ? '#3b82f6' : 'none'} stroke={animating === 'up' ? '#3b82f6' : 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/80" style={{ transition: 'fill 300ms, stroke 300ms' }}>
             <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3" />
           </svg>
         </button>

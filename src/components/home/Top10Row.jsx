@@ -191,7 +191,7 @@ function Top10Card({ item, onClick, onFocus }) {
       <span
         className="text-[clamp(80px,17vh,180px)] font-display font-black leading-none text-transparent select-none shrink-0 -mr-3 relative z-10"
         style={{
-          WebkitTextStroke: '2px rgba(244,63,94,0.5)',
+          WebkitTextStroke: '2px rgba(30,58,138,0.6)',
         }}
       >
         {item.rank}

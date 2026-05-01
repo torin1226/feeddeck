@@ -5,7 +5,7 @@
 // the Feather-style icons used elsewhere in the app.
 //
 // Strokes use currentColor so callers can tint via text color.
-// The accent dot in each illustration uses the rose token for
+// The accent dot in each illustration uses the navy token for
 // a small branded flourish.
 // ============================================================
 
@@ -20,7 +20,7 @@ const SHARED_PROPS = {
   strokeLinejoin: 'round',
 }
 
-const ACCENT = 'var(--color-accent, #f43f5e)'
+const ACCENT = 'var(--color-accent, #1e3a8a)'
 
 function Library() {
   return (

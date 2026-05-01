@@ -103,9 +103,9 @@ const PosterCard = memo(
       overflow: 'hidden',
       cursor: 'pointer',
       border: '1px solid',
-      borderColor: isFocused ? '#f43f5e' : 'var(--glass-border)',
+      borderColor: isFocused ? 'rgba(30,58,138,0.3)' : 'var(--glass-border)',
       boxShadow: isFocused
-        ? '0 0 0 2px #f43f5e, 0 0 48px rgba(244,63,94,0.18), 0 20px 60px rgba(0,0,0,0.5)'
+        ? '0 0 24px rgba(30,58,138,0.4), 0 0 60px rgba(30,58,138,0.2), 0 20px 60px rgba(0,0,0,0.5)'
         : 'inset 0 1px 0 var(--glass-highlight), 0 4px 24px rgba(0,0,0,0.35)',
       zIndex: isFocused ? 10 : 1,
       opacity: finalOpacity,
@@ -361,7 +361,7 @@ const PosterCard = memo(
               {/* Actions */}
               <div style={{ display: 'flex', gap: '7px', alignItems: 'center' }}>
                 <button
-                  style={{ ...btnBase, backgroundColor: '#f43f5e', color: '#fff', padding: '7px 16px', gap: '5px' }}
+                  style={{ ...btnBase, backgroundColor: 'rgba(30,58,138,0.55)', backdropFilter: 'blur(8px)', border: '1px solid rgba(30,58,138,0.3)', color: '#fff', padding: '7px 16px', gap: '5px' }}
                   onClick={(e) => { e.stopPropagation(); markViewed(item.id); setHeroItem(item); window.scrollTo({ top: 0, behavior: 'smooth' }); setTheatreMode(true) }}
                 >
                   ▶ Play
