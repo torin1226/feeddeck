@@ -55,53 +55,81 @@ function tasteScore(candidate, likedTags) {
   return s
 }
 
+// Pure compute fn — exported so it can be unit-tested without React.
+export function computeSuggested({
+  seedId,
+  categories,
+  carouselItems,
+  top10,
+  heroItem,
+  likedTags,
+}) {
+  if (!seedId) return { related: [], recommended: [] }
+
+  const all = []
+  const seenIds = new Set()
+  let seed = null
+  let seedCategory = null
+
+  function consider(it, cat) {
+    if (!it || it._isDivider) return
+    const sid = String(it.id)
+    if (seenIds.has(sid)) return
+    seenIds.add(sid)
+    const annotated = { ...it, _category: cat || it._category || '' }
+    all.push(annotated)
+    if (sid === String(seedId)) {
+      seed = annotated
+      seedCategory = annotated._category
+    }
+  }
+
+  for (const cat of (categories || [])) {
+    for (const it of (cat.items || [])) consider(it, cat.label || cat.id)
+  }
+  for (const c of (carouselItems || [])) consider(c, '')
+  for (const c of (top10 || [])) consider(c, 'Top 10')
+  if (heroItem) consider(heroItem, '')
+
+  if (!seed) return { related: [], recommended: all.slice(0, RECOMMENDED_LIMIT) }
+
+  const seedTags = tagSetOf(seed)
+  const seedKey = String(seed.id)
+
+  const scored = []
+  for (const c of all) {
+    if (String(c.id) === seedKey) continue
+    const sc = relatedness(seed, c, seedTags, seedCategory)
+    if (sc > 0) scored.push({ item: c, score: sc })
+  }
+  scored.sort((a, b) => b.score - a.score)
+  let related = scored.slice(0, RELATED_LIMIT).map((s) => s.item)
+  if (related.length === 0) {
+    related = all
+      .filter((c) => String(c.id) !== seedKey)
+      .slice(0, RELATED_LIMIT)
+  }
+
+  const relatedIds = new Set(related.map((r) => String(r.id)))
+  const likedTagsSet = likedTags instanceof Set ? likedTags : null
+  const recPool = all.filter((c) => String(c.id) !== seedKey && !relatedIds.has(String(c.id)))
+  if (likedTagsSet && likedTagsSet.size > 0) {
+    recPool.sort((a, b) => tasteScore(b, likedTagsSet) - tasteScore(a, likedTagsSet))
+  }
+  const recommended = recPool.slice(0, RECOMMENDED_LIMIT)
+
+  return { related, recommended }
+}
+
 export default function useSuggested(seedId) {
   const categories = useHomeStore((s) => s.categories)
-  const likedTagsSetRaw = useHomeStore((s) => s._likedTagsCache)
+  const carouselItems = useHomeStore((s) => s.carouselItems)
+  const top10 = useHomeStore((s) => s.top10)
+  const heroItem = useHomeStore((s) => s.heroItem)
+  const likedTags = useHomeStore((s) => s._likedTagsCache)
 
-  return useMemo(() => {
-    if (!categories || !categories.length) return { related: [], recommended: [] }
-
-    // Flatten with _category tag annotated on each item.
-    const all = []
-    let seed = null
-    let seedCategory = null
-    for (const cat of categories) {
-      for (const it of (cat.items || [])) {
-        if (!it || it._isDivider) continue
-        const annotated = { ...it, _category: cat.label || cat.id }
-        all.push(annotated)
-        if (String(it.id) === String(seedId)) {
-          seed = annotated
-          seedCategory = annotated._category
-        }
-      }
-    }
-
-    if (!seed) return { related: [], recommended: all.slice(0, RECOMMENDED_LIMIT) }
-
-    const seedTags = tagSetOf(seed)
-    const seedKey = String(seed.id)
-
-    // Related: score every other item for relatedness, keep top N positives.
-    const scored = []
-    for (const c of all) {
-      if (String(c.id) === seedKey) continue
-      const sc = relatedness(seed, c, seedTags, seedCategory)
-      if (sc > 0) scored.push({ item: c, score: sc })
-    }
-    scored.sort((a, b) => b.score - a.score)
-    const related = scored.slice(0, RELATED_LIMIT).map((s) => s.item)
-
-    // Recommended: items NOT in related, ranked by taste-score (or just first-seen).
-    const relatedIds = new Set(related.map((r) => String(r.id)))
-    const likedTags = likedTagsSetRaw instanceof Set ? likedTagsSetRaw : null
-    const recPool = all.filter((c) => String(c.id) !== seedKey && !relatedIds.has(String(c.id)))
-    if (likedTags && likedTags.size > 0) {
-      recPool.sort((a, b) => tasteScore(b, likedTags) - tasteScore(a, likedTags))
-    }
-    const recommended = recPool.slice(0, RECOMMENDED_LIMIT)
-
-    return { related, recommended }
-  }, [categories, seedId, likedTagsSetRaw])
+  return useMemo(
+    () => computeSuggested({ seedId, categories, carouselItems, top10, heroItem, likedTags }),
+    [seedId, categories, carouselItems, top10, heroItem, likedTags],
+  )
 }

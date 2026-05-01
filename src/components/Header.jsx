@@ -81,7 +81,7 @@ export default function Header({ onSearch, onSearchSubmit }) {
                 placeholder="Search videos..."
                 className="w-full bg-surface-overlay border border-surface-border rounded-lg
                   px-4 py-2 text-sm text-text-primary placeholder:text-text-muted
-                  focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[rgba(30,58,138,0.6)] focus-visible:outline-offset-2 focus:border-text-muted transition-colors"
+                  focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/60 focus-visible:outline-offset-2 focus:border-text-muted transition-colors"
               />
               {query && (
                 <button
@@ -102,7 +102,7 @@ export default function Header({ onSearch, onSearchSubmit }) {
               <button
                 onClick={() => setShowAdd(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm
-                  bg-accent/90 text-white hover:bg-accent transition-colors font-medium"
+                  bg-accent text-white hover:bg-accent-hover transition-colors font-medium"
               >
                 <span>+</span>
                 <span className="hidden sm:block">Add</span>

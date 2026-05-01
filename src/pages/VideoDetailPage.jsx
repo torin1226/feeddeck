@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from 'react'
+import { useEffect, useMemo, useCallback, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import useHomeStore from '../stores/homeStore'
 import useQueueStore from '../stores/queueStore'
@@ -6,11 +6,31 @@ import useLibraryStore from '../stores/libraryStore'
 import useToastStore from '../stores/toastStore'
 import useModeStore from '../stores/modeStore'
 import HomeHeader from '../components/home/HomeHeader'
+import DetailPlayer from '../components/watch/DetailPlayer'
+import DetailMeta from '../components/watch/DetailMeta'
+import SuggestedRail from '../components/watch/SuggestedRail'
+import FullscreenOverlay from '../components/watch/FullscreenOverlay'
+import FullscreenSuggestedSheet from '../components/watch/FullscreenSuggestedSheet'
+import EndCard from '../components/watch/EndCard'
+import useVideoEngine from '../hooks/useVideoEngine'
+import useSuggested from '../hooks/useSuggested'
+import useViewMode from '../hooks/useViewMode'
+import useFullscreenChrome from '../hooks/useFullscreenChrome'
 
 // ============================================================
 // VideoDetailPage
-// Full video detail view at /video/:id
-// Player section + info + related videos grid
+// /watch/:id (with /video/:id legacy redirect).
+// Two view modes:
+//   - standard   : in-page layout, native controls
+//   - fullscreen : custom CSS fullscreen + TV-app overlay,
+//                  scroll-down to reveal suggested-videos sheet,
+//                  optional OS-fullscreen ("Hide Chrome").
+// View mode is URL-backed (?view=fullscreen).
+//
+// Continuous-playback contract: <DetailPlayer> renders at the
+// SAME JSX position regardless of viewMode. The wrapper div's
+// className changes (in-flow vs fixed inset-0), but the
+// <video> DOM node is preserved across mode transitions.
 // ============================================================
 
 const SFW_VIDEO = 'https://videos.pexels.com/video-files/856974/856974-hd_1280_720_30fps.mp4'
@@ -18,99 +38,242 @@ const SFW_VIDEO = 'https://videos.pexels.com/video-files/856974/856974-hd_1280_7
 export default function VideoDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const videoRef = useRef(null)
   const isSFW = useModeStore((s) => s.isSFW)
+  const { viewMode, setViewMode } = useViewMode()
 
-  // Find the item from homeStore categories
+  // Locate item across all home-page sources.
   const categories = useHomeStore((s) => s.categories)
-  const allItems = useMemo(() => {
-    if (!categories) return []
-    return categories.flatMap((c) => c.items || [])
-  }, [categories])
+  const carouselItems = useHomeStore((s) => s.carouselItems)
+  const top10 = useHomeStore((s) => s.top10)
+  const heroItem = useHomeStore((s) => s.heroItem)
+  const item = useMemo(() => {
+    const sId = String(id)
+    if (heroItem && String(heroItem.id) === sId) return heroItem
+    for (const c of carouselItems || []) if (c && String(c.id) === sId) return c
+    for (const c of top10 || []) if (c && String(c.id) === sId) return c
+    for (const cat of categories || []) {
+      for (const v of (cat.items || [])) {
+        if (v && !v._isDivider && String(v.id) === sId) return v
+      }
+    }
+    return null
+  }, [id, categories, carouselItems, top10, heroItem])
 
-  const item = useMemo(() => allItems.find((v) => String(v.id) === String(id)), [allItems, id])
-
-  // Related videos: same category, excluding current
-  const relatedVideos = useMemo(() => {
-    if (!item || !categories) return []
-    const cat = categories.find((c) => (c.items || []).some((v) => String(v.id) === String(id)))
-    if (!cat) return allItems.filter((v) => String(v.id) !== String(id)).slice(0, 12)
-    return (cat.items || []).filter((v) => String(v.id) !== String(id)).slice(0, 12)
-  }, [item, categories, allItems, id])
-
-  // Stream URL resolution
-  const [streamUrl, setStreamUrl] = useState(null)
-  const [streamLoading, setStreamLoading] = useState(false)
-
-  useEffect(() => {
-    if (!item?.url || isSFW) return
-    setStreamUrl(null)
-    setStreamLoading(true)
-    fetch(`/api/stream-url?url=${encodeURIComponent(item.url)}`)
-      .then((r) => r.json())
-      .then((data) => { if (data.streamUrl) setStreamUrl(data.streamUrl) })
-      .catch(() => {})
-      .finally(() => setStreamLoading(false))
-  }, [item?.url, isSFW])
-
-  // Mark watched
-  const markWatched = useLibraryStore((s) => s.markWatched)
-  useEffect(() => {
-    if (item?.id) markWatched(item.id)
-  }, [item?.id, markWatched])
-
-  // Defensive: clear stale home-page theatre state on mount so going Back
-  // doesn't drop the user into an in-place theatre overlay.
+  // Defensive: clear stale home theatre flag on mount.
   useEffect(() => {
     useHomeStore.getState().setTheatreMode(false)
   }, [])
 
-  // Track watch progress
+  // Player engine
+  const {
+    videoRef,
+    streamLoading,
+    streamError,
+    isPlaying,
+    currentTime,
+    duration,
+    muted,
+    togglePlay,
+    toggleMute,
+    seekRel,
+    retryStream,
+  } = useVideoEngine({
+    videoUrl: item?.url,
+    isSFW,
+    sfwSrc: SFW_VIDEO,
+  })
+
+  const scrubTo = useCallback((t) => {
+    const v = videoRef.current
+    if (!v) return
+    if (Number.isFinite(t)) v.currentTime = Math.max(0, Math.min(v.duration || 0, t))
+  }, [videoRef])
+
+  // Watch progress reporting
+  const setWatchProgress = useLibraryStore((s) => s.setWatchProgress)
+  const markWatched = useLibraryStore((s) => s.markWatched)
+  useEffect(() => {
+    if (item?.id) markWatched(item.id)
+  }, [item?.id, markWatched])
   useEffect(() => {
     const vid = videoRef.current
-    if (!vid || isSFW || !item?.id) return
+    if (!vid || !item?.id || isSFW) return undefined
     const interval = setInterval(() => {
       if (vid.duration > 0) {
-        useLibraryStore.getState().setWatchProgress(item.id, vid.currentTime / vid.duration)
+        setWatchProgress(item.id, vid.currentTime / vid.duration)
       }
     }, 5000)
     return () => clearInterval(interval)
-  }, [item?.id, isSFW])
+  }, [item?.id, isSFW, setWatchProgress, videoRef])
 
-  const videoSrc = isSFW
-    ? SFW_VIDEO
-    : streamUrl
-      ? (streamUrl.includes('.m3u8')
-          ? `/api/hls-proxy?url=${encodeURIComponent(streamUrl)}`
-          : `/api/proxy-stream?url=${encodeURIComponent(streamUrl)}`)
-      : ''
+  // Suggested rail data
+  const { related, recommended } = useSuggested(item?.id)
 
-  // Actions
+  // Queue
   const addToQueue = useQueueStore((s) => s.addToQueue)
-  const toggleFavorite = useLibraryStore((s) => s.toggleFavorite)
   const showToast = useToastStore((s) => s.showToast)
-  // Reactive subscription so the Like button updates immediately after toggle.
-  // Must be a hook called before any early return.
-  const isFavorite = useLibraryStore((s) => s.videos.some((v) => v.id === item?.id && v.favorite))
-
-  const handleAddToQueue = (video) => {
-    addToQueue(video)
+  const queue = useQueueStore((s) => s.queue)
+  const queueIndex = useQueueStore((s) => s.currentIndex)
+  const handleAddToQueue = useCallback((video) => {
+    addToQueue(video || item)
     showToast('Added to queue')
-  }
+  }, [addToQueue, item, showToast])
 
-  const handleShare = () => {
-    navigator.clipboard.writeText(window.location.href).catch(() => {})
-    showToast('Link copied')
-  }
-
-  const handleLike = () => {
-    if (item) {
-      toggleFavorite(item.id)
-      showToast('Updated favorites')
+  // ── Autoadvance + End Card ─────────────────────────────────
+  // Resolve the "next" video: queue-next first, then top suggested.
+  const nextItem = useMemo(() => {
+    if (queue && queue.length > 0 && queueIndex >= 0 && queueIndex < queue.length - 1) {
+      const nextQ = queue[queueIndex + 1]
+      if (nextQ) {
+        return {
+          id: nextQ.id || nextQ.video_url,
+          title: nextQ.title,
+          thumbnail: nextQ.thumbnail,
+          duration: nextQ.duration_formatted || nextQ.durationFormatted,
+          uploader: nextQ.uploader || '',
+          url: nextQ.url || nextQ.video_url,
+          _source: 'queue',
+        }
+      }
     }
-  }
+    if (related && related.length > 0) return { ...related[0], _source: 'related' }
+    if (recommended && recommended.length > 0) return { ...recommended[0], _source: 'recommended' }
+    return null
+  }, [queue, queueIndex, related, recommended])
 
-  // Not found state
+  const [endCardActive, setEndCardActive] = useState(false)
+  const [autoAdvanceCancelled, setAutoAdvanceCancelled] = useState(false)
+
+  // Detect video end — show end card unless cancelled
+  useEffect(() => {
+    const vid = videoRef.current
+    if (!vid) return undefined
+    const onEnded = () => {
+      if (!autoAdvanceCancelled && nextItem) setEndCardActive(true)
+    }
+    vid.addEventListener('ended', onEnded)
+    return () => vid.removeEventListener('ended', onEnded)
+  }, [videoRef, nextItem, autoAdvanceCancelled])
+
+  // Reset end-card state when item changes
+  useEffect(() => {
+    setEndCardActive(false)
+    setAutoAdvanceCancelled(false)
+  }, [item?.id])
+
+  const advanceNow = useCallback(() => {
+    if (!nextItem?.id) return
+    setEndCardActive(false)
+    const target = viewMode === 'fullscreen'
+      ? `/watch/${nextItem.id}?view=fullscreen`
+      : `/watch/${nextItem.id}`
+    navigate(target)
+  }, [nextItem, viewMode, navigate])
+
+  const cancelAutoAdvance = useCallback(() => {
+    setEndCardActive(false)
+    setAutoAdvanceCancelled(true)
+  }, [])
+
+  // ── Fullscreen-only state ───────────────────────────────────
+  const isFullscreen = viewMode === 'fullscreen'
+  const wrapRef = useRef(null)
+  const [panelOpen, setPanelOpen] = useState(false)
+  const [isOSFullscreen, setIsOSFullscreen] = useState(false)
+
+  const { visible: chromeVisible, reveal: revealChrome } = useFullscreenChrome({
+    enabled: isFullscreen,
+    rootRef: wrapRef,
+    force: panelOpen || !!streamError,
+  })
+
+  useEffect(() => {
+    if (isFullscreen) {
+      document.body.style.overflow = 'hidden'
+      return () => { document.body.style.overflow = '' }
+    }
+    setPanelOpen(false)
+    return undefined
+  }, [isFullscreen])
+
+  useEffect(() => {
+    if (!isFullscreen) return undefined
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        if (isOSFullscreen) return
+        if (panelOpen) { setPanelOpen(false); return }
+        setViewMode('standard')
+      }
+      if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault()
+        setViewMode('standard')
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [isFullscreen, panelOpen, isOSFullscreen, setViewMode])
+
+  useEffect(() => {
+    const onFsChange = () => setIsOSFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => document.removeEventListener('fullscreenchange', onFsChange)
+  }, [])
+
+  useEffect(() => {
+    if (!isFullscreen) return undefined
+    const root = wrapRef.current
+    if (!root) return undefined
+    let accum = 0
+    const onWheel = (e) => {
+      const t = e.target
+      if (t.closest?.('[data-fs-panel-inner]')) return
+      if (t.tagName === 'VIDEO' && !panelOpen) return
+      if (e.deltaY > 0 && !panelOpen) {
+        accum += e.deltaY
+        if (accum > 60) { accum = 0; setPanelOpen(true) }
+      } else if (e.deltaY < 0 && panelOpen) {
+        if (!t.closest?.('[data-fs-panel-inner]')) setPanelOpen(false)
+      }
+    }
+    root.addEventListener('wheel', onWheel, { passive: true })
+    return () => root.removeEventListener('wheel', onWheel)
+  }, [isFullscreen, panelOpen])
+
+  useEffect(() => {
+    if (!isFullscreen) return undefined
+    const root = wrapRef.current
+    if (!root) return undefined
+    const onClick = (e) => {
+      if (panelOpen && e.target.tagName === 'VIDEO') setPanelOpen(false)
+    }
+    root.addEventListener('click', onClick)
+    return () => root.removeEventListener('click', onClick)
+  }, [isFullscreen, panelOpen])
+
+  const pickSuggested = useCallback((rv) => {
+    if (!rv?.id) return
+    const target = isFullscreen ? `/watch/${rv.id}?view=fullscreen` : `/watch/${rv.id}`
+    navigate(target)
+    setPanelOpen(false)
+  }, [navigate, isFullscreen])
+
+  const toggleOSFullscreen = useCallback(() => {
+    const root = wrapRef.current
+    if (!root) return
+    if (isOSFullscreen) {
+      document.exitFullscreen?.().catch(() => {})
+    } else {
+      root.requestFullscreen?.().catch(() => {
+        showToast('Browser blocked fullscreen', 'error')
+      })
+    }
+  }, [isOSFullscreen, showToast])
+
+  const onScrollHint = useCallback(() => {
+    revealChrome()
+    setPanelOpen(true)
+  }, [revealChrome])
+
   if (!item) {
     return (
       <div className="min-h-screen bg-surface text-text-primary font-sans">
@@ -128,218 +291,96 @@ export default function VideoDetailPage() {
     )
   }
 
+  const wrapClass = isFullscreen
+    ? 'fixed inset-0 z-50 bg-black overflow-hidden'
+    : 'max-w-6xl mx-auto px-6'
+
   return (
     <div className="min-h-screen bg-surface text-text-primary font-sans">
-      <HomeHeader />
+      {!isFullscreen && <HomeHeader />}
 
-      {/* Back button */}
-      <div className="px-6 pt-4 pb-2">
-        <button
-          onClick={() => navigate(-1)}
-          className="inline-flex items-center gap-1.5 text-text-muted hover:text-text-primary transition-colors text-sm"
+      {!isFullscreen && (
+        <div className="px-6 pt-4 pb-2">
+          <button
+            onClick={() => navigate(-1)}
+            className="inline-flex items-center gap-1.5 text-text-muted hover:text-text-primary transition-colors text-sm"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+            Back
+          </button>
+        </div>
+      )}
+
+      {/* The same wrap div hosts all detail content in BOTH modes so React
+          preserves the DetailPlayer (and its <video>) across transitions.
+          In fullscreen mode, FullscreenOverlay renders INSIDE DetailPlayer
+          so chrome scales with the player when it shrinks to PIP. */}
+      <div ref={wrapRef} className={wrapClass}>
+        <DetailPlayer
+          videoRef={videoRef}
+          poster={item.thumbnail}
+          streamLoading={streamLoading}
+          streamError={streamError}
+          onRetry={retryStream}
+          ariaTitle={item.title}
+          mode={isFullscreen ? 'fullscreen' : 'standard'}
+          pipMode={isFullscreen && panelOpen}
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-          Back
-        </button>
-      </div>
-
-      {/* Video Player Section */}
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="relative bg-black rounded-xl overflow-hidden" style={{ aspectRatio: '16 / 9' }}>
-          {videoSrc ? (
-            <video
-              ref={videoRef}
-              src={videoSrc}
-              className="w-full h-full object-contain"
-              controls
-              autoPlay
-              muted
+          {endCardActive && nextItem && (
+            <EndCard
+              next={nextItem}
+              onAdvance={advanceNow}
+              onCancel={cancelAutoAdvance}
             />
-          ) : (
-            <div className="w-full h-full flex flex-col items-center justify-center text-text-muted gap-3 relative">
-              {item.thumbnail && (
-                <img
-                  src={item.thumbnail}
-                  alt={item.title}
-                  className="absolute inset-0 w-full h-full object-contain opacity-40"
-                />
-              )}
-              {streamLoading ? (
-                <div className="relative flex flex-col items-center gap-2">
-                  <div className="w-8 h-8 border-2 border-text-muted border-t-white rounded-full animate-spin" />
-                  <p className="text-sm">Loading stream...</p>
-                </div>
-              ) : (
-                <div className="relative flex flex-col items-center gap-2">
-                  <span className="text-5xl">&#9654;</span>
-                  <p className="text-sm">Could not load stream</p>
-                </div>
-              )}
-            </div>
           )}
-        </div>
-
-        {/* Video Info Section */}
-        <div className="mt-6 mb-8">
-          <h1 className="font-display text-2xl font-bold tracking-tight mb-2">
-            {item.title}
-          </h1>
-          <div className="flex items-center gap-3 text-sm text-text-muted mb-4 flex-wrap">
-            {item.uploader && <span className="font-medium text-text-secondary">{item.uploader}</span>}
-            {item.uploader && <span>&middot;</span>}
-            {item.genre && (
-              <span className="px-2 py-0.5 rounded-full text-xs bg-white/5 border border-white/10">
-                {item.genre}
-              </span>
-            )}
-            {item.views && <span>{item.views} views</span>}
-            {item.daysAgo && <span>&middot;</span>}
-            {item.daysAgo && <span>{item.daysAgo}d ago</span>}
-            {item.duration && <span>&middot;</span>}
-            {item.duration && <span>{item.duration}</span>}
-          </div>
-
-          {/* Action buttons */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <button
-              onClick={handleLike}
-              className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all
-                ${isFavorite
-                  ? 'bg-accent/20 text-accent border border-accent/30'
-                  : 'bg-white/5 text-text-secondary border border-white/10 hover:bg-white/10'}`}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill={isFavorite ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-              </svg>
-              {isFavorite ? 'Liked' : 'Like'}
-            </button>
-            <button
-              onClick={handleShare}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold
-                bg-white/5 text-text-secondary border border-white/10 hover:bg-white/10 transition-all"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-              </svg>
-              Share
-            </button>
-            <button
-              onClick={() => handleAddToQueue(item)}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold
-                bg-accent text-white hover:bg-accent-hover transition-all"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" />
-                <line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
-              </svg>
-              Add to Queue
-            </button>
-          </div>
-
-          {item.desc && (
-            <p className="mt-4 text-sm text-text-muted leading-relaxed max-w-3xl">
-              {item.desc}
-            </p>
+          {isFullscreen && (
+            <FullscreenOverlay
+              item={item}
+              visible={chromeVisible}
+              panelOpen={panelOpen}
+              isPlaying={isPlaying}
+              currentTime={currentTime}
+              duration={duration}
+              muted={muted}
+              isOSFullscreen={isOSFullscreen}
+              onTogglePlay={togglePlay}
+              onSeekRel={seekRel}
+              onToggleMute={toggleMute}
+              onScrubTo={scrubTo}
+              onExit={() => setViewMode('standard')}
+              onScrollHint={onScrollHint}
+              onToggleOSFullscreen={toggleOSFullscreen}
+            />
           )}
-        </div>
+        </DetailPlayer>
 
-        {/* Related Videos Section */}
-        {relatedVideos.length > 0 && (
-          <div className="pb-16">
-            <h2 className="font-display text-lg font-bold tracking-tight mb-4">
-              More Like This
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {relatedVideos.map((rv) => (
-                <RelatedVideoCard
-                  key={rv.id}
-                  item={rv}
-                  onNavigate={() => navigate(`/watch/${rv.id}`)}
-                  onQueue={() => handleAddToQueue(rv)}
-                />
-              ))}
-            </div>
-          </div>
+        {!isFullscreen && (
+          <DetailMeta
+            item={item}
+            onAddToQueue={() => handleAddToQueue(item)}
+            onEnterFullscreen={() => setViewMode('fullscreen')}
+          />
         )}
-      </div>
-    </div>
-  )
-}
 
-// -------------------------------------------------------
-// RelatedVideoCard
-// -------------------------------------------------------
-function RelatedVideoCard({ item, onNavigate, onQueue }) {
-  const [queued, setQueued] = useState(false)
-
-  const handleQueue = (e) => {
-    e.stopPropagation()
-    onQueue()
-    setQueued(true)
-    setTimeout(() => setQueued(false), 2000)
-  }
-
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onNavigate}
-      onKeyDown={(e) => { if (e.key === 'Enter') onNavigate() }}
-      className="cursor-pointer group rounded-lg overflow-hidden bg-raised
-        transition-all duration-200 hover:scale-[var(--hover-scale)] hover:shadow-card-hover"
-    >
-      {/* Thumbnail */}
-      <div className="relative" style={{ aspectRatio: '16 / 9' }}>
-        <img
-          src={item.thumbnail}
-          alt={item.title}
-          loading="lazy"
-          className="w-full h-full object-cover"
-        />
-        {item.duration && (
-          <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-black/70 text-white/90">
-            {item.duration}
-          </span>
+        {!isFullscreen && (
+          <SuggestedRail
+            related={related}
+            recommended={recommended}
+            onAddToQueue={handleAddToQueue}
+          />
         )}
-      </div>
 
-      {/* Info */}
-      <div className="p-3">
-        <div className="text-sm font-semibold leading-tight line-clamp-2 mb-1">
-          {item.title}
-        </div>
-        <div className="text-xs text-text-muted mb-2">
-          {item.uploader}
-          {item.views && <span> &middot; {item.views} views</span>}
-        </div>
-
-        {/* Add to Queue button */}
-        <button
-          onClick={handleQueue}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all
-            ${queued
-              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-              : 'bg-white/5 text-text-secondary border border-white/10 hover:bg-accent hover:text-white hover:border-accent'}`}
-        >
-          {queued ? (
-            <>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-              Queued
-            </>
-          ) : (
-            <>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              Add to Queue
-            </>
-          )}
-        </button>
+        {isFullscreen && (
+          <FullscreenSuggestedSheet
+            open={panelOpen}
+            related={related}
+            recommended={recommended}
+            onPickItem={pickSuggested}
+            onClose={() => setPanelOpen(false)}
+          />
+        )}
       </div>
     </div>
   )

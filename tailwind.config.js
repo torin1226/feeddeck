@@ -15,9 +15,10 @@ export default {
           border: 'var(--color-surface-border)',
         },
         accent: {
-          DEFAULT: '#1e3a8a',
-          hover: '#3b82f6',
-          muted: '#1e3a8a33',
+          DEFAULT: '#3b82f6',
+          hover: '#60a5fa',
+          deep: '#1e3a8a',
+          muted: '#3b82f622',
         },
         text: {
           primary: 'var(--color-text-primary)',
