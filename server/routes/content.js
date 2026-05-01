@@ -1005,7 +1005,21 @@ async function refillCategory(categoryKey, sessionCache = new Map()) {
 
   // -------- Dedup, score, persist --------
   const seen = new Set()
-  const deduped = collected.filter(v => v?.url && !seen.has(v.url) && (seen.add(v.url), true))
+  let deduped = collected.filter(v => v?.url && !seen.has(v.url) && (seen.add(v.url), true))
+
+  // NSFW categories must only contain content from known adult domains.
+  // Topic searches resolve tags like "couple"/"petite" via ytsearch which
+  // returns mainstream YouTube results — filter those out.
+  if (cat.mode === 'nsfw') {
+    const nsfwDomains = /pornhub|redgifs|xvideos|spankbang|fikfap|redtube|youporn|xhamster|eporner/i
+    const before = deduped.length
+    deduped = deduped.filter(v => {
+      try { return nsfwDomains.test(new URL(v.url).hostname) } catch { return false }
+    })
+    if (deduped.length < before) {
+      logger.info(`  🚫 Filtered ${before - deduped.length} non-NSFW URLs from ${categoryKey}`)
+    }
+  }
 
   // Fire-and-forget creator recording — keeps DB writes off the critical path.
   setImmediate(() => recordDiscoveredCreators(categoryKey, deduped, sources))
