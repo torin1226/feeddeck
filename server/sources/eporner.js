@@ -11,14 +11,13 @@
 //   thumbsize   - small | medium | big (we use big)
 //   format      - json (default)
 //
-// No auth, no API key. Be polite: 1 req/sec, 6h cache.
+// No auth, no API key. Be polite: 1 req/sec (serialized via a
+// promise chain so concurrent callers from resolveEpornerApi +
+// resolveCrossSite cannot race past the rate limit), 6h cache.
 // Eporner doesn't return creator/model — uploader stays null.
-// Tags arrive as a comma-separated `keywords` string.
-//
-// Returned video shape (mapped to FeedDeck shape):
-//   { url, title, thumbnail, duration, source: 'eporner.com',
-//     uploader: null, view_count, like_count (synthetic), upload_date,
-//     tags: JSON.stringify(string[]) }
+// Tags arrive as a comma-separated `keywords` string and are
+// returned as a string[] (the consumer in routes/content.js
+// JSON.stringifies before persisting).
 // ============================================================
 
 import { logger } from '../logger.js'
@@ -26,20 +25,30 @@ import { logger } from '../logger.js'
 const BASE = 'https://www.eporner.com/api/v2/video/search/'
 const REQ_DELAY_MS = 1000
 let _lastRequestAt = 0
+// Serializes _politeFetch calls so the rate limit holds under
+// concurrent invocations. A read-modify-write of _lastRequestAt
+// alone is not safe across awaits.
+let _fetchChain = Promise.resolve()
 
 async function _politeFetch(url) {
-  const now = Date.now()
-  const wait = Math.max(0, _lastRequestAt + REQ_DELAY_MS - now)
-  if (wait > 0) await new Promise(r => setTimeout(r, wait))
-  _lastRequestAt = Date.now()
-  const res = await fetch(url, {
-    headers: {
-      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-      'accept': 'application/json',
-    },
+  const next = _fetchChain.then(async () => {
+    const now = Date.now()
+    const wait = Math.max(0, _lastRequestAt + REQ_DELAY_MS - now)
+    if (wait > 0) await new Promise(r => setTimeout(r, wait))
+    _lastRequestAt = Date.now()
+    const res = await fetch(url, {
+      headers: {
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+        'accept': 'application/json',
+      },
+    })
+    if (!res.ok) throw new Error(`eporner HTTP ${res.status}`)
+    return res.json()
   })
-  if (!res.ok) throw new Error(`eporner HTTP ${res.status}`)
-  return res.json()
+  // Don't break the chain on this caller's error; the next caller
+  // still needs a settled promise to resume from.
+  _fetchChain = next.catch(() => {})
+  return next
 }
 
 function _mapItem(r) {
