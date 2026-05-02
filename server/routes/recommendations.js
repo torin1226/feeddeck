@@ -6,7 +6,9 @@ import { db } from '../database.js'
 import { getCookieArgs } from '../cookies.js'
 import { logger } from '../logger.js'
 import { getMode, inferMode, formatDuration, safeParse } from '../utils.js'
-import { invalidateProfileCache } from '../scoring.js'
+import { invalidateProfileCache, getRelevanceThreshold } from '../scoring.js'
+import { ytdlp as ytdlpAdapter } from '../sources/index.js'
+import { createTrailRunner } from '../recommendations/searchSimilar.js'
 
 const execFileP = promisify(execFile)
 
@@ -388,5 +390,223 @@ router.get('/api/discover', (req, res) => {
     res.json({ videos: [] })
   }
 })
+
+// ============================================================
+// Recommendation Trail (per Recommendation Trail design)
+// Persistent pool of videos pulled because the user watched X.
+// Surfaces in: watch-page rail, homepage carousel, feed top.
+// ============================================================
+
+// Lazy-init shared runner so unit tests can construct their own.
+let _trailRunner = null
+function getTrailRunner() {
+  if (!_trailRunner) {
+    _trailRunner = createTrailRunner({ ytdlpAdapter })
+  }
+  return _trailRunner
+}
+
+// TTL: 14 days from created_at, OR watched.
+const TRAIL_TTL_DAYS = 14
+const TRAIL_HARD_CAP = 500
+const TRAIL_DEMOTE_FACTOR = 0.3
+
+function evictTrailExpired(mode) {
+  try {
+    // Remove watched OR aged-out rows.
+    const purged = db.prepare(
+      `DELETE FROM recommendation_trail
+       WHERE mode = ?
+         AND (watched_at IS NOT NULL
+              OR datetime(created_at) < datetime('now', ?))`
+    ).run(mode, `-${TRAIL_TTL_DAYS} days`)
+    if (purged.changes > 0) {
+      logger.info('trail: evicted rows', { mode, count: purged.changes })
+    }
+    // Enforce hard cap (FIFO oldest first).
+    const total = db.prepare(
+      'SELECT COUNT(*) AS n FROM recommendation_trail WHERE mode = ?'
+    ).get(mode)?.n || 0
+    if (total > TRAIL_HARD_CAP) {
+      const overflow = total - TRAIL_HARD_CAP
+      db.prepare(
+        `DELETE FROM recommendation_trail
+         WHERE id IN (
+           SELECT id FROM recommendation_trail
+           WHERE mode = ?
+           ORDER BY created_at ASC
+           LIMIT ?
+         )`
+      ).run(mode, overflow)
+    }
+  } catch (err) {
+    logger.error('trail eviction failed', { error: err.message, mode })
+  }
+}
+
+function persistTrailRows(rows) {
+  if (!rows || !rows.length) return 0
+  const insert = db.prepare(
+    `INSERT INTO recommendation_trail
+       (video_url, seed_video_url, source, score, mode,
+        title, thumbnail, duration, uploader, tags, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(mode, video_url) DO UPDATE SET
+       score = MAX(recommendation_trail.score, excluded.score),
+       seed_video_url = excluded.seed_video_url`
+  )
+  let inserted = 0
+  let committed = false
+  try {
+    db.exec('BEGIN')
+    for (const r of rows) {
+      try {
+        insert.run(
+          r.video_url, r.seed_video_url, r.source, r.score, r.mode,
+          r.title || '', r.thumbnail || '', r.duration || 0,
+          r.uploader || '', r.tags || '[]'
+        )
+        inserted++
+      } catch (err) {
+        logger.warn('trail row insert failed', { error: err.message, url: r.video_url })
+      }
+    }
+    db.exec('COMMIT')
+    committed = true
+  } finally {
+    if (!committed) {
+      try { db.exec('ROLLBACK') } catch { /* ignore */ }
+    }
+  }
+  return inserted
+}
+
+// POST /api/recommendations/trail/seed
+// Body: { videoUrl, title, tags, uploader, channelUrl }
+router.post('/api/recommendations/trail/seed', express.json(), async (req, res) => {
+  const { videoUrl, title, tags, uploader, channelUrl } = req.body || {}
+  if (!videoUrl) return res.status(400).json({ error: 'videoUrl required' })
+  const mode = getMode(req)
+
+  // Respond immediately with 202; the search runs in the background.
+  res.status(202).json({ ok: true, queued: true })
+
+  try {
+    const runner = getTrailRunner()
+    const result = await runner.runForSeed({
+      seed: { url: videoUrl, title, tags, uploader, channel_url: channelUrl },
+      mode,
+    })
+    if (result.suppressed) {
+      logger.debug('trail: seed suppressed (single-flight cache hit)', { videoUrl, mode })
+      return
+    }
+    const inserted = persistTrailRows(result.rows)
+    logger.info('trail: seed run complete', {
+      videoUrl: videoUrl.slice(0, 80),
+      mode,
+      pulled: result.rows.length,
+      inserted,
+    })
+  } catch (err) {
+    logger.warn('trail: seed run failed', { error: err.message, videoUrl: videoUrl?.slice(0, 80) })
+  }
+})
+
+// GET /api/recommendations/trail?seedVideoUrl=...&limit=24
+// Returns the ranked pool for the current mode. Optionally filter to
+// rows pulled by a specific seed (for the watch-page rail).
+router.get('/api/recommendations/trail', (req, res) => {
+  const mode = getMode(req)
+  const limit = Math.min(parseInt(req.query.limit, 10) || 24, 100)
+  const seedVideoUrl = req.query.seedVideoUrl || null
+
+  try {
+    evictTrailExpired(mode)
+
+    let rows
+    if (seedVideoUrl) {
+      rows = db.prepare(
+        `SELECT * FROM recommendation_trail
+         WHERE mode = ? AND seed_video_url = ? AND watched_at IS NULL
+         ORDER BY score DESC, created_at DESC
+         LIMIT ?`
+      ).all(mode, seedVideoUrl, limit)
+    } else {
+      rows = db.prepare(
+        `SELECT * FROM recommendation_trail
+         WHERE mode = ? AND watched_at IS NULL
+         ORDER BY score DESC, created_at DESC
+         LIMIT ?`
+      ).all(mode, limit)
+    }
+
+    const items = rows.map((r) => ({
+      id: `trail-${r.id}`,
+      url: r.video_url,
+      seedVideoUrl: r.seed_video_url,
+      source: r.source,
+      score: r.score,
+      title: r.title,
+      thumbnail: r.thumbnail,
+      duration: r.duration,
+      durationFormatted: formatDuration(r.duration),
+      uploader: r.uploader,
+      tags: safeParse(r.tags) || [],
+      createdAt: r.created_at,
+    }))
+
+    res.json({ items, count: items.length })
+  } catch (err) {
+    logger.error('trail GET failed', { error: err.message })
+    res.json({ items: [], count: 0 })
+  }
+})
+
+// POST /api/recommendations/trail/demote
+// Body: { seedVideoUrl }
+// Multiplies score by TRAIL_DEMOTE_FACTOR for entries pulled by the
+// given seed. Called from the ratings endpoint when a watch-page
+// thumbs-down lands.
+router.post('/api/recommendations/trail/demote', express.json(), (req, res) => {
+  const { seedVideoUrl } = req.body || {}
+  if (!seedVideoUrl) return res.status(400).json({ error: 'seedVideoUrl required' })
+  const mode = getMode(req)
+  try {
+    const result = db.prepare(
+      `UPDATE recommendation_trail
+       SET score = score * ?
+       WHERE mode = ? AND seed_video_url = ?`
+    ).run(TRAIL_DEMOTE_FACTOR, mode, seedVideoUrl)
+    res.json({ ok: true, demoted: result.changes })
+  } catch (err) {
+    logger.error('trail demote failed', { error: err.message })
+    res.status(500).json({ error: 'Failed to demote trail entries' })
+  }
+})
+
+// GET /api/recommendations/trail/threshold
+// Returns the current adaptive relevance threshold for the active mode.
+router.get('/api/recommendations/trail/threshold', (req, res) => {
+  const mode = getMode(req)
+  try {
+    res.json({ threshold: getRelevanceThreshold(mode) })
+  } catch (err) {
+    res.json({ threshold: 1 })
+  }
+})
+
+// Test-only helpers (exported via the module, not routed). Kept here so
+// the test suite can reset state between runs without re-creating runners.
+export const _trail = {
+  evictExpired: evictTrailExpired,
+  persistRows: persistTrailRows,
+  getRunner: getTrailRunner,
+  // Allow tests to substitute a deterministic runner.
+  setRunner: (r) => { _trailRunner = r },
+  TTL_DAYS: TRAIL_TTL_DAYS,
+  HARD_CAP: TRAIL_HARD_CAP,
+  DEMOTE_FACTOR: TRAIL_DEMOTE_FACTOR,
+}
 
 export default router

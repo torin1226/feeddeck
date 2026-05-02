@@ -364,6 +364,30 @@ export function invalidateProfileCache() {
   _profileCacheTime.clear()
 }
 
+// Adaptive relevance threshold for the Recommended-For-You tab on the
+// watch page. The threshold is the MINIMUM number of liked-tag matches
+// a candidate must have to qualify. It scales with how rich the user's
+// tag-preference profile is:
+//   - <20 liked tags    → threshold 1 (lenient — show breadth)
+//   - <50 liked tags    → threshold 2
+//   - >=50 liked tags   → threshold 3 (strict — profile is rich enough)
+// Mode-scoped: a sparse social profile + rich nsfw profile are independent.
+export function getRelevanceThreshold(mode = 'social') {
+  try {
+    const row = db.prepare(
+      `SELECT COUNT(*) AS n FROM tag_preferences
+       WHERE preference = 'liked' AND (mode = ? OR mode IS NULL)`
+    ).get(mode)
+    const liked = row?.n || 0
+    if (liked < 20) return 1
+    if (liked < 50) return 2
+    return 3
+  } catch (err) {
+    logger.warn('getRelevanceThreshold failed; defaulting to 1', { error: err.message })
+    return 1
+  }
+}
+
 // ============================================================
 // Engagement event handler
 //

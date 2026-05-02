@@ -139,6 +139,29 @@ router.post('/api/ratings', express.json(), (req, res) => {
     // tag_associations co-occurrence, invalidates profile cache.
     recordEngagement({ rating, tags: Array.isArray(tags) ? tags : [], mode: videoMode })
 
+    // Recommendation Trail demote: when a watch-page thumbs-down lands,
+    // soften (not purge) any trail entries that were pulled because the
+    // user clicked this video. Score is multiplied by TRAIL_DEMOTE_FACTOR
+    // (0.3) so the entries sink in carousel/rail rankings but stay visible.
+    if (rating === 'down' && surfaceType === 'watch_page') {
+      try {
+        const TRAIL_DEMOTE_FACTOR = 0.3
+        const result = db.prepare(
+          `UPDATE recommendation_trail
+           SET score = score * ?
+           WHERE mode = ? AND seed_video_url = ?`
+        ).run(TRAIL_DEMOTE_FACTOR, videoMode, videoUrl)
+        if (result.changes > 0) {
+          logger.info('trail: demoted entries', {
+            seed: videoUrl.slice(0, 80),
+            count: result.changes,
+          })
+        }
+      } catch (demErr) {
+        logger.warn('trail demote on thumbs-down failed (non-fatal)', { error: demErr.message })
+      }
+    }
+
     // Phase 4 — row engagement tally. Used by /api/rows/health (and the
     // daily hydration routine) to surface rows the user keeps bouncing
     // off. Skips when no surfaceKey is supplied (non-row surfaces).

@@ -24,6 +24,7 @@ function buildPool(categories, loadedCategoryIndices) {
         _isDivider: true,
         id: `__divider-${catIdx}`,
         label: cat.label,
+        _pinned: !!cat._pinned,
         _cat: catIdx,
         _catLabel: cat.label,
         _catKey: catKey,

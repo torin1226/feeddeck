@@ -92,6 +92,10 @@ describe('fetchHomepage: empty/warming response handling', () => {
       if (typeof url === 'string' && url.includes('/api/tags/preferences')) {
         return { ok: true, json: async () => ({ liked: [], disliked: [] }) }
       }
+      // Recommendation trail fetch (added in Phase E) — return empty.
+      if (typeof url === 'string' && url.includes('/api/recommendations/trail')) {
+        return { ok: true, json: async () => ({ items: [], count: 0 }) }
+      }
       homepageCalls++
       if (homepageCalls === 1) {
         return { ok: true, json: async () => ({ categories: [], state: 'warming' }) }

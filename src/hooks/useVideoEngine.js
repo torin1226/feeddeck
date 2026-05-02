@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 const isHlsUrl = (u) => typeof u === 'string' && u.includes('.m3u8')
 
-export default function useVideoEngine({ videoUrl, isSFW, sfwSrc }) {
+export default function useVideoEngine({ videoUrl }) {
   const videoRef = useRef(null)
   const hlsRef = useRef(null)
   const retriedRef = useRef(false)
@@ -24,7 +24,7 @@ export default function useVideoEngine({ videoUrl, isSFW, sfwSrc }) {
 
   // Resolve the stream URL whenever the source video changes.
   useEffect(() => {
-    if (isSFW || !videoUrl) {
+    if (!videoUrl) {
       setStreamUrl(null)
       setStreamError(null)
       return
@@ -55,7 +55,7 @@ export default function useVideoEngine({ videoUrl, isSFW, sfwSrc }) {
         if (!aborted) setStreamLoading(false)
       })
     return () => { aborted = true }
-  }, [videoUrl, isSFW])
+  }, [videoUrl])
 
   // Attach the resolved stream (or SFW src) to the <video> element.
   // HLS uses lazy-loaded hls.js with the same proxy pattern as FeedVideo.
@@ -69,12 +69,6 @@ export default function useVideoEngine({ videoUrl, isSFW, sfwSrc }) {
         try { hlsRef.current.destroy() } catch { /* ignore */ }
         hlsRef.current = null
       }
-    }
-
-    if (isSFW && sfwSrc) {
-      teardown()
-      vid.src = sfwSrc
-      return teardown
     }
 
     if (!streamUrl) {
@@ -124,7 +118,7 @@ export default function useVideoEngine({ videoUrl, isSFW, sfwSrc }) {
       cancelled = true
       teardown()
     }
-  }, [streamUrl, isSFW, sfwSrc])
+  }, [streamUrl])
 
   // Sync video element events to React state.
   useEffect(() => {
@@ -144,8 +138,7 @@ export default function useVideoEngine({ videoUrl, isSFW, sfwSrc }) {
       retriedRef.current = true
       setStreamUrl(null)
       setStreamError(null)
-      // Re-resolve by re-firing the resolve effect via a tick of streamUrl going null.
-      if (videoUrl && !isSFW) {
+      if (videoUrl) {
         setStreamLoading(true)
         fetch(`/api/stream-url?url=${encodeURIComponent(videoUrl)}`)
           .then((r) => r.ok ? r.json() : Promise.reject())
@@ -168,7 +161,7 @@ export default function useVideoEngine({ videoUrl, isSFW, sfwSrc }) {
       vid.removeEventListener('volumechange', onVol)
       vid.removeEventListener('error', onErr)
     }
-  }, [videoUrl, isSFW])
+  }, [videoUrl])
 
   // Imperative controls
   const togglePlay = useCallback(() => {
@@ -191,7 +184,7 @@ export default function useVideoEngine({ videoUrl, isSFW, sfwSrc }) {
   }, [])
 
   const retryStream = useCallback(() => {
-    if (!videoUrl || isSFW) return
+    if (!videoUrl) return
     retriedRef.current = false
     setStreamUrl(null)
     setStreamError(null)
@@ -201,7 +194,7 @@ export default function useVideoEngine({ videoUrl, isSFW, sfwSrc }) {
       .then((data) => { if (data.streamUrl) setStreamUrl(data.streamUrl) })
       .catch(() => setStreamError('Stream resolution failed'))
       .finally(() => setStreamLoading(false))
-  }, [videoUrl, isSFW])
+  }, [videoUrl])
 
   return {
     videoRef,

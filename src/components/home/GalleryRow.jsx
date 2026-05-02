@@ -370,7 +370,7 @@ export default function GalleryRow({
                   className="flex-none"
                   style={{ height: `${getCardHeight(variant)}px`, scrollSnapAlign: 'none' }}
                 >
-                  <CategoryDivider label={item.label} />
+                  <CategoryDivider label={item.label} pinned={!!item._pinned} />
                 </div>
               )
             }

@@ -33,7 +33,7 @@ function postRating({ videoUrl, item, surfaceKey, rating }) {
   }).catch(() => {})
 }
 
-export default function DetailMeta({ item, onAddToQueue }) {
+export default function DetailMeta({ item, onAddToQueue, onEnterFullscreen }) {
   const recordRating = useRatingsStore((s) => s.recordRating)
   const undoRating = useRatingsStore((s) => s.undoRating)
   const ratedUrls = useRatingsStore((s) => s.ratedUrls)
@@ -165,6 +165,21 @@ export default function DetailMeta({ item, onAddToQueue }) {
           </svg>
           Add to Queue
         </button>
+
+        {onEnterFullscreen && (
+          <button
+            type="button"
+            onClick={onEnterFullscreen}
+            aria-label="Enter fullscreen"
+            title="Fullscreen"
+            className="ml-auto p-2.5 rounded-full text-text-secondary
+              bg-white/5 border border-white/10 hover:bg-white/10 hover:text-text-primary transition-colors"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {item.desc && (

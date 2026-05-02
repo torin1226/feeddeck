@@ -1099,6 +1099,38 @@ export function initDatabase() {
     logger.error('row_engagement table creation failed:', { error: err.message })
   }
 
+  // ---------------------------------------------------------------
+  // Recommendation Trail (per Recommendation Trail design 2026-05-01)
+  // Persistent pool of "videos pulled because the user watched X."
+  // Two yt-dlp searches per click (creator channel + keyword) feed
+  // this table; surfaces in the watch-page rail, the homepage hero
+  // carousel, and the top of feed views.
+  // Mode-scoped (firewall). Score field is mutated by demote on
+  // thumbs-down. TTL evicted (watched OR 14 days unwatched).
+  // ---------------------------------------------------------------
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS recommendation_trail (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      video_url TEXT NOT NULL,
+      seed_video_url TEXT NOT NULL,
+      source TEXT NOT NULL CHECK(source IN ('creator', 'keyword')),
+      score REAL NOT NULL DEFAULT 1.0,
+      mode TEXT NOT NULL DEFAULT 'social' CHECK(mode IN ('social', 'nsfw')),
+      title TEXT,
+      thumbnail TEXT,
+      duration INTEGER DEFAULT 0,
+      uploader TEXT,
+      tags TEXT DEFAULT '[]',
+      created_at DATETIME DEFAULT (datetime('now')),
+      watched_at DATETIME,
+      UNIQUE(mode, video_url)
+    )`)
+    db.exec("CREATE INDEX IF NOT EXISTS idx_trail_rank ON recommendation_trail(mode, watched_at, score DESC, created_at DESC)")
+    db.exec("CREATE INDEX IF NOT EXISTS idx_trail_seed ON recommendation_trail(seed_video_url, mode)")
+  } catch (err) {
+    logger.error('recommendation_trail table creation failed:', { error: err.message })
+  }
+
   logger.info('Database initialized', { path: DB_PATH })
   return db
 }

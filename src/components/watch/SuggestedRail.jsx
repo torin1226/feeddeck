@@ -9,13 +9,13 @@ import { useNavigate } from 'react-router-dom'
 // Empty / no-related fallback collapses to the recommended tab.
 // ============================================================
 
-export default function SuggestedRail({ related, recommended, onAddToQueue }) {
+export default function SuggestedRail({ related, recommended, onAddToQueue, hydrating = false }) {
   const hasRelated = (related?.length || 0) > 0
   const hasRec = (recommended?.length || 0) > 0
   const [tab, setTab] = useState(hasRelated ? 'related' : 'recommended')
   const navigate = useNavigate()
 
-  if (!hasRelated && !hasRec) return null
+  if (!hasRelated && !hasRec && !hydrating) return null
 
   const items = tab === 'related' ? related : recommended
 
@@ -36,6 +36,12 @@ export default function SuggestedRail({ related, recommended, onAddToQueue }) {
         >
           Recommended For You
         </TabBtn>
+        {hydrating && (
+          <span className="ml-auto inline-flex items-center gap-2 text-xs text-text-muted pr-1">
+            <span className="w-3 h-3 border border-text-muted border-t-text-secondary rounded-full animate-spin" />
+            finding similar…
+          </span>
+        )}
       </div>
 
       {items.length > 0 ? (

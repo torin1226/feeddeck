@@ -201,7 +201,11 @@ try {
   }
 } catch {}
 
-// Helper: fetch a batch of feed videos from backend
+// Helper: fetch a batch of feed videos from backend.
+// On the FIRST batch (initial buffer empty), interleave a few
+// recommendation_trail entries at the top of the feed (~30% cap)
+// so videos similar to what the user just watched lead the feed.
+// Trail entries are mode-scoped + watched-filtered server-side.
 async function fetchFeedBatch(getState) {
   const { watchedIds, buffer, filters } = getState()
   const bufferIds = new Set(buffer.map(v => v.id))
@@ -214,8 +218,38 @@ async function fetchFeedBatch(getState) {
   const res = await fetch(`/api/feed/next?${params}`)
   if (!res.ok) throw new Error('Feed fetch failed')
   const data = await res.json()
-  // Filter out already-watched and already-buffered videos
-  return (data.videos || []).filter(v => !watchedIds.has(v.id) && !bufferIds.has(v.id))
+  let videos = (data.videos || []).filter(v => !watchedIds.has(v.id) && !bufferIds.has(v.id))
+
+  // Trail injection only fires on the first batch (buffer empty), not
+  // on every subsequent fetchMore (those should pull pure feed content).
+  if (buffer.length === 0) {
+    try {
+      const trailRes = await fetch(`/api/recommendations/trail?limit=6&mode=${mode}`)
+      if (trailRes.ok) {
+        const trailData = await trailRes.json()
+        const trail = (trailData?.items || [])
+          .filter((t) => t?.url && !bufferIds.has(t.id) && !watchedIds.has(t.id))
+          .map((t) => ({
+            id: t.id,
+            url: t.url,
+            title: t.title || '',
+            thumbnail: t.thumbnail || '',
+            duration: t.duration || 0,
+            durationFormatted: t.durationFormatted || '',
+            uploader: t.uploader || '',
+            tags: t.tags || [],
+            _fromTrail: true,
+          }))
+        if (trail.length > 0) {
+          const cap = Math.max(1, Math.floor((videos.length + trail.length) * 0.3))
+          const trailToUse = trail.slice(0, cap)
+          videos = [...trailToUse, ...videos]
+        }
+      }
+    } catch { /* non-fatal — feed works without trail */ }
+  }
+
+  return videos
 }
 
 // AbortController for cancelling in-flight warm requests on reset

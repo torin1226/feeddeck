@@ -4,7 +4,7 @@ import useHomeStore from '../stores/homeStore'
 import useQueueStore from '../stores/queueStore'
 import useLibraryStore from '../stores/libraryStore'
 import useToastStore from '../stores/toastStore'
-import useModeStore from '../stores/modeStore'
+import useRatingsStore from '../stores/ratingsStore'
 import HomeHeader from '../components/home/HomeHeader'
 import DetailPlayer from '../components/watch/DetailPlayer'
 import DetailMeta from '../components/watch/DetailMeta'
@@ -14,6 +14,7 @@ import FullscreenSuggestedSheet from '../components/watch/FullscreenSuggestedShe
 import EndCard from '../components/watch/EndCard'
 import useVideoEngine from '../hooks/useVideoEngine'
 import useSuggested from '../hooks/useSuggested'
+import useTrail from '../hooks/useTrail'
 import useViewMode from '../hooks/useViewMode'
 import useFullscreenChrome from '../hooks/useFullscreenChrome'
 
@@ -33,12 +34,9 @@ import useFullscreenChrome from '../hooks/useFullscreenChrome'
 // <video> DOM node is preserved across mode transitions.
 // ============================================================
 
-const SFW_VIDEO = 'https://videos.pexels.com/video-files/856974/856974-hd_1280_720_30fps.mp4'
-
 export default function VideoDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const isSFW = useModeStore((s) => s.isSFW)
   const { viewMode, setViewMode } = useViewMode()
 
   // Locate item across all home-page sources.
@@ -79,8 +77,6 @@ export default function VideoDetailPage() {
     retryStream,
   } = useVideoEngine({
     videoUrl: item?.url,
-    isSFW,
-    sfwSrc: SFW_VIDEO,
   })
 
   const scrubTo = useCallback((t) => {
@@ -97,17 +93,44 @@ export default function VideoDetailPage() {
   }, [item?.id, markWatched])
   useEffect(() => {
     const vid = videoRef.current
-    if (!vid || !item?.id || isSFW) return undefined
+    if (!vid || !item?.id) return undefined
     const interval = setInterval(() => {
       if (vid.duration > 0) {
         setWatchProgress(item.id, vid.currentTime / vid.duration)
       }
     }, 5000)
     return () => clearInterval(interval)
-  }, [item?.id, isSFW, setWatchProgress, videoRef])
+  }, [item?.id, setWatchProgress, videoRef])
 
-  // Suggested rail data
-  const { related, recommended } = useSuggested(item?.id)
+  // Suggested rail data: instant client-side ranking (fallback) + persistent
+  // backend trail (preferred once hydrated).
+  const fallback = useSuggested(item?.id)
+  const { trail, hydrated: trailHydrated, loading: trailLoading } = useTrail(item)
+
+  // Merge trail + fallback. Trail entries take precedence in More-Like-This
+  // (real-similarity signal). Recommended-For-You absorbs fallback's
+  // recommended pool, dedupe-protected against the related set.
+  const { related, recommended } = useMemo(() => {
+    if (trailHydrated && trail.length > 0) {
+      const trailIds = new Set(trail.map((t) => String(t.url)))
+      // Fold fallback.related into recommended unless already in trail
+      const recPool = (fallback.recommended || []).filter((r) => !trailIds.has(String(r.url)))
+      const fallbackRelatedExtra = (fallback.related || []).filter((r) => !trailIds.has(String(r.url)))
+      return {
+        related: trail.map((t) => ({
+          id: t.id,
+          url: t.url,
+          title: t.title,
+          thumbnail: t.thumbnail,
+          duration: t.durationFormatted,
+          uploader: t.uploader,
+          tags: t.tags,
+        })),
+        recommended: [...recPool, ...fallbackRelatedExtra].slice(0, 24),
+      }
+    }
+    return { related: fallback.related, recommended: fallback.recommended }
+  }, [trail, trailHydrated, fallback.related, fallback.recommended])
 
   // Queue
   const addToQueue = useQueueStore((s) => s.addToQueue)
@@ -120,7 +143,40 @@ export default function VideoDetailPage() {
   }, [addToQueue, item, showToast])
 
   // ── Autoadvance + End Card ─────────────────────────────────
-  // Resolve the "next" video: queue-next first, then top suggested.
+  // Rating-aware Up Next handoff:
+  //   - if a queue item is next, always use that (user explicit intent)
+  //   - if seed thumbs-up: prefer top trail entry, fallback to suggested
+  //   - if seed thumbs-down: prefer /api/discover (taste-profile pick),
+  //     fallback to suggested (avoid more-of-the-same)
+  //   - if unrated: prefer trail (real similarity > metadata overlap)
+  const seedRating = useRatingsStore((s) => (item?.url ? s.ratedUrls?.[item.url] : null))
+  const [discoverPick, setDiscoverPick] = useState(null)
+  useEffect(() => {
+    // Only fetch a discover pick when seed is thumbed-down (the only path
+    // that uses it). Skip in fullscreen — same video, same rating.
+    if (seedRating !== 'down') {
+      setDiscoverPick(null)
+      return
+    }
+    let cancelled = false
+    fetch('/api/discover?limit=8')
+      .then((r) => r.ok ? r.json() : { videos: [] })
+      .then((data) => {
+        if (cancelled) return
+        const v = (data?.videos || []).find((x) => x?.url && x.url !== item?.url)
+        if (v) setDiscoverPick({
+          id: v.id || v.url,
+          title: v.title,
+          thumbnail: v.thumbnail,
+          duration: v.durationFormatted || v.duration,
+          uploader: v.uploader || '',
+          url: v.url,
+        })
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [seedRating, item?.url])
+
   const nextItem = useMemo(() => {
     if (queue && queue.length > 0 && queueIndex >= 0 && queueIndex < queue.length - 1) {
       const nextQ = queue[queueIndex + 1]
@@ -136,10 +192,17 @@ export default function VideoDetailPage() {
         }
       }
     }
-    if (related && related.length > 0) return { ...related[0], _source: 'related' }
-    if (recommended && recommended.length > 0) return { ...recommended[0], _source: 'recommended' }
+    // Rating-aware preference order
+    if (seedRating === 'down') {
+      if (discoverPick) return { ...discoverPick, _source: 'discover' }
+      if (recommended && recommended.length > 0) return { ...recommended[0], _source: 'recommended' }
+      if (related && related.length > 0) return { ...related[0], _source: 'related' }
+    } else {
+      if (related && related.length > 0) return { ...related[0], _source: 'related' }
+      if (recommended && recommended.length > 0) return { ...recommended[0], _source: 'recommended' }
+    }
     return null
-  }, [queue, queueIndex, related, recommended])
+  }, [queue, queueIndex, related, recommended, seedRating, discoverPick])
 
   const [endCardActive, setEndCardActive] = useState(false)
   const [autoAdvanceCancelled, setAutoAdvanceCancelled] = useState(false)
@@ -369,6 +432,7 @@ export default function VideoDetailPage() {
             related={related}
             recommended={recommended}
             onAddToQueue={handleAddToQueue}
+            hydrating={trailLoading && !trailHydrated}
           />
         )}
 

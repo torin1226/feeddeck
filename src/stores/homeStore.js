@@ -573,10 +573,62 @@ const useHomeStore = create((set, get) => ({
         items: cat.items.filter(isUnclaimed),
       })).filter(cat => cat.items.length > 0)
 
+      // Recommendation Trail injection (per Recommendation Trail design):
+      // Pull persistent trail entries for the current mode and INTERLEAVE
+      // them into the carousel up to a 30% cap. Hero stays at position 0
+      // (familiar carousel feel), trail entries take positions 1, 3, 5...
+      // until the cap is hit. Failures are non-fatal — carousel renders
+      // without trail entries if the call errors.
+      let mergedCarousel = carouselItems
+      try {
+        const trailRes = await fetch('/api/recommendations/trail?limit=12')
+        if (version === _fetchVersion && trailRes.ok) {
+          const trailData = await trailRes.json()
+          const trailItems = (trailData?.items || [])
+            .filter((t) => t?.url && !claimedUrls.has(t.url))
+            .map((t) => ({
+              id: t.id,
+              url: t.url,
+              title: t.title || 'Recommended',
+              thumbnail: t.thumbnail || '',
+              thumbnailSm: t.thumbnail || '',
+              duration: t.durationFormatted || '',
+              durationSec: t.duration || 0,
+              uploader: t.uploader || '',
+              tags: t.tags || [],
+              desc: t.title || '',
+              genre: 'Recommended',
+              orient: 'h',
+              _fromTrail: true,
+            }))
+          if (trailItems.length > 0) {
+            const carouselSize = carouselItems.length || 24
+            const trailCap = Math.max(1, Math.floor(carouselSize * 0.3))
+            const trailToUse = trailItems.slice(0, trailCap)
+            // Interleave: position 0 stays as the original hero. Trail
+            // takes odd positions starting at 1; fall back to the original
+            // ordering once trail is exhausted.
+            const merged = []
+            const remaining = carouselItems.slice()
+            const head = remaining.shift() // original hero
+            if (head) merged.push(head)
+            const trailQ = trailToUse.slice()
+            while (merged.length < carouselSize) {
+              const wantsTrail = (merged.length % 2 === 1) && trailQ.length > 0
+              if (wantsTrail) merged.push(trailQ.shift())
+              else if (remaining.length > 0) merged.push(remaining.shift())
+              else if (trailQ.length > 0) merged.push(trailQ.shift())
+              else break
+            }
+            mergedCarousel = merged
+          }
+        }
+      } catch { /* non-fatal — carousel works without trail */ }
+
       const finalCategories = categories.length > 0 ? categories : get().categories
       set({
-        carouselItems,
-        heroItem: carouselItems[0],
+        carouselItems: mergedCarousel,
+        heroItem: mergedCarousel[0],
         categories: finalCategories,
         loadedCategoryIndices: finalCategories
           .slice(0, INITIAL_POOL_CATEGORIES)
