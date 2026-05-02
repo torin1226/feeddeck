@@ -40,11 +40,11 @@
   --glass-border: rgba(255, 255, 255, 0.06);
   --glass-border-hover: rgba(255, 255, 255, 0.10);
   --glass-highlight: rgba(255, 255, 255, 0.08);
-  --color-accent: #1e3a8a;
-  --glass-accent-bg: rgba(30, 58, 138, 0.15);
-  --glass-accent-border: rgba(30, 58, 138, 0.25);
+  --color-accent: #3b82f6;
+  --glass-accent-bg: rgba(59, 130, 246, 0.15);
+  --glass-accent-border: rgba(59, 130, 246, 0.25);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  --glass-glow-accent: 0 0 40px rgba(30, 58, 138, 0.25);
+  --glass-glow-accent: 0 0 40px rgba(59, 130, 246, 0.25);
 
   /* ============================================================
      Motion Token System

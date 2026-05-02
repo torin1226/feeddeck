@@ -20,7 +20,7 @@ const SHARED_PROPS = {
   strokeLinejoin: 'round',
 }
 
-const ACCENT = 'var(--color-accent, #1e3a8a)'
+const ACCENT = 'var(--color-accent, #3b82f6)'
 
 function Library() {
   return (
