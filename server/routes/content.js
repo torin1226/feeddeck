@@ -4,7 +4,7 @@ import { randomBytes } from 'crypto'
 import { db } from '../database.js'
 import { registry, ytdlp as ytdlpAdapter, scraper as scraperAdapter } from '../sources/index.js'
 import { logger } from '../logger.js'
-import { getMode, formatDuration } from '../utils.js'
+import { getMode, formatDuration, safeParse } from '../utils.js'
 import { scoreVideos } from '../scoring.js'
 import { resolveTopics, recordDiscoveredCreators } from '../topics.js'
 import { isClickbaitTitle } from '../content-filters.js'
@@ -638,7 +638,7 @@ router.get('/api/homepage', (req, res) => {
               like_count: v.like_count,
               subscriber_count: null,
               upload_date: v.upload_date,
-              tags: v.tags ? JSON.parse(v.tags) : [],
+              tags: v.tags ? (safeParse(v.tags, []) || []) : [],
               durationFormatted: formatDuration(v.duration),
               viewed: 0,
               _score: v._score,
@@ -674,7 +674,7 @@ router.get('/api/homepage', (req, res) => {
         label: cat.label,
         videos: scored.map(v => ({
           ...v,
-          tags: v.tags ? (typeof v.tags === 'string' ? JSON.parse(v.tags) : v.tags) : [],
+          tags: v.tags ? (typeof v.tags === 'string' ? (safeParse(v.tags, []) || []) : v.tags) : [],
           durationFormatted: formatDuration(v.duration),
         })),
       }
