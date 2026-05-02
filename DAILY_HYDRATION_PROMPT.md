@@ -44,6 +44,31 @@ For each commit found:
 
 ### 3. Content Pipeline Health Check
 
+#### 3.0 Row Health Report (mandatory first diagnostic)
+
+Run `npm run hydration:health` against the running dev server and paste the
+Markdown output into your session log under a `## Row Health` heading. This is
+the structural early-warning for source-DOM-shift silent failures (the same
+class of bug that hid RedGifs Apr 16, social_shorts Apr 25, and trends24
+Apr 30 for days at a time):
+
+```bash
+npm run hydration:health
+```
+
+The script hits `GET /api/homepage/status?mode={social,nsfw}` for the stocking
+signal and `GET /api/rows/health` for the engagement signal, and exits
+non-zero if any category in either mode has `fresh_unviewed === 0`. If the
+script prints a clean exit but Empty rows show up in the report, that is the
+signal to investigate the corresponding adapter immediately — do NOT wait for
+the SQL queries below to flag it. Categories listed under "Empty (fresh_unviewed = 0)"
+go on the day's working list ahead of any other hardening work.
+
+If the script fails because the dev server isn't running, start it
+(`npm run dev:server` in another shell) and rerun.
+
+#### 3.1 Direct DB queries
+
 Run diagnostics to understand current state. Execute these queries against the SQLite database at `data/library.db`:
 
 ```javascript
@@ -105,7 +130,9 @@ Don't try to do everything every day. Pick 1-2 based on what the health check re
 > If you find yourself reaching for "tighten the refill interval" or "add
 > another scheduled job", stop and ask whether the deeper problem is selection.
 >
-> **First diagnostic each session:** `curl localhost:3001/api/rows/health`.
+> **First diagnostic each session:** `npm run hydration:health` (see step 3.0).
+> The script wraps `/api/rows/health` + both modes of `/api/homepage/status`
+> and surfaces empty/low rows alongside engagement signals.
 > `underperformingRows` (≥0.4 thumbs-down ratio over 30d, ≥5 impressions) are
 > deprecation candidates — propose drops in BACKLOG 3.13. `emergentClusters`
 > (tag co-occurrences not covered by any row's topic_sources) are new-row
@@ -212,6 +239,7 @@ After committing, append a brief entry to the most recent `PROGRESS_REPORT_*.md`
 
 ```markdown
 ### Daily Hydration Run — [timestamp]
+**Row Health:** [N empty / N low / N flagged engagement / N emergent clusters — from `npm run hydration:health`]
 **Cache State:** [homepage categories filled / feed_cache unwatched count per mode]
 **Actions Taken:** [1-3 bullet points]
 **External Changes Reviewed:** [commits reviewed, any issues found]
