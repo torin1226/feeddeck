@@ -60,97 +60,121 @@ export async function fetchSection(sectionAnchor) {
       timeout: NAV_TIMEOUT_MS,
     })
 
-    // Give the section's video list a moment to render. Generic selector
-    // because trends24's exact CSS classes aren't documented; we look for
-    // the section container then walk its descendants.
-    await page.waitForSelector(`#${sectionAnchor}, [id="${sectionAnchor}"]`, {
+    // Wait for the actual video list. Current markup (verified 2026-05-02):
+    //   <h3 id="group-music">Music</h3>
+    //   <ol aria-labelledby="group-music" class="video-list">
+    //     <li class="video-item">
+    //       <div class="video-card">
+    //         <a class="video-link" href="..." data-id="...">
+    //           <img class="thumbnail">
+    //           <h4 class="vc-title">...</h4>
+    //           <p>Published <span>X ago</span> by <span class="font-medium">Channel</span></p>
+    //           <p class="stat-line"><span>Nx views</span>...</p>
+    //         </a>
+    //       </div>
+    //       <script>console.log(JSON.parse('{"channelId":"...","channelTitle":"...","tags":[...]}'))</script>
+    //     </li>
+    //   </ol>
+    // The legacy code looked up `getElementById(anchor)` which returns only the
+    // <h3> heading — the <ol> sibling is where the items actually live, so it
+    // was always returning empty. Use aria-labelledby to find the list directly.
+    const listSelector = `ol.video-list[aria-labelledby="${sectionAnchor}"]`
+    await page.waitForSelector(listSelector, {
       timeout: SELECTOR_TIMEOUT_MS,
     }).catch(() => null)
 
-    const result = await page.evaluate((anchor) => {
+    const result = await page.evaluate((selector) => {
       // eslint-disable-next-line no-undef
-      const root = document.getElementById(anchor)
-      if (!root) return { videos: [], creators: [], keywords: [] }
+      const list = document.querySelector(selector)
+      if (!list) return { videos: [], creators: [], keywords: [] }
 
-      // Items live in li / div children with anchor links to YouTube.
-      // Each item has at minimum: a watch URL, a title, often a channel
-      // link and view count text.
-      const itemNodes = root.querySelectorAll('li, .trend-item, .video-item, article')
       const videos = []
       const seenUrls = new Set()
-      const creatorMap = new Map() // handle -> channel_url
+      const creatorMap = new Map() // channelTitle -> channelId-derived URL
 
-      const itemArr = itemNodes.length > 0 ? itemNodes : root.querySelectorAll('a[href*="youtube.com/watch"]')
+      const parseCount = (raw) => {
+        if (!raw) return null
+        const m = String(raw).trim().match(/^([\d.,]+)\s*([KMB]?)$/i)
+        if (!m) return null
+        const n = parseFloat(m[1].replace(/,/g, ''))
+        if (!isFinite(n)) return null
+        const mult = { K: 1e3, M: 1e6, B: 1e9 }[m[2].toUpperCase()] || 1
+        return Math.round(n * mult)
+      }
 
-      for (const node of itemArr) {
-        const watchAnchor = node.querySelector
-          ? node.querySelector('a[href*="youtube.com/watch"], a[href*="youtu.be/"]')
-          : (node.getAttribute && node.getAttribute('href') ? node : null)
-        if (!watchAnchor) continue
-        const href = watchAnchor.href || watchAnchor.getAttribute('href')
+      for (const li of list.querySelectorAll('li.video-item')) {
+        const linkEl = li.querySelector('a.video-link')
+        if (!linkEl) continue
+        const href = linkEl.getAttribute('href') || linkEl.href || ''
         if (!href || seenUrls.has(href)) continue
 
-        const titleEl = (node.querySelector && (
-          node.querySelector('h4') || node.querySelector('h3') || node.querySelector('h2') ||
-          node.querySelector('.trend-title') || node.querySelector('.title')
-        )) || watchAnchor
-        const title = (titleEl?.textContent || watchAnchor.textContent || '').trim()
+        const titleEl = li.querySelector('h4.vc-title')
+        const title = (titleEl?.textContent || '').trim()
         if (!title) continue
 
-        const channelAnchor = node.querySelector
-          ? node.querySelector('a[href*="/channel/"], a[href*="/@"], a[href*="/user/"]')
+        // Channel name lives in the second <span class="font-medium"> inside
+        // the meta paragraph: "Published <span>X ago</span> by <span>Name</span>".
+        const metaSpans = li.querySelectorAll('p .font-medium, p span.font-medium')
+        const channelName = metaSpans.length >= 2
+          ? (metaSpans[metaSpans.length - 1].textContent || '').trim()
           : null
-        const channelHref = channelAnchor?.href || channelAnchor?.getAttribute?.('href') || null
-        const channelName = (channelAnchor?.textContent || '').trim() || null
 
-        // Best-effort view count extraction from any descendant text.
-        let viewCount = null
-        const text = (node.textContent || '').replace(/\s+/g, ' ')
-        const viewsMatch = text.match(/([\d.,]+\s*[KMB]?)\s*views?/i)
-        if (viewsMatch) {
-          const raw = viewsMatch[1].replace(/[, ]/g, '')
-          const m = raw.match(/^([\d.]+)([KMB]?)$/i)
-          if (m) {
-            const n = parseFloat(m[1])
-            const mult = { K: 1e3, M: 1e6, B: 1e9 }[m[2]?.toUpperCase()] || 1
-            viewCount = Math.round(n * mult)
+        // First <span> in stat-line holds the view count text.
+        const viewSpan = li.querySelector('p.stat-line > span:first-of-type')
+        // Strip leading SVG label text (e.g. "Views ") so only the number remains.
+        const viewText = (viewSpan?.textContent || '').replace(/Views?/i, '').trim()
+        const viewCount = parseCount(viewText)
+
+        const thumbEl = li.querySelector('img.thumbnail')
+        const thumb = thumbEl?.getAttribute('src') || thumbEl?.getAttribute('data-src') || null
+
+        // Channel URL isn't in the DOM, but each item embeds a JSON payload
+        // in a sibling <script> tag (console.log(JSON.parse('{...}'))). When
+        // present, extract channelId to build a canonical channel URL.
+        let channelUrl = null
+        const scriptEl = li.querySelector('script')
+        if (scriptEl?.textContent) {
+          const jsonMatch = scriptEl.textContent.match(/JSON\.parse\('([\s\S]+?)'\)/)
+          if (jsonMatch) {
+            try {
+              const meta = JSON.parse(jsonMatch[1].replace(/\\'/g, "'"))
+              if (meta?.channelId) {
+                channelUrl = `https://www.youtube.com/channel/${meta.channelId}`
+              }
+            } catch { /* malformed script payload — fall back to null */ }
           }
         }
-
-        const thumbEl = node.querySelector ? node.querySelector('img') : null
-        const thumb = thumbEl?.src || thumbEl?.getAttribute?.('data-src') || null
 
         seenUrls.add(href)
         videos.push({
           url: href,
           title,
           uploader: channelName,
-          channel_url: channelHref,
+          channel_url: channelUrl,
           view_count: viewCount,
           thumbnail: thumb,
           source: 'youtube.com',
         })
 
-        if (channelName) {
-          if (!creatorMap.has(channelName)) creatorMap.set(channelName, channelHref)
+        if (channelName && !creatorMap.has(channelName)) {
+          creatorMap.set(channelName, channelUrl)
         }
       }
 
-      // Popular Keywords panel — usually on #group-all only, but cheap to look for everywhere.
+      // Popular Keywords panel — current markup is <ol class="keywords-list"><li>term</li>...
       const keywords = []
       // eslint-disable-next-line no-undef
-      const kwContainer = document.querySelector('.popular-keywords, #popular-keywords, [data-section="keywords"]')
-      if (kwContainer) {
-        for (const a of kwContainer.querySelectorAll('a, li')) {
-          const t = (a.textContent || '').trim()
+      const kwList = document.querySelector('ol.keywords-list')
+      if (kwList) {
+        for (const li of kwList.querySelectorAll('li')) {
+          const t = (li.textContent || '').trim()
           if (t && t.length < 60) keywords.push(t)
         }
       }
       // Fallback: titles themselves are reasonable topic seeds when the
-      // dedicated keywords panel is not present (most sections).
+      // dedicated keywords panel is not present (most per-genre sections).
       if (keywords.length === 0) {
         for (const v of videos.slice(0, 12)) {
-          // Use the meaningful prefix (drop "| Channel" suffixes etc.).
           const seed = v.title.split(/[|\-—]/)[0].trim()
           if (seed && seed.length >= 8 && seed.length <= 60) keywords.push(seed)
         }
@@ -158,7 +182,7 @@ export async function fetchSection(sectionAnchor) {
 
       const creators = [...creatorMap.entries()].map(([handle, channel_url]) => ({ handle, channel_url }))
       return { videos, creators, keywords: keywords.slice(0, 30) }
-    }, sectionAnchor)
+    }, listSelector)
 
     return result
   } catch (err) {
