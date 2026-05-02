@@ -29,7 +29,7 @@ for (const anchor of SECTIONS) {
         `         sample: "${v.title.slice(0, 60)}" by ${v.uploader || '?'} — ${v.view_count ?? '?'} views`
       )
       console.log(
-        `         url=${v.url}  thumb=${v.thumbnail ? 'yes' : 'NO'}  channel_url=${v.channel_url ? 'yes' : 'NO'}`
+        `         url=${v.url}  thumb=${v.thumbnail ? 'yes' : 'NO'}  channel_url=${v.channel_url ? 'yes' : 'NO'}  upload_date=${v.upload_date ?? 'NO'}`
       )
     }
   } catch (err) {

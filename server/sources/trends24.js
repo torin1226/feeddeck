@@ -13,6 +13,24 @@
 //   - creators: unique uploader names + channel URLs
 //   - keywords: trending search terms (used as topic seeds for ytsearch)
 //
+// --- Resilience strategy ---
+// Each <li class="video-item"> ships a <script>console.log(JSON.parse('{...}'))</script>
+// payload that is the YouTube Data API response for the video. It contains
+// title, channelTitle, channelId, publishedAt, thumbnails (5 resolutions),
+// tags, categoryId, and description. This is the app's data layer, not its
+// presentation layer, and is far more stable across visual redesigns.
+//
+// Item extraction priority:
+//   1. JSON payload (title, channelTitle, channelId, thumbnails, tags, publishedAt)
+//   2. DOM selectors (watch URL from <a>, view_count from stat-line)
+//   3. Structural heuristics (any <a href*=youtube>, any <img>, first heading)
+//
+// Section list discovery also uses layered fallbacks:
+//   1. ol.video-list[aria-labelledby="group-X"]  — semantic attribute (stable)
+//   2. [aria-labelledby="group-X"]               — any tag with aria attribute
+//   3. #group-X ~ ol                              — structural sibling
+//   4. #group-X ~ ul
+//
 // Cached for 6h via the trends_cache table by the topics.js layer.
 // One concurrent navigation is enforced by reusing the existing
 // scraper.js puppeteer instance; we just borrow getPuppeteer().
@@ -60,38 +78,34 @@ export async function fetchSection(sectionAnchor) {
       timeout: NAV_TIMEOUT_MS,
     })
 
-    // Wait for the actual video list. Current markup (verified 2026-05-02):
-    //   <h3 id="group-music">Music</h3>
-    //   <ol aria-labelledby="group-music" class="video-list">
-    //     <li class="video-item">
-    //       <div class="video-card">
-    //         <a class="video-link" href="..." data-id="...">
-    //           <img class="thumbnail">
-    //           <h4 class="vc-title">...</h4>
-    //           <p>Published <span>X ago</span> by <span class="font-medium">Channel</span></p>
-    //           <p class="stat-line"><span>Nx views</span>...</p>
-    //         </a>
-    //       </div>
-    //       <script>console.log(JSON.parse('{"channelId":"...","channelTitle":"...","tags":[...]}'))</script>
-    //     </li>
-    //   </ol>
-    // The legacy code looked up `getElementById(anchor)` which returns only the
-    // <h3> heading — the <ol> sibling is where the items actually live, so it
-    // was always returning empty. Use aria-labelledby to find the list directly.
-    const listSelector = `ol.video-list[aria-labelledby="${sectionAnchor}"]`
-    await page.waitForSelector(listSelector, {
+    // Wait for the primary selector. If it times out, page.evaluate() will
+    // try the fallback selectors — the page is loaded regardless.
+    const primarySelector = `ol.video-list[aria-labelledby="${sectionAnchor}"]`
+    await page.waitForSelector(primarySelector, {
       timeout: SELECTOR_TIMEOUT_MS,
     }).catch(() => null)
 
-    const result = await page.evaluate((selector) => {
-      // eslint-disable-next-line no-undef
-      const list = document.querySelector(selector)
-      if (!list) return { videos: [], creators: [], keywords: [] }
+    const result = await page.evaluate((anchor) => {
+      // --- Section list discovery (layered fallbacks) ---
+      // Each candidate is tried in order; first that returns a non-empty list wins.
+      const listCandidates = [
+        `ol.video-list[aria-labelledby="${anchor}"]`,  // current markup (verified 2026-05-02)
+        `[aria-labelledby="${anchor}"]`,               // any tag — survives ol→ul rewrites
+        `#${anchor} ~ ol`,                             // structural sibling after heading
+        `#${anchor} ~ ul`,
+      ]
+      let list = null
+      for (const sel of listCandidates) {
+        // eslint-disable-next-line no-undef
+        const candidate = document.querySelector(sel)
+        if (candidate && candidate.querySelectorAll('li').length > 0) {
+          list = candidate
+          break
+        }
+      }
+      if (!list) return { videos: [], creators: [], keywords: [], _listSelector: null }
 
-      const videos = []
-      const seenUrls = new Set()
-      const creatorMap = new Map() // channelTitle -> channelId-derived URL
-
+      // --- Helpers ---
       const parseCount = (raw) => {
         if (!raw) return null
         const m = String(raw).trim().match(/^([\d.,]+)\s*([KMB]?)$/i)
@@ -102,77 +116,134 @@ export async function fetchSection(sectionAnchor) {
         return Math.round(n * mult)
       }
 
-      for (const li of list.querySelectorAll('li.video-item')) {
-        const linkEl = li.querySelector('a.video-link')
-        if (!linkEl) continue
-        const href = linkEl.getAttribute('href') || linkEl.href || ''
-        if (!href || seenUrls.has(href)) continue
+      // Parse the per-item embedded JSON payload:
+      //   <script>console.log(JSON.parse('{"channelId":"...","title":"...","thumbnails":{...},...}'))</script>
+      // This is the YouTube Data API response embedded by the site — data layer,
+      // not presentation layer. Far more stable than CSS class names.
+      const parseItemMeta = (li) => {
+        const scriptEl = li.querySelector('script')
+        if (!scriptEl?.textContent) return null
+        const m = scriptEl.textContent.match(/JSON\.parse\('([\s\S]+?)'\)/)
+        if (!m) return null
+        try {
+          return JSON.parse(m[1].replace(/\\'/g, "'"))
+        } catch { return null }
+      }
 
-        const titleEl = li.querySelector('h4.vc-title')
-        const title = (titleEl?.textContent || '').trim()
+      // Best available thumbnail URL (prefer high-res from JSON payload).
+      const bestThumb = (meta, li) => {
+        if (meta?.thumbnails) {
+          const t = meta.thumbnails
+          return (t.maxres || t.standard || t.high || t.medium || t.default)?.url || null
+        }
+        const img = li.querySelector('img')
+        return img?.getAttribute('src') || img?.getAttribute('data-src') || null
+      }
+
+      // Derive watch URL from YouTube thumbnail URL: .../vi/VIDEO_ID/...
+      const urlFromThumb = (thumbUrl) => {
+        if (!thumbUrl) return null
+        const m = thumbUrl.match(/\/vi\/([^/]+)\//)
+        return m ? `https://www.youtube.com/watch?v=${m[1]}` : null
+      }
+
+      // --- Item extraction ---
+      const videos = []
+      const seenUrls = new Set()
+      const creatorMap = new Map()
+      const allItemTags = []
+
+      for (const li of list.querySelectorAll('li')) {
+        const meta = parseItemMeta(li)
+
+        // Title: JSON > h4.vc-title > any h4/h3 > first heading
+        const title = (
+          meta?.title ||
+          li.querySelector('h4.vc-title')?.textContent ||
+          li.querySelector('h4, h3, h2')?.textContent ||
+          ''
+        ).trim()
         if (!title) continue
 
-        // Channel name lives in the second <span class="font-medium"> inside
-        // the meta paragraph: "Published <span>X ago</span> by <span>Name</span>".
-        const metaSpans = li.querySelectorAll('p .font-medium, p span.font-medium')
-        const channelName = metaSpans.length >= 2
-          ? (metaSpans[metaSpans.length - 1].textContent || '').trim()
+        // Watch URL: DOM link (most direct) > derive from JSON thumbnail
+        const linkEl = li.querySelector('a[href*="youtube.com/watch"], a.video-link, a[href*="youtu"]')
+        const domUrl = linkEl?.getAttribute('href') || linkEl?.href || ''
+        const thumb = bestThumb(meta, li)
+        const url = domUrl || urlFromThumb(thumb) || ''
+        if (!url || seenUrls.has(url)) continue
+
+        // Channel info: JSON > DOM meta spans
+        const channelName = (
+          meta?.channelTitle ||
+          (() => {
+            const spans = li.querySelectorAll('p .font-medium, p span.font-medium')
+            return spans.length >= 2 ? spans[spans.length - 1].textContent : null
+          })() ||
+          ''
+        ).trim() || null
+
+        const channelUrl = meta?.channelId
+          ? `https://www.youtube.com/channel/${meta.channelId}`
           : null
 
-        // First <span> in stat-line holds the view count text.
-        const viewSpan = li.querySelector('p.stat-line > span:first-of-type')
-        // Strip leading SVG label text (e.g. "Views ") so only the number remains.
+        // View count: DOM only (not in JSON payload)
+        const viewSpan = li.querySelector(
+          'p.stat-line > span:first-of-type, .stat-line span:first-of-type, [class*="stat"] span'
+        )
         const viewText = (viewSpan?.textContent || '').replace(/Views?/i, '').trim()
         const viewCount = parseCount(viewText)
 
-        const thumbEl = li.querySelector('img.thumbnail')
-        const thumb = thumbEl?.getAttribute('src') || thumbEl?.getAttribute('data-src') || null
+        // Upload date: JSON only (DOM has no date)
+        const uploadDate = meta?.publishedAt || null
 
-        // Channel URL isn't in the DOM, but each item embeds a JSON payload
-        // in a sibling <script> tag (console.log(JSON.parse('{...}'))). When
-        // present, extract channelId to build a canonical channel URL.
-        let channelUrl = null
-        const scriptEl = li.querySelector('script')
-        if (scriptEl?.textContent) {
-          const jsonMatch = scriptEl.textContent.match(/JSON\.parse\('([\s\S]+?)'\)/)
-          if (jsonMatch) {
-            try {
-              const meta = JSON.parse(jsonMatch[1].replace(/\\'/g, "'"))
-              if (meta?.channelId) {
-                channelUrl = `https://www.youtube.com/channel/${meta.channelId}`
-              }
-            } catch { /* malformed script payload — fall back to null */ }
-          }
-        }
-
-        seenUrls.add(href)
+        seenUrls.add(url)
         videos.push({
-          url: href,
+          url,
           title,
           uploader: channelName,
           channel_url: channelUrl,
           view_count: viewCount,
           thumbnail: thumb,
+          upload_date: uploadDate,
           source: 'youtube.com',
         })
 
         if (channelName && !creatorMap.has(channelName)) {
           creatorMap.set(channelName, channelUrl)
         }
+
+        if (Array.isArray(meta?.tags)) {
+          allItemTags.push(...meta.tags)
+        }
       }
 
-      // Popular Keywords panel — current markup is <ol class="keywords-list"><li>term</li>...
+      // --- Keywords ---
+      // Priority: dedicated keywords panel > JSON tags from items > title-derived seeds
       const keywords = []
       // eslint-disable-next-line no-undef
-      const kwList = document.querySelector('ol.keywords-list')
+      const kwList = document.querySelector('ol.keywords-list, ul.keywords-list, [class*="keyword"] ol, [class*="keyword"] ul')
       if (kwList) {
         for (const li of kwList.querySelectorAll('li')) {
           const t = (li.textContent || '').trim()
           if (t && t.length < 60) keywords.push(t)
         }
       }
-      // Fallback: titles themselves are reasonable topic seeds when the
-      // dedicated keywords panel is not present (most per-genre sections).
+      if (keywords.length < 10 && allItemTags.length > 0) {
+        // Deduplicate tags by frequency, prefer shorter/cleaner terms
+        const tagFreq = new Map()
+        for (const tag of allItemTags) {
+          const t = tag.trim()
+          if (t && t.length >= 4 && t.length <= 50) {
+            tagFreq.set(t, (tagFreq.get(t) || 0) + 1)
+          }
+        }
+        const sortedTags = [...tagFreq.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([t]) => t)
+        for (const tag of sortedTags) {
+          if (!keywords.includes(tag)) keywords.push(tag)
+        }
+      }
       if (keywords.length === 0) {
         for (const v of videos.slice(0, 12)) {
           const seed = v.title.split(/[|\-—]/)[0].trim()
@@ -182,7 +253,7 @@ export async function fetchSection(sectionAnchor) {
 
       const creators = [...creatorMap.entries()].map(([handle, channel_url]) => ({ handle, channel_url }))
       return { videos, creators, keywords: keywords.slice(0, 30) }
-    }, listSelector)
+    }, sectionAnchor)
 
     return result
   } catch (err) {
