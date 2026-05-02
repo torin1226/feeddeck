@@ -8,7 +8,6 @@ import ErrorBoundary from './ErrorBoundary'
 import FloatingQueue from './FloatingQueue'
 import GlobalToast from './GlobalToast'
 import OfflineBanner from './OfflineBanner'
-import ShuffleDebugOverlay from './ShuffleDebugOverlay'
 
 // Code-split route-level pages for smaller initial bundle
 const HomePage = lazy(() => import('../pages/HomePage'))
@@ -76,7 +75,6 @@ export default function AppShell() {
       {!isFeed && <FloatingQueue />}
       <GlobalToast />
       <OfflineBanner />
-      <ShuffleDebugOverlay />
     </>
   )
 
