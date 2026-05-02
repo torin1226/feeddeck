@@ -21,6 +21,7 @@
 
 import { db } from './database.js'
 import { logger } from './logger.js'
+import { safeParse } from './utils.js'
 
 const TRENDS_TTL_MIN_DEFAULT = 360 // 6h
 
@@ -37,7 +38,7 @@ function readTrendsCache(sourceKey) {
     const fetchedAt = new Date(row.fetched_at).getTime()
     const ageMin = (Date.now() - fetchedAt) / 60_000
     if (ageMin > (row.ttl_minutes || TRENDS_TTL_MIN_DEFAULT)) return null
-    return JSON.parse(row.payload_json)
+    return safeParse(row.payload_json)
   } catch (err) {
     logger.warn('trends_cache read failed', { sourceKey, error: err.message })
     return null
