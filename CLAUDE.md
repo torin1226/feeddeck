@@ -3,6 +3,12 @@
 ## Local Environment
 - **Local path:** `C:\Users\torin\Documents\Claude\area 51\feeddeck`
 
+## Backlog Location (NON-NEGOTIABLE)
+
+**The backlog lives at the vault root: `../BACKLOG.md`** (one level up from this directory; absolute path `C:\Users\torin\Documents\Claude\area 51\BACKLOG.md`). Companion archive: `../BACKLOG-ARCHIVE.md`.
+
+There used to be a `feeddeck/BACKLOG.md` here too. As of 2026-05-02 it is a redirect stub — do not edit it. Any reference to "BACKLOG.md" in skills, prompts, or docs that resolves into this directory is stale; treat it as pointing at `../BACKLOG.md`. See `../_memory/decisions/2026-05-02-backlog-consolidation.md` for the full rationale.
+
 ## Memory Protocol (NON-NEGOTIABLE)
 
 This project has a persistent memory vault at `../_memory/`. You MUST read it before doing ANY work.

@@ -30,7 +30,7 @@ Do NOT skip these reads. They contain context that doesn't fit in CLAUDE.md and 
 Read the update log and latest memory session log to understand what happened last time.
 
 ```
-Read: BACKLOG.md (check the Completed section for recent entries)
+Read: ../BACKLOG.md (vault root — check the Completed (Recent) section for recent entries)
 Read: UPDATE_LOG.md (read the most recent entry)
 ```
 
@@ -96,12 +96,12 @@ Report any issues found.
 
 If Steps 2 or 4 found errors:
 1. Fix them now (for anything that takes < 5 minutes)
-2. For bigger issues, add them to the Discovered Tasks section of BACKLOG.md
+2. For bigger issues, add them to the Discovered Tasks section of `../BACKLOG.md` (vault root)
 3. Tell the user what was fixed and what was deferred
 
 ## Step 6: Review Backlog
 
-Read BACKLOG.md and give the user a status report:
+Read `../BACKLOG.md` (vault root) and give the user a status report:
 
 1. Any tasks marked `[~]` (in-progress) from last session
 2. Any tasks marked `[!]` (blocked) and why

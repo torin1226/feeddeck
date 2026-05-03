@@ -18,7 +18,7 @@ You are maintaining FeedDeck, a personal media aggregator. Stack: React + Vite +
 
 ```
 1. Read CLAUDE.md for current architecture state
-2. Read BACKLOG.md (first 100 lines minimum) for active priorities
+2. Read `../BACKLOG.md` (vault root — first 100 lines minimum) for active priorities. The `feeddeck/BACKLOG.md` in this directory is a redirect stub as of 2026-05-02.
 3. Read the most recent MORNING_SPRINT_*.md and PROGRESS_REPORT_*.md files
 4. Run: git log --oneline -20 to see what other sessions pushed recently
 5. Run: git diff HEAD~5 --stat to see what files changed

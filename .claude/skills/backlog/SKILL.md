@@ -11,8 +11,12 @@ You manage the FeedDeck backlog across two files. This is the contract between y
 
 ## File Locations
 
-- **`BACKLOG.md`** — The active backlog. All open, blocked, and decision-needed tasks live here. This is the file you read and update during work sessions.
-- **`BACKLOG-ARCHIVE.md`** — Read-only archive of completed tasks. Completed milestones (M1, M2) are collapsed to one-line summaries in the main file; their full task lists plus all older completed items live here. Reference it when you need historical context, but never write to it during normal work.
+> **2026-05-02 update:** the backlog moved to the vault root. Both files below are at `C:\Users\torin\Documents\Claude\area 51\` (one level up from `feeddeck/`). The `feeddeck/BACKLOG.md` and `feeddeck/BACKLOG-ARCHIVE.md` are now redirect stubs — do not edit them. See `_memory/decisions/2026-05-02-backlog-consolidation.md`.
+
+- **`../BACKLOG.md`** (vault root) — The active backlog. All open, blocked, and decision-needed tasks live here. This is the file you read and update during work sessions.
+- **`../BACKLOG-ARCHIVE.md`** (vault root) — Read-only archive of completed tasks. Completed milestones (M1, M2) are collapsed to one-line summaries in the main file; their full task lists plus all older completed items live here. Reference it when you need historical context, but never write to it during normal work.
+
+Neither file is git-tracked. Edits land on disk only. The change history for individual items lives in session logs at `../_memory/sessions/`.
 
 If the main file doesn't exist or you can't find it, tell the user immediately. Don't guess or create a new one without asking.
 
@@ -42,7 +46,7 @@ The main backlog has this layout (top to bottom):
 
 ## Protocol: Starting a Work Session
 
-1. Read `BACKLOG.md` first. Always. The Progress Summary table gives you instant context.
+1. Read `../BACKLOG.md` (vault root) first. Always. The Progress Summary table gives you instant context.
 2. Look for any `[~]` tasks (in-progress). If found, resume that work.
 3. If no in-progress tasks, pick the next `[ ]` task using the priority rules below.
 4. Mark the task `[~]` before writing any code.
@@ -62,7 +66,7 @@ The main backlog has this layout (top to bottom):
 1. Verify the work is done (code written, tested if possible, no obvious issues).
 2. Change the task from `[~]` to `[x]`, appending today's date: `(2026-04-25)`.
 3. Move the completed task line to the `## Completed (Recent)` section at the bottom, prepending today's date.
-4. If the Recent section exceeds 10 items, move the oldest ones to `BACKLOG-ARCHIVE.md` under `## Completed Tasks`.
+4. If the Recent section exceeds 10 items, move the oldest ones to `../BACKLOG-ARCHIVE.md` under `## Completed Tasks`.
 5. Update the Progress Summary table if the milestone completion % changed.
 6. Save the file.
 
@@ -133,11 +137,11 @@ The user may ask you to reprioritize. When they do:
 
 When ALL tasks in a milestone are `[x]`:
 
-1. Move the full task list to `BACKLOG-ARCHIVE.md` under `## Completed Milestones`.
-2. Replace the milestone section in `BACKLOG.md` with a one-line collapsed summary:
+1. Move the full task list to `../BACKLOG-ARCHIVE.md` under `## Completed Milestones`.
+2. Replace the milestone section in `../BACKLOG.md` with a one-line collapsed summary:
    ```
    ## Milestone N: Title — COMPLETE
-   > All X tasks done. Details in [`BACKLOG-ARCHIVE.md`](BACKLOG-ARCHIVE.md).
+   > All X tasks done. Details in [`BACKLOG-ARCHIVE.md`](../BACKLOG-ARCHIVE.md).
    ```
 3. Update the Progress Summary table.
 
@@ -158,7 +162,7 @@ When ALL tasks in a milestone are `[x]`:
 
 When the user asks "what's the status" or "where are we", give them:
 
-1. The Progress Summary table (already at top of BACKLOG.md — just read it)
+1. The Progress Summary table (already at top of `../BACKLOG.md` — just read it)
 2. What's in progress (`[~]`)
 3. What's blocked (`[!]`) and why
 4. What needs their input (`[?]`)
