@@ -393,6 +393,16 @@ export function initDatabase() {
       last_updated DATETIME DEFAULT (datetime('now'))
     );
 
+    -- Pruning: creators flagged after 4+ downs. action='blocked' filters them
+    -- from scoring; action='dismissed' just hides them from the review prompt.
+    CREATE TABLE IF NOT EXISTS blocked_creators (
+      creator TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      action TEXT NOT NULL DEFAULT 'blocked',
+      reviewed_at DATETIME DEFAULT (datetime('now')),
+      PRIMARY KEY (creator, mode)
+    );
+
     -- 3.12 Taste Feedback: multi-signal taste profile (replaces tag_preferences as primary scoring input)
     CREATE TABLE IF NOT EXISTS taste_profile (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -561,6 +571,13 @@ export function initDatabase() {
     const insertSrc = db.prepare('INSERT OR IGNORE INTO sources (domain, mode, label, query, weight, active) VALUES (?, ?, ?, ?, ?, ?)')
     insertSrc.run('instagram.com', 'social', 'Instagram', '__creators__', 0.8, 0)
     insertSrc.run('twitter.com', 'social', 'Twitter/X', '__creators__', 0.7, 0)
+  } catch {}
+
+  // Migrate: move Instagram off yt-dlp (broken extractor) to Puppeteer scraper via explore/reels
+  try {
+    db.prepare(
+      "UPDATE sources SET query = 'https://www.instagram.com/explore/reels/', active = 1 WHERE domain = 'instagram.com' AND (query = '__creators__' OR active = 0)"
+    ).run()
   } catch {}
 
   // Migrate: add fetch_interval and last_fetched to sources if missing

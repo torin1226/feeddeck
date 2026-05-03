@@ -11,8 +11,32 @@
 // and lazy-loaded content. A headless browser handles all of it.
 // ============================================================
 
+import { readFileSync } from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
 import { SourceAdapter } from './base.js'
 import { logger } from '../logger.js'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+
+// Parse a Netscape-format cookie file into an array of Puppeteer cookie objects.
+// Format per line: domain\tincludeSubdomains\tpath\tsecure\texpires\tname\tvalue
+function parseNetscapeCookies(relPath) {
+  const fullPath = join(__dirname, '..', '..', relPath)
+  let text
+  try { text = readFileSync(fullPath, 'utf-8') } catch { return [] }
+  const cookies = []
+  for (const line of text.split('\n')) {
+    const t = line.trim()
+    if (!t || t.startsWith('#')) continue
+    const parts = t.split('\t')
+    if (parts.length < 7) continue
+    const [domain, , path, secure, expires, name, value] = parts
+    if (!name || !value) continue
+    cookies.push({ name, value, domain, path, secure: secure === 'TRUE', expires: parseInt(expires, 10) || -1 })
+  }
+  return cookies
+}
 
 // Lazy import: puppeteer-extra + stealth plugin for Cloudflare bypass.
 // Falls back to plain puppeteer if puppeteer-extra is not installed.
@@ -146,6 +170,29 @@ const SITE_CONFIGS = {
     },
     thumbnailAttr: ['data-src', 'src'],
     baseUrl: 'https://xhamster.com',
+  },
+
+  // Instagram: Puppeteer scraper using Arc browser cookies.
+  // trendingUrl is the public explore/reels page (no per-creator dependency).
+  // searchUrl supports per-handle discovery when a handle is passed as query.
+  // requiresAuth: cookies/instagram.txt is loaded into the page before navigation.
+  'instagram.com': {
+    trendingUrl: 'https://www.instagram.com/explore/reels/',
+    searchUrl: (q) => `https://www.instagram.com/${encodeURIComponent(q.replace(/^@/, ''))}/reels/`,
+    selectors: {
+      // Each reel link is the card; img inside carries the thumbnail + alt caption
+      videoCard: 'a[href*="/reel/"]',
+      title: 'img',   // alt text = caption
+      thumbnail: 'img',
+      duration: null,  // not shown in grid view
+      views: null,
+      uploader: null,
+      link: null,      // card itself is the link
+    },
+    thumbnailAttr: [],
+    baseUrl: 'https://www.instagram.com',
+    requiresAuth: true,
+    authCookieFile: 'cookies/instagram.txt',
   },
 }
 
@@ -281,6 +328,18 @@ export class ScraperAdapter extends SourceAdapter {
         logger.warn(`Scraper: Chromium unavailable, skipping ${siteKey} (${url})`)
         return []
       }
+
+      // Load auth cookies before navigating so the page sees a logged-in session
+      if (config.requiresAuth && config.authCookieFile) {
+        const cookies = parseNetscapeCookies(config.authCookieFile)
+        if (cookies.length > 0) {
+          await page.setCookie(...cookies)
+          logger.info(`Scraper: loaded ${cookies.length} cookies for ${siteKey}`)
+        } else {
+          logger.warn(`Scraper: no cookies found for ${siteKey} at ${config.authCookieFile}`)
+        }
+      }
+
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 })
 
       // Cloudflare challenge detection: if the page title indicates a challenge,
@@ -361,34 +420,34 @@ export class ScraperAdapter extends SourceAdapter {
         for (const card of cards) {
           if (results.length >= maxResults) break
 
-          // Title — prefer title attribute (more reliable on adult sites), fall back to text content
-          const titleEl = card.querySelector(cfg.selectors.title)
-          const title = titleEl?.getAttribute('title') || titleEl?.textContent?.trim() || ''
-          if (!title) continue
-
-          // Link
-          const linkEl = card.querySelector(cfg.selectors.link)
-          let href = linkEl?.getAttribute('href') || ''
-          if (href && !href.startsWith('http')) {
-            href = cfg.baseUrl + href
-          }
+          // Link first — extracted early so title can fall back to the URL path segment
+          const linkEl = cfg.selectors.link ? card.querySelector(cfg.selectors.link) : null
+          let href = linkEl?.getAttribute('href') || card.getAttribute('href') || ''
+          if (href && !href.startsWith('http')) href = cfg.baseUrl + href
           if (!href) continue
 
-          // Thumbnail (check multiple attrs for lazy loading)
-          const thumbEl = card.querySelector(cfg.selectors.thumbnail)
+          // Title — prefer title attr, then alt text, then text content, then URL path segment
+          // (Instagram grid view leaves img alt empty; shortcode from URL is the last resort)
+          const titleEl = cfg.selectors.title ? card.querySelector(cfg.selectors.title) : null
+          const title = titleEl?.getAttribute('title') || titleEl?.getAttribute('alt') || titleEl?.textContent?.trim()
+            || href.split('/').filter(Boolean).pop() || ''
+          if (!title) continue
+
+          // Thumbnail — check each attr; handles srcset by extracting the first URL token
+          const thumbEl = cfg.selectors.thumbnail ? card.querySelector(cfg.selectors.thumbnail) : null
           let thumbnail = ''
           if (thumbEl) {
             for (const attr of cfg.thumbnailAttr) {
-              const val = thumbEl.getAttribute(attr)
-              if (val && val.startsWith('http')) {
-                thumbnail = val
-                break
-              }
+              const raw = thumbEl.getAttribute(attr)
+              if (!raw) continue
+              // srcset format: "https://... 320w, https://... 640w" — take first URL
+              const url = raw.trim().split(/\s*,\s*/)[0].trim().split(/\s+/)[0]
+              if (url.startsWith('http')) { thumbnail = url; break }
             }
           }
 
           // Duration text: "12:34", "1:05:30", "10m", "1h 5m"
-          const durEl = card.querySelector(cfg.selectors.duration)
+          const durEl = cfg.selectors.duration ? card.querySelector(cfg.selectors.duration) : null
           const durText = durEl?.textContent?.trim() || ''
           let duration = 0
           const durMatch = durText.match(/(\d+):(\d+)(?::(\d+))?/)
@@ -407,7 +466,7 @@ export class ScraperAdapter extends SourceAdapter {
           }
 
           // Views
-          const viewsEl = card.querySelector(cfg.selectors.views)
+          const viewsEl = cfg.selectors.views ? card.querySelector(cfg.selectors.views) : null
           const viewsText = viewsEl?.textContent?.trim() || ''
           let viewCount = 0
           const viewMatch = viewsText.replace(/,/g, '').match(/([\d.]+)\s*([KkMm])?/)
@@ -419,7 +478,7 @@ export class ScraperAdapter extends SourceAdapter {
           }
 
           // Uploader
-          const uploaderEl = card.querySelector(cfg.selectors.uploader)
+          const uploaderEl = cfg.selectors.uploader ? card.querySelector(cfg.selectors.uploader) : null
           const uploader = uploaderEl?.textContent?.trim() || ''
 
           results.push({ title, url: href, thumbnail, duration, view_count: viewCount, uploader })
