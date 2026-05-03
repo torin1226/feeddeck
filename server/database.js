@@ -1116,6 +1116,21 @@ export function initDatabase() {
     logger.error('row_engagement table creation failed:', { error: err.message })
   }
 
+  // Stale homepage_cache housekeeping. Expired unviewed rows are filtered
+  // out of every read path (`expires_at > datetime('now')`) but never
+  // deleted, so the table accumulates indefinitely. One-shot purge on boot
+  // keeps the table bounded; idempotent (no-op once drained).
+  try {
+    const result = db.prepare(
+      "DELETE FROM homepage_cache WHERE expires_at < datetime('now') AND viewed = 0"
+    ).run()
+    if (result.changes > 0) {
+      logger.info('Purged stale unviewed homepage_cache rows', { rows: result.changes })
+    }
+  } catch (err) {
+    logger.warn('homepage_cache stale-row purge failed', { error: err.message })
+  }
+
   // ---------------------------------------------------------------
   // Recommendation Trail (per Recommendation Trail design 2026-05-01)
   // Persistent pool of "videos pulled because the user watched X."
