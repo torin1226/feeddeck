@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState } from 'react'
 import useFeedStore from '../../stores/feedStore'
+import ThumbsRating from '../ThumbsRating'
 
 export default function RemixHero({ video }) {
   const videoRef = useRef(null)
@@ -138,6 +139,19 @@ export default function RemixHero({ video }) {
       <div className="absolute bottom-32 left-8 right-8 h-1 bg-white/20 rounded-full overflow-hidden pointer-events-none">
         <div className="h-full bg-white/50 transition-[width] duration-300" style={{ width: `${progress * 100}%` }} />
       </div>
+
+      {/* Thumbs rating — sits above the progress bar (bottom-32) and the carousel below it */}
+      <ThumbsRating
+        videoUrl={video.url}
+        surfaceType="feed_tab"
+        surfaceKey="feed"
+        tags={Array.isArray(video.tags) ? video.tags : []}
+        creator={video.creator || video.uploader || ''}
+        title={video.title || ''}
+        thumbnail={video.thumbnail || ''}
+        source={video.source || ''}
+        positionClass="absolute bottom-44 left-1/2 -translate-x-1/2"
+      />
     </div>
   )
 }

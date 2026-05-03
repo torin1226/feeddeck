@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, memo } from 'react'
 import useFeedStore from '../../stores/feedStore'
+import ThumbsRating from '../ThumbsRating'
 
 const ForYouSlot = memo(function ForYouSlot({ video, index, isActive, onVideoRef }) {
   const videoRef = useRef(null)
@@ -128,6 +129,21 @@ const ForYouSlot = memo(function ForYouSlot({ video, index, isActive, onVideoRef
             <h2 className="text-white text-2xl font-bold leading-tight">{video.title}</h2>
             {video.creator && <p className="text-white/60 text-sm mt-1">{video.creator}</p>}
           </div>
+
+          {/* Thumbs rating — only on the active slot */}
+          {isActive && (
+            <ThumbsRating
+              videoUrl={video.url}
+              surfaceType="feed_tab"
+              surfaceKey="feed"
+              tags={Array.isArray(video.tags) ? video.tags : []}
+              creator={video.creator || video.uploader || ''}
+              title={video.title || ''}
+              thumbnail={video.thumbnail || ''}
+              source={video.source || ''}
+              visible={!theatreMode}
+            />
+          )}
 
           {/* Theatre button — top right */}
           <button

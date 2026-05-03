@@ -91,13 +91,13 @@ router.post('/api/ratings', express.json(), (req, res) => {
     if (creator) {
       const creatorKey = creator.trim()
       if (creatorKey) {
-        const boostDelta = rating === 'up' ? 0.25 : -0.15
+        const boostDelta = rating === 'up' ? 0.25 : -0.25
         const existing = db.prepare(
           'SELECT creator, boost_score, surface_boosts FROM creator_boosts WHERE creator = ? AND (mode IS NULL OR mode = ?)'
         ).get(creatorKey, videoMode)
 
         if (existing) {
-          const newScore = Math.max(-1, existing.boost_score + boostDelta)
+          const newScore = Math.max(-1, Math.min(1, existing.boost_score + boostDelta))
           let surfaceBoosts = {}
           try { surfaceBoosts = JSON.parse(existing.surface_boosts || '{}') } catch {}
           if (surfaceKey) {
@@ -110,7 +110,7 @@ router.post('/api/ratings', express.json(), (req, res) => {
           const surfaceBoosts = surfaceKey ? { [surfaceKey]: boostDelta } : {}
           db.prepare(
             'INSERT INTO creator_boosts (creator, boost_score, surface_boosts, mode, last_updated) VALUES (?, ?, ?, ?, datetime(\'now\'))'
-          ).run(creatorKey, Math.max(-1, boostDelta), JSON.stringify(surfaceBoosts), videoMode)
+          ).run(creatorKey, Math.max(-1, Math.min(1, boostDelta)), JSON.stringify(surfaceBoosts), videoMode)
         }
       }
     }
@@ -240,7 +240,7 @@ router.post('/api/ratings/undo', express.json(), (req, res) => {
         }
       }
 
-      // Reverse creator_boosts (+0.15 to undo the -0.15 applied on thumbs-down)
+      // Reverse creator_boosts (+0.25 to undo the -0.25 applied on thumbs-down)
       if (creator) {
         const creatorKey = creator.trim()
         if (creatorKey) {
@@ -248,11 +248,11 @@ router.post('/api/ratings/undo', express.json(), (req, res) => {
             'SELECT creator, boost_score, surface_boosts FROM creator_boosts WHERE creator = ? AND (mode IS NULL OR mode = ?)'
           ).get(creatorKey, videoMode)
           if (boostRow) {
-            const newScore = Math.max(-1, boostRow.boost_score + 0.15)
+            const newScore = Math.max(-1, Math.min(1, boostRow.boost_score + 0.25))
             let surfaceBoosts = {}
             try { surfaceBoosts = JSON.parse(boostRow.surface_boosts || '{}') } catch {}
             if (surfaceKey) {
-              surfaceBoosts[surfaceKey] = (surfaceBoosts[surfaceKey] || 0) + 0.15
+              surfaceBoosts[surfaceKey] = (surfaceBoosts[surfaceKey] || 0) + 0.25
             }
             db.prepare(
               'UPDATE creator_boosts SET boost_score = ?, surface_boosts = ?, last_updated = datetime(\'now\') WHERE creator = ?'

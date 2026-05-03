@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import useModeStore from './modeStore'
 import { safeStorage } from './safeStorage'
 import { inferMode } from '../utils/mode'
@@ -184,7 +184,9 @@ const useLibraryStore = create(
     }),
     {
       name: 'fd-lib',
-      storage: safeStorage,
+      // Wrap safeStorage with createJSONStorage — persist middleware passes
+      // a {state, version} object to setItem, so storage MUST serialize.
+      storage: createJSONStorage(() => safeStorage),
     }
   )
 )

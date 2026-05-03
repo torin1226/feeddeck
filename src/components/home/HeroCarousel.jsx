@@ -96,8 +96,8 @@ export default function HeroCarousel() {
   return (
     <div className="[&_*]:pointer-events-auto">
       {/* Search row */}
-      <div className="px-10 mb-1">
-        <div className="relative max-w-[520px]">
+      <div className="px-10 mb-3">
+        <div className="relative max-w-[360px]">
           <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted text-sm pointer-events-none">
             &#8981;
           </span>
@@ -129,7 +129,7 @@ export default function HeroCarousel() {
           )}
         </div>
       </div>
-      <div className="px-10 mb-2.5">
+      <div className="px-10 mb-2">
         <div className="text-caption font-semibold text-text-muted uppercase tracking-wider flex items-center gap-2">
           <span>{searching ? 'Searching...' : searchResults ? `Results for \u201C${query}\u201D` : 'Up Next'}</span>
           {searchResults && (
@@ -176,7 +176,7 @@ function CarouselCard({ item, isActive, onClick, onHover }) {
       onMouseEnter={onHover}
       onFocus={onHover}
       tabIndex={0}
-      className={`flex-none w-card-lg h-card-thumb-lg rounded-lg overflow-hidden cursor-pointer
+      className={`flex-none w-[160px] h-[90px] rounded-lg overflow-hidden cursor-pointer
         relative transition-all duration-250 ease-out border-2 bg-overlay
         ${isActive ? 'border-accent shadow-glow-accent' : 'border-transparent'}
         hover:scale-[var(--hover-scale)] hover:-translate-y-0.5 hover:shadow-card-hover`}

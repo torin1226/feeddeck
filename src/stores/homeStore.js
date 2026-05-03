@@ -182,6 +182,7 @@ const useHomeStore = create((set, get) => ({
   carouselItems: [],
   theatreMode: false,
   inlinePlay: false, // true = video playing in hero area, categories still visible
+  upNextHidden: false, // true = HeroCarousel pushed below the hero into normal row flow
   // Error from last failed homepage fetch (null = no error)
   fetchError: null,
   // Lifecycle state of the homepage fetch:
@@ -215,6 +216,8 @@ const useHomeStore = create((set, get) => ({
   setHeroItem: (item) => set({ heroItem: item }),
   setTheatreMode: (on) => set({ theatreMode: on, inlinePlay: false }),
   toggleTheatre: () => set((s) => ({ theatreMode: !s.theatreMode, inlinePlay: false })),
+  setUpNextHidden: (hidden) => set({ upNextHidden: hidden }),
+  toggleUpNextHidden: () => set((s) => ({ upNextHidden: !s.upNextHidden })),
   startInlinePlay: () => set({ inlinePlay: true, theatreMode: false }),
   stopInlinePlay: () => set({ inlinePlay: false }),
 

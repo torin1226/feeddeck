@@ -89,6 +89,13 @@ function makeDb() {
       tags TEXT DEFAULT '[]',
       PRIMARY KEY (row_key, video_url)
     );
+    CREATE TABLE blocked_creators (
+      creator TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      action TEXT NOT NULL DEFAULT 'blocked',
+      reviewed_at DATETIME DEFAULT (datetime('now')),
+      PRIMARY KEY (creator, mode)
+    );
   `)
   return db
 }
@@ -127,6 +134,36 @@ describe('Phase 1 dynamic taste model', () => {
     const out = scoreVideos(videos, 'test', { mode: 'social' })
     expect(out.find(x => x.url === downUrl)).toBeUndefined()
     expect(out.find(x => x.url === 'https://example.com/v/keep')).toBeDefined()
+  })
+
+  it('scoreVideos hard-excludes blocked creators (mode-scoped)', async () => {
+    const { scoreVideos } = await importScoring()
+    testDb.prepare(
+      `INSERT INTO blocked_creators (creator, mode, action) VALUES ('Spammer', 'social', 'blocked')`
+    ).run()
+    // Same creator name in nsfw — should NOT be blocked there
+    const videos = [
+      v({ url: 'https://example.com/v/blk', uploader: 'Spammer', title: 'block me' }),
+      v({ url: 'https://example.com/v/ok', uploader: 'Friendly', title: 'keep me' }),
+    ]
+    const social = scoreVideos(videos, 'test', { mode: 'social' })
+    expect(social.find(x => x.url === 'https://example.com/v/blk')).toBeUndefined()
+    expect(social.find(x => x.url === 'https://example.com/v/ok')).toBeDefined()
+
+    const nsfw = scoreVideos(videos, 'test', { mode: 'nsfw' })
+    expect(nsfw.find(x => x.url === 'https://example.com/v/blk')).toBeDefined()
+  })
+
+  it('dismissed creators are NOT excluded from scoring', async () => {
+    const { scoreVideos } = await importScoring()
+    testDb.prepare(
+      `INSERT INTO blocked_creators (creator, mode, action) VALUES ('Reviewed', 'social', 'dismissed')`
+    ).run()
+    const out = scoreVideos(
+      [v({ url: 'https://example.com/v/dis', uploader: 'Reviewed' })],
+      'test', { mode: 'social' }
+    )
+    expect(out.find(x => x.url === 'https://example.com/v/dis')).toBeDefined()
   })
 
   it('liked tag (fresh) outscores baseline video', async () => {

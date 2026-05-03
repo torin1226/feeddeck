@@ -22,6 +22,7 @@ export default function ThumbsRating({
   source = '',
   visible = true,
   onRated,
+  positionClass = 'absolute bottom-3 left-1/2 -translate-x-1/2',
 }) {
   const [animating, setAnimating] = useState(null) // 'up' | 'down' | null
   const recordRating = useRatingsStore(s => s.recordRating)
@@ -95,7 +96,7 @@ export default function ThumbsRating({
   if (existingRating) {
     return (
       <div
-        className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full"
+        className={`${positionClass} z-20 flex items-center gap-2 px-3 py-1.5 rounded-full`}
         style={{
           background: 'rgba(0,0,0,0.4)',
           backdropFilter: 'blur(12px)',
@@ -116,7 +117,7 @@ export default function ThumbsRating({
 
   return (
     <div
-      className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-4"
+      className={`${positionClass} z-20 flex items-center gap-4`}
       style={{
         opacity: visible ? 1 : 0,
         transform: `translateX(-50%) scale(${visible ? 1 : 0.9})`,

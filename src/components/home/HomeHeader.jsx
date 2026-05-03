@@ -3,7 +3,7 @@ import { useLocation, useSearchParams } from 'react-router-dom'
 import useViewTransitionNavigate from '../../hooks/useViewTransitionNavigate'
 import useHomeStore from '../../stores/homeStore'
 import useModeStore from '../../stores/modeStore'
-import useThemeStore from '../../stores/themeStore'
+import useDeviceStore from '../../stores/deviceStore'
 
 // ============================================================
 // HomeHeader
@@ -20,7 +20,9 @@ export default function HomeHeader() {
   const shuffling = useHomeStore(s => s.shuffling)
   const refreshing = useHomeStore(s => s.refreshing)
   const { isSFW, toggleMode } = useModeStore()
-  const { theme, toggleTheme } = useThemeStore()
+  const mobilePreview = useDeviceStore(s => s.mobilePreview)
+  const toggleMobilePreview = useDeviceStore(s => s.toggleMobilePreview)
+  const isDev = import.meta.env.DEV
 
   // --- Search state ---
   const [searchOpen, setSearchOpen] = useState(false)
@@ -376,14 +378,23 @@ export default function HomeHeader() {
         >
           ⚙
         </button>
-        <button
-          onClick={toggleTheme}
-          className="p-2 rounded-lg text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {theme === 'dark' ? '☀' : '🌙'}
-        </button>
+        {isDev && (
+          <button
+            onClick={toggleMobilePreview}
+            className={`p-2 rounded-lg transition-colors cursor-pointer ${
+              mobilePreview
+                ? 'bg-accent text-black hover:bg-accent/80'
+                : 'text-text-secondary hover:text-text-primary'
+            }`}
+            title="Toggle mobile preview (Ctrl+M)"
+            aria-label="Toggle mobile preview"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+              <line x1="12" y1="18" x2="12" y2="18" />
+            </svg>
+          </button>
+        )}
         <button
           onClick={toggleMode}
           title={isSFW ? 'Switch to full library' : 'Switch to Social mode'}

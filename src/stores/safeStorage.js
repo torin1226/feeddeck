@@ -11,10 +11,22 @@ import useToastStore from './toastStore'
 // Track whether we've shown a quota warning this session to avoid spam
 let _quotaWarningShown = false
 
+// Legacy corrupt sentinel: prior versions of this file passed safeStorage
+// directly to Zustand persist without createJSONStorage wrapping, which
+// caused setItem to receive a {state, version} object that localStorage
+// coerced to the literal string "[object Object]". Detect and evict on
+// read so upgraded users don't carry the broken entry forever.
+const LEGACY_CORRUPT = '[object Object]'
+
 export const safeStorage = {
   getItem: (name) => {
     try {
-      return localStorage.getItem(name)
+      const v = localStorage.getItem(name)
+      if (v === LEGACY_CORRUPT) {
+        try { localStorage.removeItem(name) } catch {}
+        return null
+      }
+      return v
     } catch {
       return null
     }

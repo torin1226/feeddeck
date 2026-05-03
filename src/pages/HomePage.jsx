@@ -5,6 +5,7 @@ import useFeedStore from '../stores/feedStore'
 import useFocusPreview from '../hooks/useFocusPreview'
 import HomeHeader from '../components/home/HomeHeader'
 import HeroSection from '../components/home/HeroSection'
+import HeroCarousel from '../components/home/HeroCarousel'
 import GalleryShelf from '../components/home/GalleryShelf'
 import BrowseSection from '../components/home/BrowseSection'
 import TheatreControls from '../components/home/TheatreControls'
@@ -18,7 +19,7 @@ import { SkeletonHero, SkeletonGalleryShelf } from '../components/Skeletons'
 // ============================================================
 
 export default function HomePage() {
-  const { fetchHomepage, heroItem, theatreMode, fetchError } = useHomeStore()
+  const { fetchHomepage, heroItem, theatreMode, fetchError, upNextHidden } = useHomeStore()
   const isSFW = useModeStore((s) => s.isSFW)
 
   // App-level singleton: subscribe to homeStore.focusedItem and drive
@@ -73,6 +74,11 @@ export default function HomePage() {
           {!theatreMode && (
             <>
               <div className="relative z-content pb-24">
+                {upNextHidden && (
+                  <div className="pt-6 pb-2">
+                    <HeroCarousel />
+                  </div>
+                )}
                 <GalleryShelf />
                 <BrowseSection />
               </div>

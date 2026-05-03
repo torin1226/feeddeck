@@ -29,8 +29,8 @@ import { logger } from './logger.js'
 
 const SOCIAL_POINTS = {
   subscriber: 100,
-  creatorBoostMultiplier: 40,
-  creatorBoostCap: 30,
+  creatorBoostMultiplier: 60,
+  creatorBoostCap: 60,
   likedTagPerMatch: 30,
   associatedTagPerMatch: 12,
   dislikedTagPerMatch: -15,
@@ -46,8 +46,8 @@ const SOCIAL_POINTS = {
 
 const NSFW_POINTS = {
   subscriber: 60,
-  creatorBoostMultiplier: 50,
-  creatorBoostCap: 40,
+  creatorBoostMultiplier: 60,
+  creatorBoostCap: 60,
   likedTagPerMatch: 35,
   associatedTagPerMatch: 14,
   dislikedTagPerMatch: -25,
@@ -166,6 +166,14 @@ function _loadProfile(mode = 'social') {
       db.prepare("SELECT video_url FROM video_ratings WHERE rating = 'down'").all().map(r => r.video_url)
     )
 
+    // Blocked creators: hard filter applied per-mode. action='blocked' only —
+    // 'dismissed' rows are review-prompt state, not a scoring signal.
+    const blockedCreators = new Set(
+      db.prepare(
+        "SELECT creator FROM blocked_creators WHERE action = 'blocked' AND mode = ?"
+      ).all(mode).map(r => r.creator)
+    )
+
     // NSFW extras — only loaded when needed.
     let subscribedModels = new Set()
     let likesPoolUrls = new Set()
@@ -197,6 +205,7 @@ function _loadProfile(mode = 'social') {
       associatedTagSet,
       creatorBoosts,
       downvotedUrls,
+      blockedCreators,
       subscribedModels,
       likesPoolUrls,
       likesPoolCreators,
@@ -215,6 +224,7 @@ function _loadProfile(mode = 'social') {
       associatedTagSet: new Set(),
       creatorBoosts: new Map(),
       downvotedUrls: new Set(),
+      blockedCreators: new Set(),
       subscribedModels: new Set(),
       likesPoolUrls: new Set(),
       likesPoolCreators: new Set(),
@@ -252,13 +262,16 @@ export function scoreVideo(video, _surfaceKey = null, profile = null, opts = {})
 
   if (p.downvotedUrls.has(video.url)) return 0
 
+  const creator = video.creator || video.uploader
+  if (creator && p.blockedCreators.has(creator)) return 0
+
   let points = 0
 
   if (opts.isSubscribed) points += P.subscriber
 
-  const creator = video.creator || video.uploader
   if (creator && p.creatorBoosts.has(creator)) {
-    points += Math.min(P.creatorBoostCap, p.creatorBoosts.get(creator) * P.creatorBoostMultiplier)
+    const raw = p.creatorBoosts.get(creator) * P.creatorBoostMultiplier
+    points += Math.max(-P.creatorBoostCap, Math.min(P.creatorBoostCap, raw))
   }
 
   // Liked-tag scoring is proportional to weight, capped at 2× per tag.
@@ -334,6 +347,11 @@ export function scoreVideos(videos, surfaceKey = null, options = {}) {
   if (options.excludeDownvoted !== false) {
     result = result.filter(v => !profile.downvotedUrls.has(v.url))
   }
+  // Blocked creators are always filtered (no opt-out) — once you say block, you mean block.
+  result = result.filter(v => {
+    const c = v.creator || v.uploader
+    return !c || !profile.blockedCreators.has(c)
+  })
 
   return result
     .map(v => ({

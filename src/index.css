@@ -404,3 +404,8 @@ html {
   border: 1px solid var(--glass-accent-border);
   box-shadow: var(--glass-glow-accent);
 }
+
+/* Hero progress bar — 2px track grows to 4px on hover of the wider hit area. */
+.hero-progress:hover .hero-progress__track {
+  height: 4px;
+}

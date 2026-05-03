@@ -17,6 +17,7 @@ export default function SettingsPage() {
   const refreshHome = useHomeStore(s => s.refreshHome)
   const shuffleHome = useHomeStore(s => s.shuffleHome)
   const showToast = useToastStore(s => s.showToast)
+  const showActionToast = useToastStore(s => s.showActionToast)
   const [sources, setSources] = useState([])
   const [adapterHealth, setAdapterHealth] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -32,6 +33,10 @@ export default function SettingsPage() {
   const [newTag, setNewTag] = useState('')
   const [newTagPref, setNewTagPref] = useState('liked')
 
+  // Channels to review (creators with 4+ thumbs-down)
+  const [reviewCreators, setReviewCreators] = useState([])
+  const [reviewThreshold, setReviewThreshold] = useState(4)
+
   // Cookie auth
   const [cookieStatus, setCookieStatus] = useState(null)
 
@@ -41,6 +46,19 @@ export default function SettingsPage() {
   const [seedLog, setSeedLog] = useState([])
   const [seedRunning, setSeedRunning] = useState(false)
   const [seedResult, setSeedResult] = useState(null)
+
+  const reviewMode = isSFW ? 'social' : 'nsfw'
+
+  const fetchReviewCreators = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/creators/needs-review?mode=${reviewMode}`)
+      const data = await res.json()
+      setReviewCreators(data.creators || [])
+      if (data.threshold) setReviewThreshold(data.threshold)
+    } catch (_err) {
+      setReviewCreators([])
+    }
+  }, [reviewMode])
 
   const fetchSources = useCallback(async () => {
     try {
@@ -58,14 +76,56 @@ export default function SettingsPage() {
       setAdapterHealth(healthData)
       setTagPrefs(tagData.preferences || [])
       setCookieStatus(cookieData)
+      fetchReviewCreators()
     } catch (err) {
       console.error('Failed to load settings:', err)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [fetchReviewCreators])
+
+  const reviewCreator = useCallback(async (creator, action) => {
+    const removed = reviewCreators.find(c => c.creator === creator)
+    try {
+      const res = await fetch(`${API}/creators/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ creator, mode: reviewMode }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      setReviewCreators(prev => prev.filter(c => c.creator !== creator))
+
+      if (action === 'block') {
+        showActionToast(`Blocked ${creator}`, {
+          type: 'success', position: 'bottom', timeout: 10000,
+          actions: [{
+            label: 'Undo',
+            primary: true,
+            onClick: async () => {
+              try {
+                await fetch(`${API}/creators/unblock`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ creator, mode: reviewMode }),
+                })
+                if (removed) setReviewCreators(prev => [removed, ...prev])
+                showToast(`Restored ${creator}`, 'success')
+              } catch (_e) {
+                showToast(`Failed to restore ${creator}`, 'error')
+              }
+            },
+          }],
+        })
+      } else {
+        showToast(`Keeping ${creator}`, 'success')
+      }
+    } catch (_err) {
+      showToast(`Failed to ${action} ${creator}`, 'error')
+    }
+  }, [reviewMode, reviewCreators, showToast, showActionToast])
 
   useEffect(() => { fetchSources() }, [fetchSources])
+  useEffect(() => { fetchReviewCreators() }, [fetchReviewCreators])
 
   // Load saved usernames on mount
   useEffect(() => {
@@ -290,6 +350,51 @@ export default function SettingsPage() {
             </p>
           </div>
         </section>
+
+        {/* Channels to Review (creators with N+ thumbs-down) */}
+        {reviewCreators.length > 0 && (
+          <section>
+            <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider mb-3">
+              Channels to review ({reviewCreators.length})
+            </h2>
+            <div className="bg-surface-raised rounded-xl border border-surface-border overflow-hidden">
+              <p className="text-text-muted text-xs leading-relaxed px-4 pt-3 pb-2">
+                You've thumbs-downed these creators {reviewThreshold}+ times. Block to never see them again, or keep to leave them in the rotation.
+              </p>
+              <ul className="divide-y divide-surface-border">
+                {reviewCreators.map(c => (
+                  <li key={c.creator} className="flex items-center justify-between gap-3 px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-text-primary font-medium text-sm truncate">{c.creator}</span>
+                        <span className="shrink-0 text-[10px] uppercase tracking-wider text-accent bg-accent/10 border border-accent/20 rounded px-1.5 py-0.5">
+                          {c.down_count} downs
+                        </span>
+                      </div>
+                      {c.sample_title && (
+                        <div className="text-text-muted text-xs mt-0.5 truncate">"{c.sample_title}"</div>
+                      )}
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        onClick={() => reviewCreator(c.creator, 'block')}
+                        className="px-3 py-1.5 rounded-lg text-xs border border-accent/30 text-accent hover:bg-accent/10 transition-colors cursor-pointer"
+                      >
+                        Block
+                      </button>
+                      <button
+                        onClick={() => reviewCreator(c.creator, 'dismiss')}
+                        className="px-3 py-1.5 rounded-lg text-xs border border-surface-border text-text-secondary hover:text-text-primary hover:border-text-muted transition-colors cursor-pointer"
+                      >
+                        Keep
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+        )}
 
         {/* Tag Preferences */}
         <section>

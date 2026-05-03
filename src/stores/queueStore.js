@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import { safeStorage } from './safeStorage'
 import useModeStore from './modeStore'
 import { modeFromIsSFW, isVideoForMode } from '../utils/mode'
@@ -269,7 +269,11 @@ const useQueueStore = create(persist((set, get) => ({
   setCurrentIndex: (index) => set({ currentIndex: index }),
 }), {
   name: 'fd-queue',
-  storage: safeStorage,
+  // Wrap safeStorage with createJSONStorage so the persist middleware
+  // serializes to a string before hitting localStorage. Without this,
+  // setItem received the raw {state, version} object and localStorage
+  // coerced it to "[object Object]". (Zustand v4 contract.)
+  storage: createJSONStorage(() => safeStorage),
   partialize: (state) => ({
     queue: state.queue,
     currentIndex: state.currentIndex,

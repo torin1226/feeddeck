@@ -193,6 +193,7 @@ const SITE_CONFIGS = {
     baseUrl: 'https://www.instagram.com',
     requiresAuth: true,
     authCookieFile: 'cookies/instagram.txt',
+    ogEnrich: true,
   },
 }
 
@@ -489,7 +490,7 @@ export class ScraperAdapter extends SourceAdapter {
 
       // Normalize into our standard shape
       this._consecutiveFailures = 0
-      return videos.map(v => this.normalizeVideo({
+      const normalized = videos.map(v => this.normalizeVideo({
         id: this._urlToId(v.url),
         webpage_url: v.url,
         title: v.title,
@@ -499,6 +500,13 @@ export class ScraperAdapter extends SourceAdapter {
         uploader: v.uploader,
         source: siteKey,
       }))
+
+      // OG enrichment: fetch real title, thumbnail, and hashtag tags from each page's Open Graph tags.
+      // Required for sites (like Instagram) where Puppeteer can't extract metadata from the grid view.
+      if (config.ogEnrich && config.authCookieFile && normalized.length > 0) {
+        return this._enrichWithOgTags(normalized, config.authCookieFile)
+      }
+      return normalized
     } catch (err) {
       this._consecutiveFailures++
       logger.warn(`Scraper failure #${this._consecutiveFailures} for ${siteKey}: ${err.message}`)
@@ -739,6 +747,76 @@ export class ScraperAdapter extends SourceAdapter {
     }
 
     return videos
+  }
+
+  // Enrich a batch of normalized videos with Open Graph metadata fetched from each URL.
+  // Replaces shortcode titles with real captions, populates thumbnails, and extracts
+  // hashtags as tags for taste-profile scoring.
+  // Runs up to 5 fetches concurrently with a 200ms gap between batches.
+  async _enrichWithOgTags(videos, authCookieFile) {
+    const cookies = parseNetscapeCookies(authCookieFile)
+    const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ')
+    const BATCH = 5
+
+    const enriched = [...videos]
+    for (let i = 0; i < enriched.length; i += BATCH) {
+      const batch = enriched.slice(i, i + BATCH)
+      await Promise.all(batch.map(async (video, batchIdx) => {
+        try {
+          const res = await fetch(video.url, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+              'Cookie': cookieHeader,
+              'Accept': 'text/html,application/xhtml+xml',
+            },
+            redirect: 'follow',
+            signal: AbortSignal.timeout(10_000),
+          })
+          if (!res.ok) return
+
+          const html = await res.text()
+
+          // Extract OG tags — handle both attribute orderings
+          const ogMeta = (prop) => {
+            const m = html.match(new RegExp(`<meta[^>]+property="${prop}"[^>]+content="([^"]*)"`, 'i'))
+              || html.match(new RegExp(`<meta[^>]+content="([^"]*)"[^>]+property="${prop}"`, 'i'))
+            if (!m) return ''
+            // Decode common HTML entities
+            return m[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+              .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#x2F;/g, '/').trim()
+          }
+
+          const ogTitle = ogMeta('og:title')
+          const ogDesc = ogMeta('og:description')
+          const ogImage = ogMeta('og:image')
+
+          // Title: strip Instagram suffix ("... • Instagram", "on Instagram: ...")
+          const cleanTitle = ogTitle
+            .replace(/\s*[•·]\s*(Instagram|Reel)\s*$/, '')
+            .replace(/\s+on Instagram:\s*"?/i, ': ')
+            .trim()
+
+          // Tags: all #hashtags from the caption in og:description
+          const tags = ogDesc ? [...ogDesc.matchAll(/#(\w+)/g)].map(m => m[1]).slice(0, 30) : []
+
+          // Uploader: Instagram og:title often has "Name (@handle)" or "Name on Instagram"
+          const uploaderMatch = ogTitle.match(/[•·]\s*([^•·@]+\(@[^)]+\))\s*[•·]?/)
+            || ogTitle.match(/[•·]\s*([^•·]+?)\s+on Instagram/i)
+          const uploader = uploaderMatch ? uploaderMatch[1].trim() : video.uploader
+
+          if (cleanTitle) enriched[i + batchIdx].title = cleanTitle
+          if (ogImage) enriched[i + batchIdx].thumbnail = ogImage
+          if (tags.length > 0) enriched[i + batchIdx].tags = tags
+          if (uploader) enriched[i + batchIdx].uploader = uploader
+        } catch (err) {
+          logger.warn(`OG enrich failed for ${video.url}: ${err.message}`)
+        }
+      }))
+      if (i + BATCH < enriched.length) await new Promise(r => setTimeout(r, 200))
+    }
+
+    logger.info(`Scraper: OG enriched ${enriched.filter(v => v.tags.length > 0).length}/${enriched.length} videos with tags`)
+    return enriched
   }
 
   // Cleanup: close the browser when shutting down

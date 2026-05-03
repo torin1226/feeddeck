@@ -6,8 +6,11 @@ import useQueueStore from '../../stores/queueStore'
 import useRatingsStore from '../../stores/ratingsStore'
 import useToastStore from '../../stores/toastStore'
 import useHeroAutoplay from '../../hooks/useHeroAutoplay'
-import useAmbientColor from '../../hooks/useAmbientColor'
 import HeroCarousel from './HeroCarousel'
+
+// Strip trailing date-like tokens from titles (raw timestamps shouldn't render in the hero).
+const stripTrailingDate = (s) =>
+  (s || '').replace(/\s+(\d{4}-\d{2}-\d{2}|\d{4}\.\d{2}\.\d{2}|\b[A-Z][a-z]{2}\s+\d{1,2},?\s+\d{4})\s*$/, '').trim()
 
 // ============================================================
 // HeroSection
@@ -19,7 +22,7 @@ import HeroCarousel from './HeroCarousel'
 // ============================================================
 
 export default function HeroSection() {
-  const { heroItem, theatreMode, setFocusedItem } = useHomeStore()
+  const { heroItem, theatreMode, setFocusedItem, upNextHidden, toggleUpNextHidden } = useHomeStore()
   const navigate = useNavigate()
   const goWatch = useCallback(() => {
     if (heroItem?.id) navigate(`/watch/${heroItem.id}`)
@@ -36,9 +39,6 @@ export default function HeroSection() {
     autoplayVideoRef, autoplayReady, autoplayUrl,
     muted: autoplayMuted, toggleMute: toggleAutoplayMute,
   } = useHeroAutoplay(heroItem, theatreMode)
-
-  const ambient = useAmbientColor(heroItem?.thumbnail)
-  const ambientRgb = ambient ? `${ambient[0]}, ${ambient[1]}, ${ambient[2]}` : null
 
   const recordRating = useRatingsStore(s => s.recordRating)
   const undoRating = useRatingsStore(s => s.undoRating)
@@ -230,44 +230,31 @@ export default function HeroSection() {
       className={`relative overflow-hidden transition-[height] duration-500 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] ${
         theatreMode ? 'h-screen min-h-screen' : ''
       }`}
-      style={{
-        ...(theatreMode ? {} : { height: '100vh', minHeight: '600px' }),
-        ...(ambientRgb ? { '--hero-ambient-rgb': ambientRgb } : {}),
-      }}
+      style={theatreMode ? {} : { height: '100vh', minHeight: '600px' }}
     >
-      {/* Background image with Ken Burns + autoplay video overlay */}
-      {/* Hero thumbnail — uses object-contain to avoid cropping + blurred fill behind for letterbox */}
+      {/* Full-bleed background — single object-cover thumbnail, darkened.
+          Autoplay video replaces it when ready. */}
       <div className="absolute inset-0">
-        {/* Blurred scaled-up copy as background fill */}
         <img
           src={heroItem.thumbnail}
           alt=""
-          className="absolute inset-0 w-full h-full object-cover scale-110 blur-2xl opacity-40"
-        />
-        {/* Sharp centered image — fades out when autoplay video is ready */}
-        <img
-          src={heroItem.thumbnail}
-          alt=""
-          className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-1000 ${
+          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${
             previewing && !autoplayReady ? 'animate-kenburns' : ''
           } ${autoplayReady ? 'opacity-0' : ''}`}
+          style={{ filter: 'brightness(0.6) saturate(1.1)' }}
         />
-        {/* Autoplay muted video — replaces Ken Burns when stream is resolved */}
         {!theatreMode && autoplayUrl && (
           <video
             ref={autoplayVideoRef}
-            className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-1000 ${
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${
               autoplayReady ? 'opacity-100' : 'opacity-0'
             }`}
+            style={{ filter: 'brightness(0.6) saturate(1.1)' }}
             muted
             playsInline
             loop
           />
         )}
-        {/* Vignette overlay to blend edges into background */}
-        <div className="absolute inset-0" style={{
-          background: `radial-gradient(ellipse at center, transparent 50%, var(--color-surface) 100%)`
-        }} />
       </div>
 
       {/* Video element for theatre mode — proxy CDN URL to avoid CORS/ORB blocking */}
@@ -319,38 +306,24 @@ export default function HeroSection() {
         )
       })()}
 
-      {/* Gradient overlays — dimmer in theatre mode so video is visible */}
+      {/* Bottom scrim — covers bottom 70%, fades into page bg */}
       <div
-        className="absolute inset-0 transition-opacity duration-500"
+        className="absolute inset-x-0 bottom-0 h-[70%] transition-opacity duration-500 pointer-events-none"
         style={{
           background:
-            'linear-gradient(to top, var(--color-surface) 0%, var(--color-gradient-mid) 30%, var(--color-gradient-faint) 65%, transparent 100%)',
+            'linear-gradient(to top, var(--color-surface) 0%, rgba(10,10,12,0.8) 30%, rgba(10,10,12,0.3) 60%, transparent 100%)',
           opacity: theatreMode ? 0.3 : 1,
         }}
       />
+      {/* Left scrim — covers left 60%, full height */}
       <div
-        className="absolute inset-0 transition-opacity duration-500"
+        className="absolute inset-y-0 left-0 w-[60%] transition-opacity duration-500 pointer-events-none"
         style={{
           background:
-            'linear-gradient(to right, var(--color-gradient-solid) 0%, var(--color-gradient-mid) 40%, transparent 75%)',
+            'linear-gradient(to right, rgba(10,10,12,0.7) 0%, transparent 100%)',
           opacity: theatreMode ? 0.2 : 1,
         }}
       />
-      {/* Ambient tint — sampled from hero thumbnail; soft glow at the top
-          edge that bleeds the image's dominant color into the gradient stack.
-          Hidden when no ambient color resolved (CORS-tainted CDNs) so we
-          fall back cleanly to the neutral dark gradients above. */}
-      {ambientRgb && (
-        <div
-          className="absolute inset-0 transition-opacity duration-700 pointer-events-none"
-          style={{
-            background:
-              'linear-gradient(to top, transparent 0%, rgba(var(--hero-ambient-rgb), 0.10) 55%, rgba(var(--hero-ambient-rgb), 0.22) 100%)',
-            opacity: theatreMode ? 0 : 1,
-            mixBlendMode: 'screen',
-          }}
-        />
-      )}
 
       {/* Preview badge */}
       <div
@@ -364,12 +337,12 @@ export default function HeroSection() {
         Preview
       </div>
 
-      {/* Mute/unmute toggle for hero autoplay video */}
+      {/* Mute/unmute toggle for hero autoplay video — top-right slot adjacent to Preview badge */}
       {autoplayReady && !theatreMode && (
         <button
           onClick={toggleAutoplayMute}
-          className="absolute bottom-[240px] right-10 z-10
-            w-10 h-10 rounded-full bg-black/50 border border-white/[0.12]
+          className="absolute top-[68px] right-[68px] z-10
+            w-9 h-9 rounded-full bg-black/50 border border-white/[0.12]
             backdrop-blur-lg flex items-center justify-center
             text-text-secondary hover:text-text-primary hover:bg-black/70
             transition-all duration-200"
@@ -378,14 +351,14 @@ export default function HeroSection() {
         >
           {autoplayMuted ? (
             // Muted icon (speaker with X)
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
               <line x1="23" y1="9" x2="17" y2="15" />
               <line x1="17" y1="9" x2="23" y2="15" />
             </svg>
           ) : (
             // Unmuted icon (speaker with waves)
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
               <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
               <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
@@ -394,130 +367,183 @@ export default function HeroSection() {
         </button>
       )}
 
-      {/* Hero content — fades out in theatre mode */}
+      {/* Hero content — bottom-left, sits above the Up Next carousel (or above progress bar when hidden) */}
       <div
-        className={`absolute left-10 max-w-[520px] z-10 transition-all duration-500 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] ${
-          theatreMode ? 'bottom-24 opacity-0 pointer-events-none' : 'bottom-[270px]'
+        className={`absolute left-12 max-w-[550px] z-10 transition-all duration-500 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] ${
+          theatreMode ? 'bottom-24 opacity-0 pointer-events-none' : (upNextHidden ? 'bottom-[40px]' : 'bottom-[212px]')
         }`}
       >
-        {/* Tags */}
-        <div className="flex gap-1.5 mb-3 flex-wrap">
-          <span className="text-[11px] font-semibold text-text-muted">
-            {heroItem.uploadYear || new Date(heroItem.addedAt || Date.now()).getFullYear()}
-          </span>
-          <span className="px-2.5 py-0.5 rounded text-[11px] font-semibold bg-white/10 text-text-secondary tracking-wide">
-            {heroItem.genre}
-          </span>
-          <span className="px-2.5 py-0.5 rounded text-[11px] font-semibold bg-white/10 text-text-secondary tracking-wide">
-            {heroItem.duration}
-          </span>
-        </div>
-
-        {/* Title */}
-        <h1 className="font-display text-[clamp(28px,4vw,48px)] font-bold tracking-tighter leading-[1.05] mb-2.5 drop-shadow-[0_2px_20px_rgba(0,0,0,0.5)]">
-          {heroItem.title}
+        {/* Title — 30/600/1.15, line-clamp 2, dates stripped */}
+        <h1
+          className="font-display text-[30px] font-semibold leading-[1.15] text-text-primary overflow-hidden"
+          style={{
+            letterSpacing: '-0.8px',
+            textShadow: '0 2px 16px rgba(0,0,0,0.5)',
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+          }}
+        >
+          {stripTrailingDate(heroItem.title)}
         </h1>
 
-        {/* Meta */}
-        <div className="flex items-center gap-2.5 text-[13px] text-text-secondary mb-5 flex-wrap">
-          {heroItem.rating != null && (
+        {/* Meta line — uploader · source · duration · views (plain inline, no chips) */}
+        <div className="flex items-center gap-2 mt-2 text-[12px] text-white/50 font-medium">
+          {heroItem.uploader && <span className="truncate max-w-[200px]">{heroItem.uploader}</span>}
+          {heroItem.uploader && heroItem.genre && (
+            <span className="w-[3px] h-[3px] rounded-full bg-white/30 flex-none" />
+          )}
+          {heroItem.genre && <span>{heroItem.genre}</span>}
+          {heroItem.duration && (
             <>
-              <span className="flex items-center gap-1 text-amber-400 font-semibold">
-                &#9733; {heroItem.rating}/10
-              </span>
-              <span className="text-text-muted">&middot;</span>
+              <span className="w-[3px] h-[3px] rounded-full bg-white/30 flex-none" />
+              <span>{heroItem.duration}</span>
             </>
           )}
-          <span>{heroItem.views} views</span>
-          <span className="text-text-muted">&middot;</span>
-          <span>{heroItem.uploader}</span>
-          <span className="text-text-muted">&middot;</span>
-          <span>{heroItem.daysAgo}d ago</span>
+          {heroItem.views && (
+            <>
+              <span className="w-[3px] h-[3px] rounded-full bg-white/30 flex-none" />
+              <span>{heroItem.views} views</span>
+            </>
+          )}
         </div>
 
-        {/* Description */}
-        <p className="text-sm text-text-secondary leading-relaxed mb-5 max-w-[400px] font-light line-clamp-2">
-          {heroItem.desc}
-        </p>
+        {/* Action row — Play + Queue + Thumbs Up + Thumbs Down. All 38px tall. */}
+        <div className="flex items-center gap-2 mt-[14px]">
+          <button
+            onClick={goWatch}
+            className="inline-flex items-center gap-2 h-[38px] px-6 rounded-[10px]
+              bg-white text-[#0a0a0c] text-[13px] font-semibold
+              transition-transform duration-200 hover:scale-[1.03]"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+            Play
+          </button>
 
-        {/* Actions */}
-        <div className="flex items-center gap-2.5">
-          <button
-            onClick={goWatch}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-accent text-white
-              text-sm font-semibold hover:bg-accent-hover hover:-translate-y-px transition-all"
-          >
-            &#9654; &nbsp;Play
-          </button>
-          <button
-            onClick={goWatch}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg
-              text-sm font-semibold backdrop-blur-lg transition-all
-              bg-white/10 border border-white/15 text-text-primary hover:bg-white/[0.16]"
-          >
-            {'\u26F6 \u00A0Open'}
-          </button>
-          <button
-            onClick={() => addToQueue(heroItem)}
-            className="w-[42px] h-[42px] rounded-full bg-white/[0.08] border border-white/[0.12]
-              text-text-primary text-base flex items-center justify-center
-              hover:bg-white/[0.16] transition-all"
+          <HeroIconButton
+            onClick={() => {
+              addToQueue(heroItem)
+              showToast('Added to queue', 'success')
+            }}
             title="Add to queue"
+            ariaLabel="Add to queue"
           >
-            +
-          </button>
-          {heroRating ? (
-            <span className="flex items-center gap-1 text-xs text-white/50 px-2">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                {heroRating === 'up'
-                  ? <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3" />
-                  : <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17" />}
-              </svg>
-              {heroRating === 'up' ? 'Liked' : 'Not for me'}
-            </span>
-          ) : (
-            <>
-              <button
-                onClick={() => handleHeroRate('down')}
-                className="w-[42px] h-[42px] rounded-full bg-white/[0.08] border border-white/[0.12]
-                  text-white/80 flex items-center justify-center
-                  hover:bg-white/[0.16] transition-all"
-                title="Not for me"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17" />
-                </svg>
-              </button>
-              <button
-                onClick={() => handleHeroRate('up')}
-                className="w-[42px] h-[42px] rounded-full bg-white/[0.08] border border-white/[0.12]
-                  text-white/80 flex items-center justify-center
-                  hover:bg-white/[0.16] transition-all"
-                title="Like this"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3" />
-                </svg>
-              </button>
-            </>
-          )}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </HeroIconButton>
+
+          <HeroIconButton
+            onClick={() => !heroRating && handleHeroRate('up')}
+            title={heroRating === 'up' ? 'Liked' : 'Like this'}
+            ariaLabel={heroRating === 'up' ? 'Liked' : 'Like this'}
+            active={heroRating === 'up'}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3" />
+            </svg>
+          </HeroIconButton>
+
+          <HeroIconButton
+            onClick={() => !heroRating && handleHeroRate('down')}
+            title={heroRating === 'down' ? 'Not for me' : 'Not interested'}
+            ariaLabel={heroRating === 'down' ? 'Not for me' : 'Not interested'}
+            active={heroRating === 'down'}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17" />
+            </svg>
+          </HeroIconButton>
         </div>
       </div>
+
+      {/* Progress bar — sits at the visual baseline of the thumbnail (just above carousel).
+          When Up Next is hidden, it falls to the absolute bottom of the hero.
+          2px → 4px on hover. Edge-to-edge. */}
+      {!theatreMode && (
+        <div
+          className="hero-progress absolute left-0 right-0 z-10 transition-[bottom] duration-300 ease-out"
+          style={{ bottom: upNextHidden ? '0px' : '188px', height: '14px' }}
+        >
+          <div
+            className="hero-progress__track absolute left-0 right-0 bottom-0 transition-[height] duration-200 ease-out"
+            style={{ height: '2px', background: 'rgba(255,255,255,0.08)' }}
+          >
+            <div
+              className="h-full"
+              style={{
+                width: duration > 0 ? `${Math.min(100, (currentTime / duration) * 100)}%` : '0%',
+                background: 'var(--color-accent)',
+                transition: 'width 200ms linear',
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Carousel strip at bottom — wrapper has pointer-events-none so its
           transparent top-padding doesn't intercept clicks meant for the
-          action row (Play / Theatre / +/- thumbs) sitting just above. The
-          interactive children inside <HeroCarousel/> re-enable pointer events. */}
-      <div
-        className={`absolute bottom-0 left-0 right-0 z-20 pb-7 pt-5 transition-all duration-500
-          ease-[cubic-bezier(0.25,0.46,0.45,0.94)] pointer-events-none
-          ${theatreMode ? 'translate-y-[30px] opacity-0' : ''}`}
-        style={{
-          background: 'linear-gradient(to top, var(--color-surface) 0%, transparent 100%)',
-        }}
-      >
-        <HeroCarousel />
-      </div>
+          action row sitting just above. Hidden when upNextHidden — carousel
+          re-renders as a normal row in HomePage below the hero. */}
+      {!upNextHidden && (
+        <div
+          className={`absolute bottom-0 left-0 right-0 z-20 pb-3 pt-2 transition-all duration-500
+            ease-[cubic-bezier(0.25,0.46,0.45,0.94)] pointer-events-none
+            ${theatreMode ? 'translate-y-[30px] opacity-0' : ''}`}
+          style={{
+            background: 'linear-gradient(to top, var(--color-surface) 0%, transparent 100%)',
+          }}
+        >
+          <HeroCarousel />
+        </div>
+      )}
+
+      {/* Hide / Show Up Next toggle — small chevron in the hero, top-right corner of the carousel band */}
+      {!theatreMode && (
+        <button
+          onClick={toggleUpNextHidden}
+          title={upNextHidden ? 'Show Up Next in hero' : 'Hide Up Next'}
+          aria-label={upNextHidden ? 'Show Up Next in hero' : 'Hide Up Next'}
+          className="absolute z-30 right-4 w-7 h-7 rounded-md flex items-center justify-center
+            bg-black/40 border border-white/[0.08] backdrop-blur-md text-white/60
+            hover:text-white hover:bg-black/60 hover:border-white/[0.18] transition-all duration-200"
+          style={{ bottom: upNextHidden ? '14px' : '198px' }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            {upNextHidden ? (
+              <polyline points="18 15 12 9 6 15" />
+            ) : (
+              <polyline points="6 9 12 15 18 9" />
+            )}
+          </svg>
+        </button>
+      )}
     </div>
+  )
+}
+
+// 38x38 glass-style icon button used by the hero action row.
+// Shared treatment: rgba(255,255,255,0.08) bg, 1px rgba(255,255,255,0.1) border,
+// blur(8px) backdrop, icon at rgba(255,255,255,0.6) — hover lifts to 0.15/white/0.2.
+// Active variant locks bg/icon at the hover state to indicate a recorded rating.
+function HeroIconButton({ onClick, title, ariaLabel, active = false, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={ariaLabel}
+      className={`hero-icon-btn group/heroBtn w-[38px] h-[38px] rounded-[10px]
+        flex items-center justify-center transition-all duration-200 flex-none
+        ${active
+          ? 'bg-white/[0.15] border border-white/[0.2] text-white'
+          : 'bg-white/[0.08] border border-white/[0.1] text-white/60 hover:bg-white/[0.15] hover:border-white/[0.2] hover:text-white'}`}
+      style={{ backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
+    >
+      {children}
+    </button>
   )
 }

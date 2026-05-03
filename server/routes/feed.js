@@ -3,7 +3,7 @@ import express from 'express'
 import { db } from '../database.js'
 import { logger } from '../logger.js'
 import { formatDuration, inferMode, getMode } from '../utils.js'
-import { scoreVideo, isDownvoted, MIN_VISIBLE_SCORE } from '../scoring.js'
+import { scoreVideos, MIN_VISIBLE_SCORE } from '../scoring.js'
 
 const router = Router()
 
@@ -75,11 +75,15 @@ router.get('/api/feed/next', (req, res) => {
       }
     }
 
-    // Pull a wide candidate set, then score in JS using the point-based engine.
+    // Pull the full unwatched pool (capped) and score every row, so the top-N
+    // by taste score reflects the actual cache contents -- not a random window
+    // of it. Cap at 500 so a runaway cache can't blow up memory; prefer the
+    // freshest rows when over the cap.
     // The SQL exposes:
     //   - is_subscribed: row's creator is in subscription_backups
     //   - from_saved_search: source's query matches a system_searches entry
-    // These flags feed scoreVideo() so the additive points stack correctly.
+    // These flags feed scoreVideos() so the additive points stack correctly.
+    const CANDIDATE_CAP = 500
     const perSourceLimit = Math.max(2, Math.ceil(count / 5))
     const rawUnwatched = db.prepare(`
       SELECT fc.id, fc.url, fc.stream_url AS streamUrl, fc.title, fc.creator AS uploader, fc.thumbnail,
@@ -93,18 +97,19 @@ router.get('/api/feed/next', (req, res) => {
         AND (sb.handle = fc.creator OR sb.display_name = fc.creator)
       LEFT JOIN system_searches ss ON s.query IS NOT NULL AND ss.query = s.query AND ss.active = 1
       WHERE fc.mode = ? AND fc.watched = 0${whereExtra}
-      ORDER BY RANDOM()
-      LIMIT ${count * 10}
+      ORDER BY fc.fetched_at DESC
+      LIMIT ${CANDIDATE_CAP}
     `).all(...params)
 
-    const allUnwatched = rawUnwatched.filter(v => !isDownvoted(v.url))
-    for (const v of allUnwatched) {
-      v._score = scoreVideo(v, 'feed', null, {
+    // scoreVideos() loads the taste profile once, filters downvoted/blocked,
+    // attaches _score, and sorts DESC. Carry the per-row SQL flags through.
+    const allUnwatched = scoreVideos(rawUnwatched, 'feed', {
+      mode,
+      optsFor: v => ({
         isSubscribed: !!v.is_subscribed,
         fromSavedSearch: !!v.from_saved_search,
-        mode,
-      })
-    }
+      }),
+    })
 
     // Drop low-quality content (per user spec: "don't show low scores, that is bad content").
     // Only filter when we have temporal or quality metadata to judge by.

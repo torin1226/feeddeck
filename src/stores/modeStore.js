@@ -1,5 +1,16 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+// Static imports for nuclearFlush. queueStore/libraryStore/feedStore
+// also import this file, but their access to useModeStore is gated
+// behind .getState() inside functions, so the ESM live-binding cycle
+// resolves cleanly. Keeping these static avoids the Vite "dynamic +
+// static" duplicate-import warning that bloated build output for weeks.
+import useFeedStore from './feedStore'
+import useHomeStore from './homeStore'
+import useQueueStore from './queueStore'
+import usePlayerStore from './playerStore'
+import useLibraryStore from './libraryStore'
+import useRatingsStore from './ratingsStore'
 
 // ============================================================
 // Mode Store
@@ -30,7 +41,6 @@ function setDocumentMeta(isSFW) {
 /**
  * Nuclear flush: purge ALL content from every store that might
  * hold mode-specific data. Called on every mode switch.
- * Lazy-imports stores to avoid circular dependency.
  *
  * Mode firewall: this function MUST clear every persisted store
  * that can hold a video reference. The persisted-store list:
@@ -48,23 +58,6 @@ async function nuclearFlush() {
     v.removeAttribute('src')
     v.load() // Force release of media resources
   })
-
-  // Flush all content stores (lazy import to break circular deps)
-  const [
-    { default: useFeedStore },
-    { default: useHomeStore },
-    { default: useQueueStore },
-    { default: usePlayerStore },
-    { default: useLibraryStore },
-    { default: useRatingsStore },
-  ] = await Promise.all([
-    import('./feedStore'),
-    import('./homeStore'),
-    import('./queueStore'),
-    import('./playerStore'),
-    import('./libraryStore'),
-    import('./ratingsStore'),
-  ])
 
   useFeedStore.getState().resetFeed()
   useHomeStore.getState().resetHome()

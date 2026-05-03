@@ -85,7 +85,7 @@ for (const target of TARGETS) {
       await new Promise(r => setTimeout(r, 600))
     }
 
-    const results = await page.evaluate(() => {
+    const links = await page.evaluate(() => {
       // eslint-disable-next-line no-undef
       const cards = document.querySelectorAll('a[href*="/reel/"]')
       const seen = new Set()
@@ -94,18 +94,53 @@ for (const target of TARGETS) {
         const href = card.getAttribute('href') || ''
         if (!href || seen.has(href)) continue
         seen.add(href)
-        const shortcode = href.split('/').filter(Boolean).pop() || href
-        out.push({ href, shortcode })
+        out.push(`https://www.instagram.com${href}`)
         if (out.length >= 20) break
       }
       return out
     })
 
-    const ok = results.length >= MIN_RESULTS
+    const ok = links.length >= MIN_RESULTS
     if (!ok) failures++
-    console.log(`${ok ? 'OK' : 'FAIL'}  ${results.length} reels (need >= ${MIN_RESULTS})`)
-    for (const r of results.slice(0, 5)) {
-      console.log(`  ${r.shortcode}  →  https://www.instagram.com${r.href}`)
+    console.log(`${ok ? 'OK' : 'FAIL'}  ${links.length} reel URLs found`)
+
+    // OG enrichment pass: fetch each reel URL for real title, thumbnail, hashtags
+    console.log(`  Enriching ${links.slice(0, 5).length} reels with OG metadata...`)
+    const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ')
+    let enrichOk = 0
+    for (const url of links.slice(0, 5)) {
+      try {
+        const res = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+            'Cookie': cookieHeader,
+            'Accept': 'text/html,application/xhtml+xml',
+          },
+          redirect: 'follow',
+          signal: AbortSignal.timeout(10_000),
+        })
+        const html = res.ok ? await res.text() : ''
+        const ogMeta = (prop) => {
+          const m = html.match(new RegExp(`<meta[^>]+property="${prop}"[^>]+content="([^"]*)"`, 'i'))
+            || html.match(new RegExp(`<meta[^>]+content="([^"]*)"[^>]+property="${prop}"`, 'i'))
+          return m ? m[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim() : ''
+        }
+        const ogTitle = ogMeta('og:title')
+        const ogDesc = ogMeta('og:description')
+        const ogImage = ogMeta('og:image')
+        const tags = ogDesc ? [...ogDesc.matchAll(/#(\w+)/g)].map(m => m[1]) : []
+        if (ogTitle) enrichOk++
+        const shortcode = url.split('/').filter(Boolean).pop()
+        console.log(`  ${shortcode}  title="${ogTitle.slice(0, 60) || '(empty)'}"  tags=[${tags.slice(0, 4).join(',')}]  thumb=${ogImage ? 'yes' : 'NO'}`)
+      } catch (err) {
+        console.log(`  fetch error: ${err.message}`)
+      }
+    }
+    if (enrichOk === 0 && links.length > 0) {
+      console.log('  WARNING: OG enrichment returned no titles — cookies may be expired or Instagram blocked the fetch')
+      failures++
+    } else {
+      console.log(`  OG enrichment: ${enrichOk}/5 reels got real titles`)
     }
   } catch (err) {
     failures++
