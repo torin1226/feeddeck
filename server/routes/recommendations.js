@@ -591,7 +591,7 @@ router.get('/api/recommendations/trail/threshold', (req, res) => {
   const mode = getMode(req)
   try {
     res.json({ threshold: getRelevanceThreshold(mode) })
-  } catch (err) {
+  } catch (_err) {
     res.json({ threshold: 1 })
   }
 })

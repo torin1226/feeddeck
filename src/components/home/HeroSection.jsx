@@ -19,7 +19,7 @@ import HeroCarousel from './HeroCarousel'
 // ============================================================
 
 export default function HeroSection() {
-  const { heroItem, theatreMode, toggleTheatre, setFocusedItem } = useHomeStore()
+  const { heroItem, theatreMode, setFocusedItem } = useHomeStore()
   const navigate = useNavigate()
   const goWatch = useCallback(() => {
     if (heroItem?.id) navigate(`/watch/${heroItem.id}`)

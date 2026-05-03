@@ -32,7 +32,6 @@ const DetailPlayer = forwardRef(function DetailPlayer({
   ariaTitle,
   mode = 'standard',
   pipMode = false,
-  onClickFullscreen,
   children,
 }, wrapperRef) {
   const isFullscreen = mode === 'fullscreen'
