@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import useModeStore from './modeStore'
+import useHomeStore from './homeStore'
 
 // ============================================================
 // Feed Store
@@ -214,6 +215,11 @@ async function fetchFeedBatch(getState) {
   const params = new URLSearchParams({ mode, count: FETCH_COUNT })
   if (filters.sources?.length > 0) params.set('sources', filters.sources.join(','))
   if (filters.tags?.length > 0) params.set('tags', filters.tags.join(','))
+
+  // Exclude homepage-exposed IDs so feed never duplicates what the user
+  // already saw on the homepage this session.
+  const exposedIds = useHomeStore.getState().exposedItemIds
+  if (exposedIds?.size > 0) params.set('excludeIds', [...exposedIds].join(','))
 
   const res = await fetch(`/api/feed/next?${params}`)
   if (!res.ok) throw new Error('Feed fetch failed')

@@ -198,6 +198,13 @@ const useHomeStore = create((set, get) => ({
   // resetHome and on fetchHomepage start.
   focusedItem: null,
 
+  // IDs of videos the user has been shown on the homepage this session.
+  // Used by feedStore to exclude these from the /feed so the two surfaces
+  // don't duplicate content. Session-scoped: persisted to sessionStorage
+  // (not localStorage) so it survives in-tab navigation but resets on
+  // a new tab/window.
+  exposedItemIds: new Set(),
+
   // Category rows
   categories: [],
 
@@ -260,6 +267,19 @@ const useHomeStore = create((set, get) => ({
     set({ focusedItem: next })
   },
 
+  // Record that the user has been shown these items on the homepage.
+  // Items already in the set are skipped to avoid unnecessary re-renders.
+  // Persists to sessionStorage so /feed exclusions survive in-tab navigation.
+  markExposed: (items) => {
+    const current = get().exposedItemIds
+    const toAdd = (items || []).filter(it => it?.id && !current.has(it.id))
+    if (toAdd.length === 0) return
+    const next = new Set(current)
+    for (const it of toAdd) next.add(it.id)
+    set({ exposedItemIds: next })
+    try { sessionStorage.setItem('fd-exposed-ids', JSON.stringify([...next])) } catch {}
+  },
+
   // Generate dummy "fluffy dog" placeholder data. Kept for design preview
   // only — fetchHomepage NEVER calls this anymore. The old behavior
   // (rendering fake dogs whenever the cache was warming) made the app
@@ -292,6 +312,7 @@ const useHomeStore = create((set, get) => ({
   resetHome: () => {
     _fetchVersion++ // Invalidate any in-flight fetchHomepage
     _cancelWarmingRetry()
+    try { sessionStorage.removeItem('fd-exposed-ids') } catch {}
     set({
       heroItem: null,
       carouselItems: [],
@@ -302,6 +323,7 @@ const useHomeStore = create((set, get) => ({
       focusedItem: null,
       homepageState: 'ready',
       fetchError: null,
+      exposedItemIds: new Set(),
     })
   },
 
@@ -945,3 +967,15 @@ const useHomeStore = create((set, get) => ({
 }))
 
 export default useHomeStore
+
+// Restore exposed IDs from sessionStorage so /feed exclusions survive
+// in-tab navigation without re-scanning the homepage.
+try {
+  const stored = sessionStorage.getItem('fd-exposed-ids')
+  if (stored) {
+    const ids = JSON.parse(stored)
+    if (Array.isArray(ids) && ids.length > 0) {
+      useHomeStore.setState({ exposedItemIds: new Set(ids) })
+    }
+  }
+} catch {}

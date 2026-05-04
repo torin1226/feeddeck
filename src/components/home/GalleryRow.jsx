@@ -55,7 +55,7 @@ export default function GalleryRow({
   surfaceKey,
   surface,
 }) {
-  const { setFocusedItem } = useHomeStore()
+  const { setFocusedItem, markExposed } = useHomeStore()
   const navigate = useNavigate()
   const scrollRef = useRef(null)
   const cardsRef = useRef([])
@@ -64,6 +64,9 @@ export default function GalleryRow({
   const approachFired = useRef(new Set()) // pool length values for which we already fired
   const [activeIndex, setActiveIndex] = useState(0)
   const activeIndexRef = useRef(0)
+  // Tracks whether we've already fired markExposed for this row's initial items.
+  // Prevents re-marking on every scroll-triggered re-render.
+  const exposedRef = useRef(false)
   // True once the user has interacted with this row (scrolled, clicked, or
   // focused a card). Until then we suppress focus broadcasts so multiple
   // rows on the page don't fight for `focusedItem` on initial mount —
@@ -79,6 +82,17 @@ export default function GalleryRow({
   useEffect(() => {
     activeIndexRef.current = activeIndex
   }, [activeIndex])
+
+  // Mark the first 5 visible items in this row as exposed so /feed can
+  // exclude them. Fires once per row when items first populate; subsequent
+  // scroll-based re-renders do nothing (guarded by exposedRef).
+  useEffect(() => {
+    if (exposedRef.current) return
+    const toMark = (items || []).filter(it => !it._isDivider && it?.id).slice(0, 5)
+    if (toMark.length === 0) return
+    exposedRef.current = true
+    markExposed(toMark)
+  }, [items, markExposed])
 
   // Build a list of adjacent (next + prev) {id, url} pairs around the
   // given index, skipping dividers and items lacking a URL. Used to

@@ -22,7 +22,7 @@ const stripTrailingDate = (s) =>
 // ============================================================
 
 export default function HeroSection() {
-  const { heroItem, theatreMode, setFocusedItem, upNextHidden, toggleUpNextHidden } = useHomeStore()
+  const { heroItem, theatreMode, setFocusedItem, upNextHidden, toggleUpNextHidden, markExposed } = useHomeStore()
   const navigate = useNavigate()
   const goWatch = useCallback(() => {
     if (heroItem?.id) navigate(`/watch/${heroItem.id}`)
@@ -91,6 +91,8 @@ export default function HeroSection() {
     // Pre-warm the stream URL so Play is instant (covers reduced motion / HLS cases
     // where useHeroAutoplay doesn't resolve a URL)
     if (heroItem?.url) prewarmStream(heroItem.url)
+    // Record that the hero item has been shown so /feed can exclude it.
+    if (heroItem?.id) markExposed([heroItem])
     // Hero is the default focused surface — claim focus when the hero
     // card changes and theatre mode is off. inputKind 'auto' marks this
     // as a non-user-driven claim so debounce-aware consumers can treat

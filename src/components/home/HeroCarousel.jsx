@@ -9,7 +9,7 @@ import useModeStore from '../../stores/modeStore'
 // ============================================================
 
 export default function HeroCarousel() {
-  const { carouselItems, heroItem, setHeroItem, setFocusedItem } = useHomeStore()
+  const { carouselItems, heroItem, setHeroItem, setFocusedItem, markExposed } = useHomeStore()
   const scrollRef = useRef(null)
   const [query, setQuery] = useState('')
   const [searchResults, setSearchResults] = useState(null)
@@ -18,6 +18,13 @@ export default function HeroCarousel() {
 
   const displayItems = searchResults || carouselItems
   const activeId = heroItem?.id
+
+  // Mark all carousel items as exposed so /feed can exclude them.
+  // Fires once when carouselItems first populates (and again if it changes
+  // due to a shuffle/refresh). markExposed is a no-op for already-seen IDs.
+  useEffect(() => {
+    if (carouselItems?.length > 0) markExposed(carouselItems)
+  }, [carouselItems, markExposed])
 
   // Debounced search
   const handleInput = useCallback(
