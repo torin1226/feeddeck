@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 // ============================================================
@@ -82,12 +82,16 @@ function TabBtn({ active, onClick, disabled, children }) {
 
 function SuggestedCard({ item, onNavigate, onQueue }) {
   const [queued, setQueued] = useState(false)
+  const queuedTimer = useRef(null)
+
+  useEffect(() => () => clearTimeout(queuedTimer.current), [])
 
   const handleQueue = (e) => {
     e.stopPropagation()
     onQueue?.()
     setQueued(true)
-    setTimeout(() => setQueued(false), 2000)
+    if (queuedTimer.current) clearTimeout(queuedTimer.current)
+    queuedTimer.current = setTimeout(() => setQueued(false), 2000)
   }
 
   return (

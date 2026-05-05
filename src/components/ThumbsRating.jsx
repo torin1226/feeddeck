@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import useRatingsStore from '../stores/ratingsStore'
 import useToastStore from '../stores/toastStore'
 
@@ -25,6 +25,8 @@ export default function ThumbsRating({
   positionClass = 'absolute bottom-3 left-1/2 -translate-x-1/2',
 }) {
   const [animating, setAnimating] = useState(null) // 'up' | 'down' | null
+  const animationTimer = useRef(null)
+  useEffect(() => () => clearTimeout(animationTimer.current), [])
   const recordRating = useRatingsStore(s => s.recordRating)
   const existingRating = useRatingsStore(s => s.ratedUrls[videoUrl])
   const isToastPaused = useRatingsStore(s => s.isToastPaused)
@@ -87,7 +89,8 @@ export default function ThumbsRating({
     onRated?.(rating, videoUrl)
 
     // Clear animation state after animation completes
-    setTimeout(() => setAnimating(null), 350)
+    if (animationTimer.current) clearTimeout(animationTimer.current)
+    animationTimer.current = setTimeout(() => setAnimating(null), 350)
   }, [videoUrl, surfaceType, surfaceKey, tags, creator, title, thumbnail, source, animating, existingRating, recordRating, isToastPaused, showToast, showActionToast, handleUndo, onRated])
 
   if (!visible || !videoUrl) return null
