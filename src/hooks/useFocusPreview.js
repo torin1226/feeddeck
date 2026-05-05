@@ -50,6 +50,11 @@ const urlPromises = new Map()
 let activeToken = null
 let activeVideo = null
 let activeTimer = null
+// Held while an HLS preview is attached. Destroyed in cancelPreview /
+// hideActiveVideo so each focus swap fully releases the prior instance.
+let activeHls = null
+
+const isHlsUrl = (u) => typeof u === 'string' && u.includes('.m3u8')
 
 // Hero surfaces never show a card preview — the hero element handles its
 // own autoplay. Treat both the main hero and the hero carousel strip as
@@ -68,9 +73,19 @@ export function registerPreviewTarget(itemId, videoEl) {
   }
 }
 
+function destroyActiveHls() {
+  if (!activeHls) return
+  try { activeHls.destroy() } catch { /* ignore */ }
+  activeHls = null
+}
+
 function hideActiveVideo() {
-  if (!activeVideo) return
+  if (!activeVideo) {
+    destroyActiveHls()
+    return
+  }
   try { activeVideo.pause() } catch { /* ignore */ }
+  destroyActiveHls()
   activeVideo.removeAttribute('src')
   try { activeVideo.load() } catch { /* ignore */ }
   activeVideo.style.opacity = '0'
@@ -111,9 +126,6 @@ function fetchStreamUrl(itemId, sourceUrl) {
       if (!res.ok) return null
       const data = await res.json()
       if (!data || !data.streamUrl) return null
-      // HLS skipped intentionally — see _memory/errors/feeddeck-known-issues.md
-      // "NSFW hover preview -- HLS skipped intentionally" (tracked as M0.5).
-      if (data.streamUrl.includes('.m3u8')) return null
       urlCache.set(itemId, { streamUrl: data.streamUrl, fetchedAt: Date.now() })
       return data.streamUrl
     } catch (e) {
@@ -186,24 +198,22 @@ function startPreviewForFocus(focusedItem) {
     const targetEl = videoTargets.get(focusedItem.id)
     if (!targetEl) return
 
-    targetEl.src = `/api/proxy-stream?url=${encodeURIComponent(streamUrl)}`
     targetEl.muted = true
     targetEl.playsInline = true
     targetEl.loop = true
     targetEl.preload = 'auto'
-    try { targetEl.load() } catch { /* ignore */ }
     activeVideo = targetEl
 
-    targetEl.addEventListener('canplay', () => {
+    const onCanPlay = () => {
       if (activeToken !== token) return
       targetEl.style.opacity = '1'
       const playPromise = targetEl.play()
       if (playPromise && typeof playPromise.catch === 'function') {
         playPromise.catch(() => {})
       }
-    }, { once: true })
+    }
 
-    targetEl.addEventListener('error', () => {
+    const onError = () => {
       if (activeToken !== token) return
       const code = targetEl.error?.code
       console.warn(`[FocusPreview] video error code=${code} for ${focusedItem.id}`)
@@ -211,11 +221,72 @@ function startPreviewForFocus(focusedItem) {
       // minutes, and a cached-but-dead URL would make every retry fail
       // until TTL elapses. Drop the entry so the next focus refetches.
       urlCache.delete(focusedItem.id)
+      destroyActiveHls()
       targetEl.removeAttribute('src')
       targetEl.style.opacity = '0'
       if (activeVideo === targetEl) activeVideo = null
-    }, { once: true })
+    }
+
+    targetEl.addEventListener('canplay', onCanPlay, { once: true })
+    targetEl.addEventListener('error', onError, { once: true })
+
+    if (isHlsUrl(streamUrl)) {
+      attachHlsPreview(targetEl, streamUrl, token, focusedItem.id)
+    } else {
+      targetEl.src = `/api/proxy-stream?url=${encodeURIComponent(streamUrl)}`
+      try { targetEl.load() } catch { /* ignore */ }
+    }
   }, debounceMs)
+}
+
+// Attach an HLS stream to the preview <video>. Mirrors the useVideoEngine
+// pattern: lazy-import hls.js so the bundle cost is paid once, prefer
+// native HLS on Safari, fall back to /api/proxy-stream if hls.js fails to
+// load. Race-guarded by `token` and the module-level activeToken so a
+// switched focus aborts mid-load instead of attaching a stale stream.
+function attachHlsPreview(targetEl, streamUrl, token, itemId) {
+  // Native HLS (iOS Safari) — skip hls.js entirely.
+  const canPlayNative =
+    typeof targetEl.canPlayType === 'function' &&
+    targetEl.canPlayType('application/vnd.apple.mpegurl') !== ''
+  if (canPlayNative) {
+    targetEl.src = `/api/proxy-stream?url=${encodeURIComponent(streamUrl)}`
+    try { targetEl.load() } catch { /* ignore */ }
+    return
+  }
+
+  import('hls.js').then(({ default: Hls }) => {
+    if (activeToken !== token) return
+    if (!Hls.isSupported()) {
+      // Older browser, no MSE — fall back to direct proxy. Most desktops
+      // hit this path only if hls.js mis-detects MSE support.
+      targetEl.src = `/api/proxy-stream?url=${encodeURIComponent(streamUrl)}`
+      try { targetEl.load() } catch { /* ignore */ }
+      return
+    }
+    destroyActiveHls()
+    targetEl.removeAttribute('src')
+    const hls = new Hls({ enableWorker: true, lowLatencyMode: false })
+    hls.on(Hls.Events.ERROR, (_, data) => {
+      if (!data?.fatal) return
+      // Cache the broken URL so the next focus refetches.
+      urlCache.delete(itemId)
+      try { hls.destroy() } catch { /* ignore */ }
+      if (activeHls === hls) activeHls = null
+    })
+    hls.loadSource(`/api/hls-proxy?url=${encodeURIComponent(streamUrl)}`)
+    hls.attachMedia(targetEl)
+    activeHls = hls
+  }).catch(() => {
+    if (activeToken !== token) return
+    // hls.js dynamic import failed (offline, bundle error). Skip the
+    // preview rather than leaving a half-attached element.
+    urlCache.delete(itemId)
+    destroyActiveHls()
+    targetEl.removeAttribute('src')
+    targetEl.style.opacity = '0'
+    if (activeVideo === targetEl) activeVideo = null
+  })
 }
 
 export default function useFocusPreview() {
@@ -238,6 +309,7 @@ export function _resetForTests() {
     clearTimeout(activeTimer)
     activeTimer = null
   }
+  destroyActiveHls()
   activeToken = null
   activeVideo = null
 }
@@ -254,5 +326,6 @@ export function _peekForTests() {
     activeToken,
     activeVideo,
     activeTimer,
+    activeHls,
   }
 }
