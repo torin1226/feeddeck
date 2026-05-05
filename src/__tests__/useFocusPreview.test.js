@@ -31,6 +31,7 @@ vi.mock('hls.js', () => ({ default: MockHls }))
 
 import {
   registerPreviewTarget,
+  prefetchStreamUrl,
   _resetForTests,
   _applyFocusForTests,
   _peekForTests,
@@ -463,5 +464,39 @@ describe('useFocusPreview', () => {
     registerPreviewTarget('yt-1', v2)
     cleanup1()
     expect(_peekForTests().videoTargetCount).toBe(1) // v2 still registered
+  })
+})
+
+// ============================================================
+// urlCache size cap (2026-05-05 Resource lens)
+//
+// Long browse sessions write a urlCache entry per focused card.
+// Without a cap the map grows unbounded. CAP = 100; FIFO eviction.
+// ============================================================
+
+describe('useFocusPreview urlCache cap', () => {
+  const URL_CACHE_CAP = 100
+
+  async function fillCache(count) {
+    for (let i = 0; i < count; i++) {
+      prefetchStreamUrl(`item-${i}`, `https://example.com/v${i}.mp4`)
+    }
+    // Drain microtasks + any pending fetch resolutions.
+    await vi.runAllTimersAsync()
+  }
+
+  it('caches all entries while under the cap', async () => {
+    await fillCache(50)
+    expect(_peekForTests().urlCacheCount).toBe(50)
+  })
+
+  it('caps at 100 once writes exceed the limit', async () => {
+    await fillCache(URL_CACHE_CAP + 50)
+    expect(_peekForTests().urlCacheCount).toBe(URL_CACHE_CAP)
+  })
+
+  it('stays bounded under a 1000-focus stress test', async () => {
+    await fillCache(1000)
+    expect(_peekForTests().urlCacheCount).toBe(URL_CACHE_CAP)
   })
 })

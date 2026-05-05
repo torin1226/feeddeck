@@ -29,6 +29,10 @@ import useHomeStore from '../stores/homeStore'
 const HOVER_DEBOUNCE_MOUSE_MS = 120
 const HOVER_DEBOUNCE_KEYBOARD_MS = 100
 const URL_CACHE_TTL_MS = 60_000
+// Bound urlCache so a long browse session can't grow the map without
+// limit. ~200 bytes per entry, but unbounded was the actual risk —
+// FIFO eviction past this. Mirrors the homeStore.exposedItemIds cap.
+const URL_CACHE_CAP = 100
 
 // Module-level: card id -> HTMLVideoElement registered as the preview target.
 const videoTargets = new Map()
@@ -127,6 +131,9 @@ function fetchStreamUrl(itemId, sourceUrl) {
       const data = await res.json()
       if (!data || !data.streamUrl) return null
       urlCache.set(itemId, { streamUrl: data.streamUrl, fetchedAt: Date.now() })
+      while (urlCache.size > URL_CACHE_CAP) {
+        urlCache.delete(urlCache.keys().next().value)
+      }
       return data.streamUrl
     } catch (e) {
       console.warn('[FocusPreview] stream-url fetch failed:', e?.message || e)

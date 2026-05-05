@@ -29,6 +29,11 @@ let idCounter = 100
 let _fetchVersion = 0 // Guards against nuclearFlush/resetHome racing with fetchHomepage
 let _swapVersion = 0 // Guards against mode-change racing with refresh/shuffle swaps
 
+// Cap on exposedItemIds to keep the /api/feed/next?excludeIds= query
+// string under Express's URL-length budget. UUID-shaped IDs at ~36 chars
+// each + commas hit ~8 KB around 200 entries; FIFO eviction past this.
+const EXPOSED_IDS_CAP = 200
+
 // Self-healing retry for cold-cache / warming windows. Each retry attempt
 // re-enters fetchHomepage with attempt+1 so a fresh /api/homepage call
 // goes out. Cancelled by mode change (version bump) and resetHome.
@@ -276,6 +281,12 @@ const useHomeStore = create((set, get) => ({
     if (toAdd.length === 0) return
     const next = new Set(current)
     for (const it of toAdd) next.add(it.id)
+    // FIFO eviction: Set iteration is insertion-ordered, so deleting
+    // the first key drops the oldest exposure. Keeps excludeIds= under
+    // the URL-length budget on long browse sessions.
+    while (next.size > EXPOSED_IDS_CAP) {
+      next.delete(next.values().next().value)
+    }
     set({ exposedItemIds: next })
     try { sessionStorage.setItem('fd-exposed-ids', JSON.stringify([...next])) } catch {}
   },
@@ -975,7 +986,10 @@ try {
   if (stored) {
     const ids = JSON.parse(stored)
     if (Array.isArray(ids) && ids.length > 0) {
-      useHomeStore.setState({ exposedItemIds: new Set(ids) })
+      // Apply the same cap on hydration so an oversized legacy session
+      // can't reintroduce 414 risk on the first /feed/next call.
+      const capped = ids.length > EXPOSED_IDS_CAP ? ids.slice(-EXPOSED_IDS_CAP) : ids
+      useHomeStore.setState({ exposedItemIds: new Set(capped) })
     }
   }
 } catch {}
