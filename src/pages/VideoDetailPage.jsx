@@ -17,6 +17,7 @@ import useSuggested from '../hooks/useSuggested'
 import useTrail from '../hooks/useTrail'
 import useViewMode from '../hooks/useViewMode'
 import useFullscreenChrome from '../hooks/useFullscreenChrome'
+import { resolveWatchItem } from '../utils/resolveWatchItem'
 
 // ============================================================
 // VideoDetailPage
@@ -39,23 +40,28 @@ export default function VideoDetailPage() {
   const navigate = useNavigate()
   const { viewMode, setViewMode } = useViewMode()
 
-  // Locate item across all home-page sources.
+  // Locate item across all id-owning stores.
+  // Library uses bare UUIDs (Continue Watching deep links land here),
+  // queue uses server-PK numbers, homeStore uses composite ids.
+  // resolveWatchItem walks them in priority order.
   const categories = useHomeStore((s) => s.categories)
   const carouselItems = useHomeStore((s) => s.carouselItems)
   const top10 = useHomeStore((s) => s.top10)
   const heroItem = useHomeStore((s) => s.heroItem)
-  const item = useMemo(() => {
-    const sId = String(id)
-    if (heroItem && String(heroItem.id) === sId) return heroItem
-    for (const c of carouselItems || []) if (c && String(c.id) === sId) return c
-    for (const c of top10 || []) if (c && String(c.id) === sId) return c
-    for (const cat of categories || []) {
-      for (const v of (cat.items || [])) {
-        if (v && !v._isDivider && String(v.id) === sId) return v
-      }
-    }
-    return null
-  }, [id, categories, carouselItems, top10, heroItem])
+  const libraryVideos = useLibraryStore((s) => s.videos)
+  const queue = useQueueStore((s) => s.queue)
+  const queueIndex = useQueueStore((s) => s.currentIndex)
+  const item = useMemo(
+    () => resolveWatchItem(id, {
+      heroItem,
+      carouselItems,
+      top10,
+      categories,
+      libraryVideos,
+      queueItems: queue,
+    }),
+    [id, categories, carouselItems, top10, heroItem, libraryVideos, queue]
+  )
 
   // Defensive: clear stale home theatre flag on mount.
   useEffect(() => {
@@ -133,10 +139,9 @@ export default function VideoDetailPage() {
   }, [trail, trailHydrated, fallback.related, fallback.recommended])
 
   // Queue
+  // (queue + queueIndex subscribed earlier for the item resolver.)
   const addToQueue = useQueueStore((s) => s.addToQueue)
   const showToast = useToastStore((s) => s.showToast)
-  const queue = useQueueStore((s) => s.queue)
-  const queueIndex = useQueueStore((s) => s.currentIndex)
   const handleAddToQueue = useCallback((video) => {
     addToQueue(video || item)
     showToast('Added to queue')
@@ -227,6 +232,12 @@ export default function VideoDetailPage() {
   const advanceNow = useCallback(() => {
     if (!nextItem?.id) return
     setEndCardActive(false)
+    // When the next item came from the queue, advance the queue cursor so
+    // currentIndex tracks what's now playing. Without this, the queue stays
+    // stuck on the same row and the next EndCard would offer the same item.
+    if (nextItem._source === 'queue') {
+      useQueueStore.getState().advance()
+    }
     const target = viewMode === 'fullscreen'
       ? `/watch/${nextItem.id}?view=fullscreen`
       : `/watch/${nextItem.id}`
