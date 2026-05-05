@@ -738,6 +738,44 @@ export function initDatabase() {
     logger.error('creator_boosts mode migration failed:', { error: err.message })
   }
 
+  // creators: add mode column + backfill from url. Schema-only follow-up
+  // to the 2026-04-25 mode firewall — read paths still need to be updated
+  // to filter by mode (tracked separately in the discovered-tasks queue).
+  try {
+    const cols = db.prepare("PRAGMA table_info(creators)").all()
+    if (cols.length > 0 && !cols.some(c => c.name === 'mode')) {
+      db.exec("ALTER TABLE creators ADD COLUMN mode TEXT")
+      const rows = db.prepare("SELECT id, url FROM creators WHERE mode IS NULL").all()
+      const upd = db.prepare("UPDATE creators SET mode = ? WHERE id = ?")
+      for (const r of rows) {
+        upd.run(inferMode(r.url), r.id)
+      }
+      logger.info('Backfilled creators.mode', { rows: rows.length })
+    }
+  } catch (err) {
+    logger.error('creators mode migration failed:', { error: err.message })
+  }
+
+  // subscription_backups: add mode column + backfill. profile_url is
+  // nullable, so fall back to the platform name as a domain hint
+  // (e.g. 'pornhub' -> 'pornhub.com' which inferMode matches against
+  // NSFW_DOMAINS). Schema-only; read paths follow-up.
+  try {
+    const cols = db.prepare("PRAGMA table_info(subscription_backups)").all()
+    if (cols.length > 0 && !cols.some(c => c.name === 'mode')) {
+      db.exec("ALTER TABLE subscription_backups ADD COLUMN mode TEXT")
+      const rows = db.prepare("SELECT id, profile_url, platform FROM subscription_backups WHERE mode IS NULL").all()
+      const upd = db.prepare("UPDATE subscription_backups SET mode = ? WHERE id = ?")
+      for (const r of rows) {
+        const hint = r.profile_url || (r.platform ? `${r.platform}.com` : null)
+        upd.run(inferMode(hint), r.id)
+      }
+      logger.info('Backfilled subscription_backups.mode', { rows: rows.length })
+    }
+  } catch (err) {
+    logger.error('subscription_backups mode migration failed:', { error: err.message })
+  }
+
   // Migrate: seed taste_profile from existing tag_preferences (one-time)
   try {
     const tasteCount = db.prepare('SELECT COUNT(*) as n FROM taste_profile').get()
