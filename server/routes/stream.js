@@ -224,6 +224,10 @@ router.get('/api/proxy-stream', async (req, res) => {
       const val = upstream.headers.get(h)
       if (val) res.setHeader(h, val)
     }
+    // PROXY: always declare Range support regardless of what the upstream sent.
+    // CDNs omit Accept-Ranges on 206 responses; without this the browser may
+    // not know seeking is supported after a Range-initiated connection.
+    res.setHeader('Accept-Ranges', 'bytes')
 
     // Pipe the body using Node streams (more robust than manual reader pump).
     // FALLBACK: cleanup happens via res.on('close') when client disconnects.
@@ -276,6 +280,9 @@ router.get('/api/hls-proxy', async (req, res) => {
       })
       res.setHeader('Content-Type', 'application/vnd.apple.mpegurl')
       res.setHeader('Access-Control-Allow-Origin', '*')
+      // PROXY: HLS playlists reference CDN URLs that expire in ~2hr; stale
+      // cached playlists cause segment 403s mid-playback. Never cache.
+      res.setHeader('Cache-Control', 'no-store')
       res.send(rewritten)
     } else {
       // Stream segment bytes using Node streams
