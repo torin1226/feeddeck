@@ -32,6 +32,20 @@ let _reorderTimer = null
 let _lastConfirmedQueue = null  // Last server-confirmed queue state for rollback
 let _lastConfirmedIndex = -1
 
+// Cancel any pending reorder PUT and drop the rollback snapshot. Called from
+// every non-reorder mutation (add, insert, remove, clear, fetch-success) so a
+// stale rollback can't reintroduce just-removed items, and from any path that
+// invalidates the underlying queue (e.g. nuclearFlush via clearQueue) so a
+// stale PUT can't contaminate the next mode's queue.
+function _invalidateReorderRollback() {
+  if (_reorderTimer) {
+    clearTimeout(_reorderTimer)
+    _reorderTimer = null
+  }
+  _lastConfirmedQueue = null
+  _lastConfirmedIndex = -1
+}
+
 // Normalize server queue items to include `url` (alias of `video_url`)
 // and `durationFormatted` (alias of `duration_formatted`) for backwards compat
 function normalizeItem(item) {
@@ -61,6 +75,11 @@ const useQueueStore = create(persist((set, get) => ({
       // the client guard too in case the server response is stale.
       const serverQueue = normalizeQueue(data.queue).filter(it => isVideoForMode(it, mode))
 
+      // Server response is a fresh source of truth — drop any pending reorder
+      // rollback snapshot so a stale PUT can't reintroduce items the user
+      // already removed elsewhere.
+      _invalidateReorderRollback()
+
       set((state) => {
         // Preserve currentIndex if the queue item still exists
         let newIndex = state.currentIndex
@@ -87,6 +106,7 @@ const useQueueStore = create(persist((set, get) => ({
   // Add a video to the end of the queue
   // -----------------------------------------------------------
   addToQueue: async (video) => {
+    _invalidateReorderRollback()
     try {
       const mode = currentMode()
       const res = await fetch(modeUrl('/queue'), {
@@ -112,6 +132,7 @@ const useQueueStore = create(persist((set, get) => ({
   // Insert a video right after the currently playing item
   // -----------------------------------------------------------
   insertNext: async (video) => {
+    _invalidateReorderRollback()
     const { currentIndex } = get()
     const insertPos = currentIndex + 1
 
@@ -141,6 +162,7 @@ const useQueueStore = create(persist((set, get) => ({
   // Remove by queue item ID
   // -----------------------------------------------------------
   removeFromQueue: async (id) => {
+    _invalidateReorderRollback()
     // Also accept queueId for backwards compat
     const { queue } = get()
     const item = queue.find(q => q.id === id || q.queueId === id)
@@ -201,13 +223,25 @@ const useQueueStore = create(persist((set, get) => ({
 
     set({ queue: next, currentIndex: newIndex })
 
+    // Capture mode at schedule time. If a mode switch (or any non-reorder
+    // mutation) happens before the timer fires, _invalidateReorderRollback
+    // will null _reorderTimer and clear the snapshot — the bail-outs below
+    // catch the race window between cancellation and the already-queued tick.
+    const scheduledMode = currentMode()
+
     // Debounce server sync — only fires after 300ms of no new reorders
     clearTimeout(_reorderTimer)
     _reorderTimer = setTimeout(async () => {
       _reorderTimer = null
+      // Mode firewall: the queue was cleared by nuclearFlush, so the snapshot
+      // is stale and a PUT against the new mode would corrupt it.
+      if (scheduledMode !== currentMode()) {
+        _lastConfirmedQueue = null
+        _lastConfirmedIndex = -1
+        return
+      }
       const { queue: finalQueue } = get()
       try {
-        const mode = currentMode()
         const res = await fetch(modeUrl('/queue'), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -215,12 +249,24 @@ const useQueueStore = create(persist((set, get) => ({
         })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
-        _lastConfirmedQueue = normalizeQueue(data.queue).filter(it => isVideoForMode(it, mode))
+        // Re-check mode after the await — could have flipped mid-fetch.
+        if (scheduledMode !== currentMode()) {
+          _lastConfirmedQueue = null
+          _lastConfirmedIndex = -1
+          return
+        }
+        _lastConfirmedQueue = normalizeQueue(data.queue).filter(it => isVideoForMode(it, scheduledMode))
         _lastConfirmedIndex = get().currentIndex
         set({ queue: _lastConfirmedQueue, online: true, lastSynced: Date.now() })
       } catch {
-        // Rollback to last server-confirmed state
-        set({ queue: _lastConfirmedQueue, currentIndex: _lastConfirmedIndex, online: false })
+        // Rollback only if mode hasn't changed AND the snapshot wasn't
+        // invalidated by a sibling mutation (add/insert/remove/clear/fetch).
+        if (scheduledMode === currentMode() && _lastConfirmedQueue !== null) {
+          set({ queue: _lastConfirmedQueue, currentIndex: _lastConfirmedIndex, online: false })
+        } else {
+          _lastConfirmedQueue = null
+          _lastConfirmedIndex = -1
+        }
       }
     }, 300)
   },
@@ -252,6 +298,10 @@ const useQueueStore = create(persist((set, get) => ({
   // Clear entire queue
   // -----------------------------------------------------------
   clearQueue: async () => {
+    // Cancel any pending reorder PUT and drop the rollback snapshot first —
+    // nuclearFlush calls this on every mode switch, and a stale rollback
+    // would resurrect the cleared queue under the new mode.
+    _invalidateReorderRollback()
     try {
       const res = await fetch(modeUrl('/queue'), { method: 'DELETE' })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
