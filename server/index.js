@@ -298,7 +298,9 @@ function startScheduledTrendingRefresh() {
 
 function startStreamUrlTTLMonitor() {
   const TTL_CHECK_INTERVAL = 5 * 60_000
+  let tickCount = 0
   return setInterval(async () => {
+    tickCount++
     try {
       const cleared = db.prepare(`
         UPDATE feed_cache SET stream_url = NULL, expires_at = NULL
@@ -319,10 +321,26 @@ function startStreamUrlTTLMonitor() {
         LIMIT 10
       `).all()
 
-      if (expiring.length === 0) return
+      if (expiring.length > 0) {
+        logger.info(`  🔄 TTL monitor: ${expiring.length} stream URLs expiring soon, re-resolving...`)
+        await _preResolveStreamUrls(expiring.map(v => v.url))
+      }
 
-      logger.info(`  🔄 TTL monitor: ${expiring.length} stream URLs expiring soon, re-resolving...`)
-      await _preResolveStreamUrls(expiring.map(v => v.url))
+      // BUFFER: Every 3rd tick (every 15 min), proactively resolve a batch of
+      // never-resolved URLs so users hit cache instead of waiting for yt-dlp.
+      // RANDOM() spreads across all sources proportionally rather than draining
+      // one source's entire backlog. 20/tick is enough to stay ahead of browsing.
+      if (tickCount % 3 === 0) {
+        const unresolved = db.prepare(`
+          SELECT url FROM feed_cache
+          WHERE stream_url IS NULL AND watched = 0
+          ORDER BY RANDOM() LIMIT 20
+        `).all()
+        if (unresolved.length > 0) {
+          logger.info(`  🔗 Pre-resolve: warming ${unresolved.length} NULL stream URLs...`)
+          await _preResolveStreamUrls(unresolved.map(v => v.url))
+        }
+      }
     } catch (err) {
       logger.error('TTL monitor error:', { error: err.message })
     }
