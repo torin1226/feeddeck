@@ -1,5 +1,33 @@
 # FeedDeck Update Log
 
+## 2026-05-05 PM (Session 2) — Daily Playback Quality Sprint
+
+### Completed
+- **Verified `98a40f0` wallclock fix** via Node.js port of the Python backpressure survival test. Stream survived 20s pause; 544KB read after pause in <0.1s. Confirms the bug that killed videos at the ~50s mark is genuinely closed.
+- **Pre-resolution job for NULL stream URLs shipped** (commit `da2cfbd`). Added a 3rd-tick (every 15 min) pass to `startStreamUrlTTLMonitor` that picks 20 random unwatched NULL-stream-URL feed_cache entries and pre-resolves via the existing `_preResolveStreamUrls()`. RANDOM() distributes proportionally across all sources. Manual validation: 5/5 RedGifs resolved 3.2-3.6s → cached at 41ms.
+- **Diagnostics confirmed healthy:** Proxy TTFB 83ms, seek 25/50/75% all HTTP 206 with TTFB 50-202ms, Accept-Ranges always present.
+- **Calibration captured:** Reddit r/Unexpected = NO (consistent with weak-Reddit pattern); FikFap @anniemorricone = "maybe" (first FikFap signal — surfaces but doesn't strongly hit). Saved to `project_quality_calibration.md`.
+
+### Decisions Made
+- Co-located the new pre-resolution pass inside `startStreamUrlTTLMonitor` (3rd-tick modulo) rather than as a separate interval. Keeps interval count low and groups all stream-URL warming logic in one place.
+- Used `RANDOM() LIMIT 20` rather than scoring-ordered sampling. Simpler; any pre-resolved URL is a hit regardless of whether it's the next item shown.
+
+### Issues & Blockers
+- **YouTube cookies still expired** — needs Torin to manually re-import via Arc browser. Warm-cache running in degraded mode for social content.
+- **Python not installed on Windows dev machine** — backpressure test had to be ported to Node.js. Working fine; just a portability note.
+
+### Key Files Changed
+- `server/index.js` — added 3rd-tick NULL-URL pre-resolution pass to `startStreamUrlTTLMonitor`
+- `PROGRESS_REPORT_2026-05-05.md` — appended Session 2 metrics, score 88 → 92 → 94
+- `_memory/sessions/2026-05-05-playback-2.md` — new session log
+
+### Next Session Should
+1. **YouTube cookie refresh** (Torin's action) — biggest open lift on content quality
+2. Monitor pre-resolve hit rate after server has ~1hr uptime: query feed_cache resolved count, expect ~+80 from baseline of 1728
+3. AP5 Instagram fix — last open Active Push 2026-05-03 item
+
+---
+
 ## 2026-04-30 PM - Homepage Placeholder-Dogs Bug: Five-Layer Fix
 
 ### Completed
