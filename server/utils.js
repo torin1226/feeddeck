@@ -13,6 +13,7 @@ export const ALLOWED_CDN_DOMAINS = [
   'cloudfront.net',
   'xvideos-cdn.com',
   'spankbang.com',
+  'sb-cd.com',         // SpankBang video CDN (vdownload-XX.sb-cd.com)
   'redgifs.com',
   'thumbs2.redgifs.com',
   'b-cdn.net',         // BunnyCDN (FikFap video streams)

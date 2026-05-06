@@ -252,6 +252,13 @@ function startPreviewForFocus(focusedItem) {
 // load. Race-guarded by `token` and the module-level activeToken so a
 // switched focus aborts mid-load instead of attaching a stale stream.
 function attachHlsPreview(targetEl, streamUrl, token, itemId) {
+  // Race-guard: a synchronously-issued cancelPreview between the display
+  // timer firing and this helper running would null `activeToken`. The
+  // dynamic-import branch already checks inside its `.then()`/`.catch()`,
+  // but the synchronous Safari branch below would otherwise mutate
+  // `targetEl` after the focus owner moved away. Hoist the check.
+  if (activeToken !== token) return
+
   // Native HLS (iOS Safari) — skip hls.js entirely.
   const canPlayNative =
     typeof targetEl.canPlayType === 'function' &&
@@ -280,6 +287,13 @@ function attachHlsPreview(targetEl, streamUrl, token, itemId) {
       urlCache.delete(itemId)
       try { hls.destroy() } catch { /* ignore */ }
       if (activeHls === hls) activeHls = null
+      // Mirror the MP4 onError shape: a fatal manifest/network error must
+      // also hide the element and release the activeVideo singleton, or a
+      // frozen invisible-but-attached <video> stays bound and the next
+      // focus's hideActiveVideo() walks the wrong reference.
+      targetEl.removeAttribute('src')
+      targetEl.style.opacity = '0'
+      if (activeVideo === targetEl) activeVideo = null
     })
     hls.loadSource(`/api/hls-proxy?url=${encodeURIComponent(streamUrl)}`)
     hls.attachMedia(targetEl)

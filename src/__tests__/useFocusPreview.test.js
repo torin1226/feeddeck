@@ -380,6 +380,99 @@ describe('useFocusPreview', () => {
       expect(_peekForTests().urlCacheCount).toBe(0)
       expect(hlsInstances[0].destroyed).toBe(true)
     })
+
+    it('fatal HLS error releases activeVideo and clears the element', async () => {
+      // Regression: prior to 2026-05-06 the fatal-error handler nulled
+      // activeHls but left activeVideo === targetEl with a frozen
+      // (invisible-but-attached) src. Next focus's hideActiveVideo() would
+      // walk a stale reference. The handler must mirror MP4 onError shape.
+      const video = makeFakeVideo()
+      registerPreviewTarget('nsfw-1', video)
+      // Native HLS path bypasses MockHls — force the hls.js branch.
+      video.canPlayType = vi.fn(() => '')
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ streamUrl: 'https://cdn.example.com/playlist.m3u8' }),
+      })
+
+      _applyFocusForTests(focused(hlsItem, 'gallery-shelf'))
+      await vi.advanceTimersByTimeAsync(220)
+      await vi.runAllTimersAsync()
+      expect(_peekForTests().activeVideo).toBe(video)
+
+      hlsInstances[0].__fireFatalError()
+      expect(video.getAttribute('src')).toBeNull()
+      expect(video.style.opacity).toBe('0')
+      expect(_peekForTests().activeVideo).toBeNull()
+      expect(_peekForTests().activeHls).toBeNull()
+    })
+
+    it('hls.js dynamic import resolving after focus moved does NOT attach a stale instance', async () => {
+      // Regression for the .then() race-guard inside attachHlsPreview.
+      // We exercise the path explicitly: advance past debounce so the
+      // display timer fires + import starts, then move focus before the
+      // .then() of the import runs. Only the second focus should attach.
+      // (With vi.mock's synchronous resolution and fake timers, this is
+      // the closest we can get to the real-world async race; the second
+      // focus's display timer still fires after a debounce, so we end up
+      // verifying the .then() guard catches the first focus on the way
+      // out rather than catching a concurrent attach.)
+      const v1 = makeFakeVideo()
+      const v2 = makeFakeVideo()
+      registerPreviewTarget('nsfw-1', v1)
+      registerPreviewTarget('nsfw-2', v2)
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ streamUrl: 'https://cdn.example.com/playlist.m3u8' }),
+      })
+
+      _applyFocusForTests(focused(hlsItem, 'gallery-shelf'))
+      // Cancel BEFORE the display timer can fire (debounce 120ms; we
+      // wait only 50ms). activeToken is reset; the timer fires later
+      // and the inner check `activeToken !== token` returns early.
+      await vi.advanceTimersByTimeAsync(50)
+      _applyFocusForTests(focused(
+        { id: 'nsfw-2', url: 'https://example.com/v2' },
+        'gallery-shelf'
+      ))
+      await vi.runAllTimersAsync()
+
+      // Only the second focus's instance exists. The first focus's
+      // display timer fired after cancel, hit `activeToken !== token`
+      // at the top of the timer body, and bailed before reaching
+      // attachHlsPreview at all.
+      expect(hlsInstances).toHaveLength(1)
+      expect(hlsInstances[0].attachMediaCalls[0]).toBe(v2)
+      expect(_peekForTests().activeHls).toBe(hlsInstances[0])
+    })
+
+    it('Safari native-HLS path is also race-guarded at the top of attachHlsPreview', async () => {
+      // Defensive guard added 2026-05-06: the Safari branch is
+      // synchronous, so a stale token never had a real async window
+      // before. The hoisted check at the top of attachHlsPreview is
+      // belt-and-suspenders for any future call site that bypasses the
+      // display-timer's check. Here we assert that under a normal
+      // cancel-before-timer-fires sequence, no Safari-side mutation
+      // sneaks through onto the canceled target.
+      const video = makeFakeVideo({ canPlayNativeHls: true })
+      registerPreviewTarget('nsfw-1', video)
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ streamUrl: 'https://cdn.example.com/playlist.m3u8' }),
+      })
+
+      _applyFocusForTests(focused(hlsItem, 'gallery-shelf'))
+      await vi.advanceTimersByTimeAsync(50)
+      _applyFocusForTests(null)
+      await vi.runAllTimersAsync()
+
+      // No instance, no active video, no leftover src on the canceled
+      // target — the Safari branch never ran for the canceled focus.
+      expect(hlsInstances).toHaveLength(0)
+      expect(_peekForTests().activeVideo).toBeNull()
+      expect(_peekForTests().activeHls).toBeNull()
+      expect(video.getAttribute('src')).toBeNull()
+    })
   })
 
   it('eager-prefetches adjacentItems into the URL cache', async () => {
