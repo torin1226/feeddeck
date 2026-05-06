@@ -33,10 +33,11 @@ let _lastConfirmedQueue = null  // Last server-confirmed queue state for rollbac
 let _lastConfirmedIndex = -1
 
 // Cancel any pending reorder PUT and drop the rollback snapshot. Called from
-// every non-reorder mutation (add, insert, remove, clear, fetch-success) so a
-// stale rollback can't reintroduce just-removed items, and from any path that
-// invalidates the underlying queue (e.g. nuclearFlush via clearQueue) so a
-// stale PUT can't contaminate the next mode's queue.
+// user-initiated mutations (add, insert, remove, clear) so a stale rollback
+// can't reintroduce just-removed items, and from clearQueue specifically so
+// the nuclearFlush path can't leave a stale PUT to contaminate the next
+// mode's queue. NOT called from fetchQueue — polling lands every 3s and
+// would otherwise drop in-flight drags.
 function _invalidateReorderRollback() {
   if (_reorderTimer) {
     clearTimeout(_reorderTimer)
@@ -75,10 +76,11 @@ const useQueueStore = create(persist((set, get) => ({
       // the client guard too in case the server response is stale.
       const serverQueue = normalizeQueue(data.queue).filter(it => isVideoForMode(it, mode))
 
-      // Server response is a fresh source of truth — drop any pending reorder
-      // rollback snapshot so a stale PUT can't reintroduce items the user
-      // already removed elsewhere.
-      _invalidateReorderRollback()
+      // Note: do NOT invalidate the reorder rollback here. fetchQueue is
+      // called every 3s by useQueueSync polling and could land mid-drag —
+      // cancelling the in-flight reorder PUT would silently drop the user's
+      // drag. The reorder timer's own mode-check guards already cover the
+      // cross-mode case; sibling user mutations invalidate explicitly below.
 
       set((state) => {
         // Preserve currentIndex if the queue item still exists
