@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import useFeedStore from '../../stores/feedStore'
 import ThumbsRating from '../ThumbsRating'
+import { isClickOutSource } from '../../utils/isClickOutSource'
 
 // ============================================================
 // FeedVideo
@@ -108,6 +109,10 @@ async function loadSource(vid, url) {
 export default function FeedVideo({ video, index, isActive, setRef, _onSourceControl }) {
   const videoEl = useRef(null) // points to shared video when active
   const containerEl = useRef(null)
+  // Click-out sources (Instagram) can't be played in-app: yt-dlp's extractor
+  // is upstream-broken and static cookies fail. Render a CTA card that opens
+  // the source URL in a new tab instead of a broken video element.
+  const clickOut = isClickOutSource(video.source)
   const [streamUrl, setStreamUrl] = useState(video.streamUrl || null)
   const [streamLoading, setStreamLoading] = useState(false)
   const streamRetries = useRef(0)
@@ -132,6 +137,9 @@ export default function FeedVideo({ video, index, isActive, setRef, _onSourceCon
 
   // Resolve stream URL when within preload range
   useEffect(() => {
+    // Click-out items (Instagram) skip the stream-URL fetch entirely — there
+    // is nothing to play in-app, the card opens the source URL on tap instead.
+    if (clickOut) return
     if (!shouldLoad || streamUrl || streamLoading || videoError) return
     if (!video.url) return
     if (video.streamUrl) { setStreamUrl(video.streamUrl); return }
@@ -165,6 +173,8 @@ export default function FeedVideo({ video, index, isActive, setRef, _onSourceCon
 
   // Claim the shared video element when this slot becomes active
   useEffect(() => {
+    // Click-out items render a static CTA card; never claim the shared <video>.
+    if (clickOut) return
     if (!isActive || !streamUrl || !containerEl.current) {
       // Always return cleanup even when early-exiting, so that if
       // conditions change mid-cycle any prior setup is torn down.
@@ -269,7 +279,7 @@ export default function FeedVideo({ video, index, isActive, setRef, _onSourceCon
       if (_sharedHls) { _sharedHls.destroy(); _sharedHls = null }
       videoEl.current = null
     }
-  }, [isActive, streamUrl])
+  }, [clickOut, isActive, streamUrl])
 
   // Update object-fit when landscape/letterbox changes (without reloading the video)
   useEffect(() => {
@@ -280,6 +290,7 @@ export default function FeedVideo({ video, index, isActive, setRef, _onSourceCon
 
   // Handle pause/unpause while active
   useEffect(() => {
+    if (clickOut) return
     if (!isActive) return
     const vid = getSharedVideo()
     if (paused) {
@@ -287,7 +298,7 @@ export default function FeedVideo({ video, index, isActive, setRef, _onSourceCon
     } else if (vid.paused && vid.src) {
       vid.play().catch(() => {})
     }
-  }, [paused, isActive])
+  }, [clickOut, paused, isActive])
 
   // Tap to unmute or play/pause
   const handleTap = useCallback((e) => {
@@ -306,6 +317,57 @@ export default function FeedVideo({ video, index, isActive, setRef, _onSourceCon
   }, [setMuted])
 
   const objectFit = letterbox ? 'contain' : 'cover'
+
+  // Click-out card for sources with no in-app playback (Instagram).
+  // Renders the thumbnail behind a clear CTA that opens the source URL in a
+  // new tab. Tap target covers the whole card so the gesture matches the
+  // rest of the feed; the explicit button is the screen-reader affordance.
+  if (clickOut) {
+    const openSource = (e) => {
+      e?.stopPropagation()
+      if (video.url) window.open(video.url, '_blank', 'noopener,noreferrer')
+    }
+    return (
+      <div
+        ref={containerEl}
+        data-feed-index={index}
+        data-click-out="instagram"
+        className="w-full snap-start snap-always relative flex items-center justify-center bg-black h-dvh"
+        onClick={openSource}
+      >
+        {video.thumbnail && (
+          <img
+            src={video.thumbnail}
+            alt=""
+            className="absolute inset-0 w-full h-full"
+            style={{ objectFit: 'cover' }}
+            draggable="false"
+          />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-black/40 pointer-events-none" />
+        <div className="relative z-10 flex flex-col items-center gap-4 px-6 text-center">
+          <div className="text-white/90 text-base font-medium max-w-[28ch] line-clamp-3">
+            {video.title || 'Instagram Reel'}
+          </div>
+          <button
+            type="button"
+            onClick={openSource}
+            className="px-5 py-2.5 rounded-full bg-white text-black text-sm font-semibold flex items-center gap-2 active:scale-95 transition-transform shadow-lg"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="5" />
+              <circle cx="12" cy="12" r="4" />
+              <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
+            </svg>
+            Open on Instagram
+          </button>
+          <div className="text-white/55 text-xs">
+            Plays in a new tab
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div

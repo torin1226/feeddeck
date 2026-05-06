@@ -63,6 +63,33 @@ export async function getPuppeteer() {
   return puppeteer
 }
 
+// Instagram reel shortcodes are exactly 11 base64url chars. The grid view exposes
+// nothing else when image-loading is off, so the URL tail is the fallback of last
+// resort. The exact-11 length lets us distinguish a real shortcode ("DXwidkpoiJC")
+// from a username of similar character class ("cristiano" / "kimkardashian"), so
+// the title-fallback never echoes a username back as if it were a code.
+const INSTAGRAM_SHORTCODE_RE = /^[A-Za-z0-9_-]{11}$/
+function _looksLikeShortcode(title) {
+  return !!title && INSTAGRAM_SHORTCODE_RE.test(title.trim())
+}
+
+// Build a human-readable title for an Instagram reel when the caption is missing.
+// URL shape: https://www.instagram.com/{handle}/reel/{shortcode}/  OR  /reel/{shortcode}/
+// Falls back to "Instagram Reel" when the URL has no handle (explore page reels).
+export function instagramFallbackTitle(url, uploader) {
+  const handle = (uploader || '').trim().replace(/^@/, '')
+  if (handle && !_looksLikeShortcode(handle)) return `Reel by @${handle}`
+  try {
+    const path = new URL(url).pathname.split('/').filter(Boolean)
+    // Instagram routes /{handle}/reel/{shortcode}/, so path[0] is the handle
+    // whenever path[1] === 'reel'. The URL structure is the trustworthy signal.
+    if (path.length >= 3 && path[1] === 'reel') {
+      return `Reel by @${path[0]}`
+    }
+  } catch { /* ignore — fall through */ }
+  return 'Instagram Reel'
+}
+
 // Site-specific scraper configs
 // Each site needs: URL patterns for search/category/trending,
 // and CSS selectors for extracting video cards from the page.
@@ -276,7 +303,7 @@ export class ScraperAdapter extends SourceAdapter {
     return null
   }
 
-  async _newPage() {
+  async _newPage(config = null) {
     const browser = await this._getBrowser()
     if (!browser) return null
     const page = await browser.newPage()
@@ -298,11 +325,20 @@ export class ScraperAdapter extends SourceAdapter {
       )
       await page.setViewport({ width: 1920, height: 1080 })
 
-      // Block images, fonts, and CSS to speed things up (we only need the DOM)
+      // Block heavy resources to speed things up (we only need the DOM).
+      // EXCEPTION: auth-required sites (e.g. Instagram) lazy-load img src/srcset
+      // attributes ONLY after the browser fetches the image. Aborting images on
+      // those sites leaves the alt text and src empty in the DOM, so the card
+      // extractor falls back to the URL shortcode for titles. Allow images
+      // through for auth-required sites; they pay the latency for usable metadata.
+      const allowImages = !!config?.requiresAuth
       await page.setRequestInterception(true)
       page.on('request', (req) => {
         const type = req.resourceType()
-        if (['image', 'font', 'stylesheet', 'media'].includes(type)) {
+        const block = allowImages
+          ? ['font', 'stylesheet', 'media']
+          : ['image', 'font', 'stylesheet', 'media']
+        if (block.includes(type)) {
           try { req.abort() } catch {}
         } else {
           try { req.continue() } catch {}
@@ -324,7 +360,7 @@ export class ScraperAdapter extends SourceAdapter {
 
     let page
     try {
-      page = await this._newPage()
+      page = await this._newPage(config)
       if (!page) {
         logger.warn(`Scraper: Chromium unavailable, skipping ${siteKey} (${url})`)
         return []
@@ -815,7 +851,17 @@ export class ScraperAdapter extends SourceAdapter {
       if (i + BATCH < enriched.length) await new Promise(r => setTimeout(r, 200))
     }
 
-    logger.info(`Scraper: OG enriched ${enriched.filter(v => v.tags.length > 0).length}/${enriched.length} videos with tags`)
+    // Final pass: any title still matching a bare shortcode (og:title was missing
+    // or the fetch failed) becomes "Reel by @{handle}" — never a raw shortcode.
+    let fallbackCount = 0
+    for (const v of enriched) {
+      if (_looksLikeShortcode(v.title)) {
+        v.title = instagramFallbackTitle(v.url, v.uploader)
+        fallbackCount++
+      }
+    }
+
+    logger.info(`Scraper: OG enriched ${enriched.filter(v => v.tags.length > 0).length}/${enriched.length} videos with tags${fallbackCount > 0 ? ` (${fallbackCount} fell back to "Reel by @handle")` : ''}`)
     return enriched
   }
 
