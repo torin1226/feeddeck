@@ -875,6 +875,10 @@ function getRefillStmts() {
         INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, fetched_at, expires_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
       `),
+      crossCatCount: db.prepare(`
+        SELECT COUNT(DISTINCT category_key) as cnt FROM homepage_cache
+        WHERE url = ? AND category_key != ?
+      `),
     }
   }
   return _refillStmts
@@ -1037,9 +1041,16 @@ async function refillCategory(categoryKey, sessionCache = new Map()) {
 
   const scored = scoreVideos(deduped, cat.label, { mode: cat.mode }).slice(0, 30)
 
+  // Skip videos already present in 3+ other categories to prevent
+  // generic trending content from flooding every shelf.
+  const MAX_CROSS_CAT = 3
   let added = 0
+  let skippedCrossCat = 0
   for (const v of scored) {
     try {
+      const { cnt } = stmts.crossCatCount.get(v.url, categoryKey)
+      if (cnt >= MAX_CROSS_CAT) { skippedCrossCat++; continue }
+
       const id = v.id || `${categoryKey}_${_hashId(v.url)}`
       const compositeId = id.startsWith(categoryKey) ? id : `${categoryKey}_${id}`
       const result = stmts.insert.run(
@@ -1054,6 +1065,7 @@ async function refillCategory(categoryKey, sessionCache = new Map()) {
       logger.warn(`  ⚠️ Insert failed for ${categoryKey}`, { error: err.message })
     }
   }
+  if (skippedCrossCat > 0) logger.info(`  🚫 Skipped ${skippedCrossCat} videos already in ${MAX_CROSS_CAT}+ other categories`)
   logger.info(`  ✅ Topic-pipeline added ${added} videos to ${categoryKey}`)
 }
 
