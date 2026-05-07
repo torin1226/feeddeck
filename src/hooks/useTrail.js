@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import useModeStore from '../stores/modeStore'
 
 // ============================================================
 // useTrail
@@ -62,8 +63,10 @@ export default function useTrail(seedItem) {
       channelUrl: seedItem?.channelUrl || seedItem?.channel_url || '',
     }
 
+    const mode = useModeStore.getState().isSFW ? 'social' : 'nsfw'
+
     setLoading(true)
-    fetch('/api/recommendations/trail/seed', {
+    fetch(`/api/recommendations/trail/seed?mode=${mode}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(seedBody),
@@ -73,7 +76,7 @@ export default function useTrail(seedItem) {
       if (cancelled) return
       try {
         const res = await withTimeout(
-          fetch(`/api/recommendations/trail?seedVideoUrl=${encodeURIComponent(seedUrl)}&limit=24`),
+          fetch(`/api/recommendations/trail?seedVideoUrl=${encodeURIComponent(seedUrl)}&limit=24&mode=${mode}`),
           FETCH_TIMEOUT_MS,
         )
         if (cancelled) return

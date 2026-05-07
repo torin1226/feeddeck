@@ -63,6 +63,11 @@ const _pinnedOffsets = new Map() // row key -> integer offset
 // fire-and-forget and can lag behind a fast nav).
 const _recentlyHidden = new Set()
 
+// Most recent thumbs-down dismissal — single-slot capture so the toast's
+// Undo can put the card back where it came from. Cleared once Undo is
+// invoked or once a new dismissal supersedes it.
+let _lastDismissed = null
+
 // Pinned rows that should NEVER shuffle. The user's saved likes are
 // curated content; users care about their order, not novelty.
 const PINNED_NO_SHUFFLE = new Set(['ph_likes'])
@@ -364,6 +369,118 @@ const useHomeStore = create((set, get) => ({
     return true
   },
 
+  // Optimistically remove an item the user thumbs-downed and slide a
+  // fresh replacement into the carousel. The server-side downvote filter
+  // (scoreVideos -> downvotedUrls) handles persistence across reloads;
+  // this just gives the immediate hide-and-advance feel.
+  //
+  // Replacement strategy: walk every category's items in order and pick
+  // the first one that is NOT already visible in the (post-filter)
+  // carousel and NOT in _recentlyHidden. That gives a "next up in the
+  // row's order, not already shown, not already watched" pick.
+  //
+  // The captured origin enables restoreDismissed for the toast Undo.
+  dismissAndAdvance: (item) => {
+    if (!item || (!item.url && !item.id)) return
+    if (item.id) _recentlyHidden.add(item.id)
+
+    const state = get()
+    const dismissedKey = item.url || item.id
+    const matches = (v) => v && (v.url || v.id) === dismissedKey
+
+    // Capture origin BEFORE mutating, so Undo can restore the item.
+    const carouselIndex = state.carouselItems.findIndex(matches)
+    const categoryIndex = state.categories.findIndex(c => c.items.some(matches))
+    const inItemIndex = categoryIndex >= 0
+      ? state.categories[categoryIndex].items.findIndex(matches)
+      : -1
+    const wasHero = state.heroItem ? matches(state.heroItem) : false
+    _lastDismissed = { item, carouselIndex, categoryIndex, inItemIndex, wasHero }
+
+    const filteredCarousel = state.carouselItems.filter(v => !matches(v))
+    const filteredCategories = state.categories.map(c => ({
+      ...c,
+      items: c.items.filter(v => !matches(v)),
+    }))
+
+    // Find a replacement that isn't already a carousel card and isn't
+    // recently hidden (covers shuffle-marked-viewed + just-dismissed).
+    const visible = new Set(filteredCarousel.map(v => v.url || v.id))
+    let replacement = null
+    outer: for (const c of filteredCategories) {
+      for (const v of c.items) {
+        const k = v.url || v.id
+        if (!visible.has(k) && !_recentlyHidden.has(v.id)) {
+          replacement = v
+          break outer
+        }
+      }
+    }
+    const newCarousel = replacement
+      ? [...filteredCarousel, replacement]
+      : filteredCarousel
+
+    const newHero = wasHero ? (newCarousel[0] || null) : state.heroItem
+
+    set({
+      carouselItems: newCarousel,
+      categories: filteredCategories,
+      heroItem: newHero,
+    })
+  },
+
+  // Restore the most recently dismissed item to its original position.
+  // Best-effort: if the surrounding state has shifted (a refresh fired,
+  // another dismissal happened, etc.) we still re-insert as close to the
+  // original index as possible. Returns true if a restore happened.
+  restoreDismissed: () => {
+    const origin = _lastDismissed
+    if (!origin || !origin.item) return false
+    const item = origin.item
+    if (item.id) _recentlyHidden.delete(item.id)
+
+    const state = get()
+    const key = item.url || item.id
+    const present = (list) => list.some(v => (v.url || v.id) === key)
+
+    let newCategories = state.categories
+    if (origin.categoryIndex >= 0 && origin.categoryIndex < state.categories.length) {
+      newCategories = state.categories.map((c, i) => {
+        if (i !== origin.categoryIndex) return c
+        if (present(c.items)) return c
+        const insertAt = Math.min(
+          origin.inItemIndex >= 0 ? origin.inItemIndex : c.items.length,
+          c.items.length,
+        )
+        return {
+          ...c,
+          items: [...c.items.slice(0, insertAt), item, ...c.items.slice(insertAt)],
+        }
+      })
+    }
+
+    let newCarousel = state.carouselItems
+    if (origin.carouselIndex >= 0 && !present(state.carouselItems)) {
+      const idx = Math.min(origin.carouselIndex, state.carouselItems.length)
+      newCarousel = [
+        ...state.carouselItems.slice(0, idx),
+        item,
+        ...state.carouselItems.slice(idx),
+      ]
+    }
+
+    const newHero = origin.wasHero ? item : state.heroItem
+
+    set({
+      categories: newCategories,
+      carouselItems: newCarousel,
+      heroItem: newHero,
+    })
+
+    _lastDismissed = null
+    return true
+  },
+
   // Fetch real data from backend.
   //
   // Self-healing: when the backend returns no content (cache warming after
@@ -481,6 +598,16 @@ const useHomeStore = create((set, get) => ({
             if (b.uploadTs !== a.uploadTs) return b.uploadTs - a.uploadTs
             return b.fetchedTs - a.fetchedTs
           })
+          // ph_likes is curated by the user — every item is already a like,
+          // so taste-profile / score ordering carries little signal here.
+          // Randomize on every fetch so the hero rotates instead of being
+          // deterministically the highest-scored Gattouz0 video forever.
+          if (cat.key === 'ph_likes' && items.length > 1) {
+            for (let i = items.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1))
+              ;[items[i], items[j]] = [items[j], items[i]]
+            }
+          }
           if (isPinned && cat.key && !PINNED_NO_SHUFFLE.has(cat.key) && items.length > 0) {
             const off = (_pinnedOffsets.get(cat.key) || 0) % items.length
             if (off > 0) items = [...items.slice(off), ...items.slice(0, off)]
@@ -617,7 +744,7 @@ const useHomeStore = create((set, get) => ({
       // without trail entries if the call errors.
       let mergedCarousel = carouselItems
       try {
-        const trailRes = await fetch('/api/recommendations/trail?limit=12')
+        const trailRes = await fetch(`/api/recommendations/trail?limit=12&mode=${mode}`)
         if (version === _fetchVersion && trailRes.ok) {
           const trailData = await trailRes.json()
           const trailItems = (trailData?.items || [])

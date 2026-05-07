@@ -205,6 +205,23 @@ export function createTrailRunner({ ytdlpAdapter, options = {} } = {}) {
     }
     consider(creatorRaw, 'creator', creatorScore)
     consider(keywordRaw, 'keyword', keywordScore)
+
+    // Mode firewall: NSFW trail must only contain known adult domains.
+    // Keyword searches distill titles into generic terms ("massage",
+    // "couple") which yt-dlp resolves via YouTube, producing social
+    // results. Filter those out so they never reach the trail table.
+    if (mode === 'nsfw') {
+      const nsfwDomains = /pornhub|redgifs|xvideos|spankbang|fikfap|redtube|youporn|xhamster|eporner/i
+      const before = out.length
+      const filtered = out.filter(r => {
+        try { return nsfwDomains.test(new URL(r.video_url).hostname) } catch { return false }
+      })
+      if (filtered.length < before) {
+        logger.info('trail: filtered non-NSFW URLs from NSFW trail', { removed: before - filtered.length })
+      }
+      return filtered
+    }
+
     return out
   }
 
