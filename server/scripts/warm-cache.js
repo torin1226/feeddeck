@@ -295,6 +295,75 @@ if (modes.includes('nsfw')) {
   }
 }
 
+// --- Phase 1.6: Eager pre-resolve homepage stream URLs ---
+// Resolves the leading non-pinned categories' first ~10 items so the home
+// page's leftmost cards play with cached-lookup latency instead of cold
+// yt-dlp (~5s on first click). Persistent-row items are still resolved
+// on first click via /api/stream-url; that path now also caches into
+// homepage_cache so subsequent loads are warm.
+console.log('\n--- Phase 1.6: Eager Pre-resolve Homepage Stream URLs ---')
+const LEADING_CATEGORIES_PER_MODE = 3
+const PER_CATEGORY_LIMIT = 10
+let homepageUpdateStmt
+try {
+  homepageUpdateStmt = db.prepare(
+    `UPDATE homepage_cache SET stream_url = ?, stream_url_expires_at = datetime('now', '+2 hours') WHERE id = ?`
+  )
+} catch (err) {
+  console.log(`  ⚠️ Phase 1.6 skipped (column missing — run server once to migrate): ${err.message}`)
+  homepageUpdateStmt = null
+}
+
+if (homepageUpdateStmt) {
+  for (const mode of modes) {
+    const leadingCategories = db.prepare(
+      `SELECT key FROM categories WHERE mode = ? ORDER BY sort_order LIMIT ?`
+    ).all(mode, LEADING_CATEGORIES_PER_MODE)
+
+    const targetItems = []
+    for (const cat of leadingCategories) {
+      try {
+        const items = db.prepare(
+          `SELECT id, url FROM homepage_cache
+           WHERE category_key = ? AND viewed = 0 AND stream_url IS NULL AND url IS NOT NULL
+             AND expires_at > datetime('now')
+           ORDER BY fetched_at DESC
+           LIMIT ?`
+        ).all(cat.key, PER_CATEGORY_LIMIT)
+        for (const it of items) targetItems.push(it)
+      } catch (err) {
+        console.log(`    ⚠️ ${cat.key}: select failed: ${err.message.substring(0, 60)}`)
+      }
+    }
+
+    if (targetItems.length === 0) {
+      console.log(`  ${mode}: 0 items need resolving`)
+      continue
+    }
+
+    console.log(`  ${mode}: pre-resolving ${targetItems.length} stream URLs across ${leadingCategories.length} leading categories (concurrency: ${CONCURRENCY})...`)
+    let resolved = 0
+    let failed = 0
+    for (let i = 0; i < targetItems.length; i += CONCURRENCY) {
+      const batch = targetItems.slice(i, i + CONCURRENCY)
+      const results = await Promise.allSettled(
+        batch.map(async ({ id, url }) => {
+          const cdnUrl = await registry.getStreamUrl(url)
+          homepageUpdateStmt.run(cdnUrl, id)
+          return cdnUrl
+        })
+      )
+      for (const r of results) {
+        if (r.status === 'fulfilled') resolved++
+        else failed++
+      }
+    }
+    console.log(`  ${mode}: pre-resolved ${resolved} OK, ${failed} failed`)
+    stats.streamUrlsResolved += resolved
+    stats.errors += failed
+  }
+}
+
 // --- Phase 2: Refill feed sources ---
 console.log('\n--- Phase 2: Feed Sources ---')
 for (const mode of modes) {

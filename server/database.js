@@ -643,6 +643,21 @@ export function initDatabase() {
     }
   }
 
+  // Migrate: add stream_url + stream_url_expires_at to homepage_cache so warm-cache
+  // can eagerly pre-resolve homepage stream URLs (matching feed_cache.stream_url).
+  // Without this, the leftmost cards on home mount hit cold yt-dlp (~5s).
+  try {
+    const cols = new Set(db.prepare("PRAGMA table_info(homepage_cache)").all().map(c => c.name))
+    if (!cols.has('stream_url')) {
+      db.exec("ALTER TABLE homepage_cache ADD COLUMN stream_url TEXT")
+    }
+    if (!cols.has('stream_url_expires_at')) {
+      db.exec("ALTER TABLE homepage_cache ADD COLUMN stream_url_expires_at DATETIME")
+    }
+  } catch (err) {
+    logger.warn('homepage_cache stream_url migration failed', { error: err.message })
+  }
+
   // Migrate: fix 'Your Subscriptions' label to 'My Subscriptions' to match BrowseSection TARGET_LABELS
   try {
     db.exec("UPDATE categories SET label = 'My Subscriptions' WHERE key = 'social_subscriptions' AND label = 'Your Subscriptions'")

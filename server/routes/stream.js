@@ -102,20 +102,41 @@ router.get('/api/stream-url', async (req, res) => {
   const { url, format } = req.query
   if (!url) return res.status(400).json({ error: 'URL required' })
 
-  // Check feed_cache for a cached, non-expired stream URL (skip cache if specific format requested)
+  // Check feed_cache and homepage_cache for a cached, non-expired stream URL
+  // (skip cache if specific format requested). Either table may have it: feed
+  // items live in feed_cache, homepage cards live in homepage_cache (with
+  // stream_url populated by warm-cache Phase 1.6 or a prior /api/stream-url
+  // resolution). Read both, prefer the freshest non-expired hit.
   if (!format) {
     try {
-      const cached = db.prepare(
+      const feedRow = db.prepare(
         `SELECT stream_url, expires_at FROM feed_cache
          WHERE url = ? AND stream_url IS NOT NULL`
       ).get(url)
+      const homepageRow = (() => {
+        try {
+          return db.prepare(
+            `SELECT stream_url, stream_url_expires_at AS expires_at FROM homepage_cache
+             WHERE url = ? AND stream_url IS NOT NULL
+             ORDER BY stream_url_expires_at DESC
+             LIMIT 1`
+          ).get(url)
+        } catch { return null }
+      })()
 
-      if (cached?.stream_url) {
-        // Only serve from cache if not expired (or no expiry set)
-        const notExpired = !cached.expires_at || new Date(cached.expires_at + 'Z') > new Date()
-        if (notExpired) {
-          return res.json({ streamUrl: cached.stream_url })
-        }
+      const isFresh = (row) => {
+        if (!row?.stream_url) return false
+        if (!row.expires_at) return true
+        return new Date(row.expires_at + 'Z') > new Date()
+      }
+
+      if (isFresh(feedRow)) {
+        return res.json({ streamUrl: feedRow.stream_url })
+      }
+      if (isFresh(homepageRow)) {
+        return res.json({ streamUrl: homepageRow.stream_url })
+      }
+      if (feedRow?.stream_url || homepageRow?.stream_url) {
         // Expired — fall through to re-resolve
         logger.info('Stream URL expired, re-resolving', { url: url.substring(0, 60) })
       }
@@ -128,12 +149,20 @@ router.get('/api/stream-url', async (req, res) => {
 
     logger.info('Resolved stream URL', { format: cdnUrl.includes('.m3u8') ? 'HLS' : 'MP4', url: cdnUrl.substring(0, 80) })
 
-    // Cache the resolved stream URL (expires in 2 hours — PornHub CDN URLs expire ~2hr)
+    // Cache the resolved stream URL in both tables (expires in 2 hours).
+    // The UPDATE in either table is a no-op when the URL doesn't exist there;
+    // homepage_cache may have multiple rows for the same URL across categories,
+    // so all matching rows get refreshed.
     try {
       db.prepare(
         `UPDATE feed_cache SET stream_url = ?, expires_at = datetime('now', '+2 hours') WHERE url = ?`
       ).run(cdnUrl, url)
     } catch { /* cache miss is fine */ }
+    try {
+      db.prepare(
+        `UPDATE homepage_cache SET stream_url = ?, stream_url_expires_at = datetime('now', '+2 hours') WHERE url = ?`
+      ).run(cdnUrl, url)
+    } catch { /* column may not exist on older DBs; ignore */ }
 
     res.json({ streamUrl: cdnUrl })
   } catch (err) {
