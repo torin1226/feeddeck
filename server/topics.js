@@ -23,6 +23,29 @@ import { db } from './database.js'
 import { logger } from './logger.js'
 import { safeParse } from './utils.js'
 
+// Generic single-word topics that produce off-topic YouTube results when
+// used as `ytsearch5:${topic}`. Built from observed trends24 contamination:
+// "life" → self-help spam, "iran" → news noise in music/gaming categories,
+// "dog" → pet videos in tech/cooking, etc.
+const TOPIC_STOPWORDS = new Set([
+  'life', 'iran', 'dog', 'car', 'home', 'house', 'mom', 'max', 'fox',
+  'back', 'gave', 'sold', 'night', 'check', 'world', 'time', 'reality',
+  'turned', 'wrong', 'love', 'news', 'best', 'new', 'day', 'live',
+  'man', 'girl', 'boy', 'baby', 'wife', 'dad', 'son', 'end', 'top',
+  'big', 'old', 'year', 'way', 'part', 'full', 'real', 'last', 'first',
+  'come', 'go', 'got', 'get', 'made', 'make', 'take', 'just', 'ever',
+  'still', 'watch', 'video', 'official', 'biker', 'trailer',
+])
+
+function isQualityTopic(topic) {
+  const t = String(topic).toLowerCase().trim()
+  if (t.length < 4) return false
+  if (/^[[\]()\-_.,;:!?]+$/.test(t)) return false
+  if (/^[[\]]/.test(t) || /[[\]]$/.test(t)) return false
+  if (TOPIC_STOPWORDS.has(t)) return false
+  return true
+}
+
 const TRENDS_TTL_MIN_DEFAULT = 360 // 6h
 
 /**
@@ -72,8 +95,9 @@ async function resolveTrends24(section) {
     // Lazy import — only loads Puppeteer when actually needed.
     const mod = await import('./sources/trends24.js')
     const result = await mod.fetchSection(`group-${section}`)
+    const rawTopics = (result.keywords || []).filter(isQualityTopic)
     const payload = {
-      topics: result.keywords || [],
+      topics: rawTopics,
       creators: (result.creators || []).map(c => ({
         handle: typeof c === 'string' ? c : c.handle,
         channel_url: typeof c === 'string' ? null : c.channel_url,
@@ -156,8 +180,8 @@ async function resolveTwitterTrends(region) {
   if (cached) return cached
   try {
     const mod = await import('./sources/twitter-trends.js')
-    const topics = await mod.fetchUsTrends()
-    const payload = { topics, creators: [], directVideos: [] }
+    const rawTopics = (await mod.fetchUsTrends()).filter(isQualityTopic)
+    const payload = { topics: rawTopics, creators: [], directVideos: [] }
     writeTrendsCache(sourceKey, payload, 60) // 1h
     return payload
   } catch (err) {
@@ -256,6 +280,7 @@ export async function resolveTopics(sources, ctx = {}) {
       if (u && !seenUrls.has(u)) { seenUrls.add(u); merged.directVideos.push(v) }
     }
   }
+
   return merged
 }
 

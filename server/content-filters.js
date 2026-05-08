@@ -17,6 +17,8 @@ const CLICKBAIT_PATTERNS = [
   /you\s+laugh\s+you\s+lose/i,
   /(funniest|funny)\s+videos?\s+(ever|of\s+(the\s+)?(year|week|month))/i,
   /best\s+of\s+\d{4}\s+(funny|comedy|trending)/i,
+  /\d+\s*hours?\s+of\s+reddit\s+stories/i,
+  /reddit\s+stories?\s+(compilation|to\s+(fall\s+)?asleep)/i,
 ]
 
 // Hashtag-spam pattern: 3+ hashtags in a title is a strong signal
