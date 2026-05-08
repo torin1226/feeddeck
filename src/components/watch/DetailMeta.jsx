@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import useRatingsStore from '../../stores/ratingsStore'
 import useToastStore from '../../stores/toastStore'
+import useHomeStore from '../../stores/homeStore'
 
 // ============================================================
 // DetailMeta
@@ -39,6 +40,8 @@ export default function DetailMeta({ item, onAddToQueue, onEnterFullscreen }) {
   const ratedUrls = useRatingsStore((s) => s.ratedUrls)
   const showToast = useToastStore((s) => s.showToast)
   const showActionToast = useToastStore((s) => s.showActionToast)
+  const dismissAndAdvance = useHomeStore((s) => s.dismissAndAdvance)
+  const restoreDismissed = useHomeStore((s) => s.restoreDismissed)
 
   const currentRating = ratingFor(item, ratedUrls)
 
@@ -50,6 +53,7 @@ export default function DetailMeta({ item, onAddToQueue, onEnterFullscreen }) {
     // Toggle off if clicking the same rating again.
     if (currentRating === next) {
       undoRating?.(url, surfaceKey)
+      restoreDismissed()
       fetch('/api/ratings/undo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -59,17 +63,27 @@ export default function DetailMeta({ item, onAddToQueue, onEnterFullscreen }) {
     }
 
     recordRating(url, surfaceKey, next)
+    if (next === 'down') dismissAndAdvance(item)
     postRating({ videoUrl: url, item, surfaceKey, rating: next })
 
     if (next === 'down') {
       showActionToast?.("Got it. We'll show less like this.", {
         position: 'bottom',
         timeout: 8000,
+        actions: [{ label: 'Undo', primary: true, onClick: () => {
+          undoRating?.(url, surfaceKey)
+          restoreDismissed()
+          fetch('/api/ratings/undo', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ videoUrl: url }),
+          }).catch(() => {})
+        }}],
       })
     } else if (showToast) {
       showToast(item.uploader ? `Saved. More from ${item.uploader} coming your way.` : 'Saved', 'success')
     }
-  }, [item, currentRating, recordRating, undoRating, showToast, showActionToast])
+  }, [item, currentRating, recordRating, undoRating, showToast, showActionToast, dismissAndAdvance, restoreDismissed])
 
   const handleShare = useCallback(() => {
     try {

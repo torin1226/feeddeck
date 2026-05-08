@@ -458,6 +458,7 @@ export default function FeedVideo({ video, index, isActive, setRef, _onSourceCon
           thumbnail={video.thumbnail || ''}
           source={video.source || ''}
           visible={!_hideOverlay}
+          item={video}
         />
       )}
 

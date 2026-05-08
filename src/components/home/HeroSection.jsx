@@ -22,7 +22,7 @@ const stripTrailingDate = (s) =>
 // ============================================================
 
 export default function HeroSection() {
-  const { heroItem, theatreMode, setFocusedItem, upNextHidden, toggleUpNextHidden, markExposed } = useHomeStore()
+  const { heroItem, theatreMode, setFocusedItem, upNextHidden, toggleUpNextHidden, markExposed, dismissAndAdvance, restoreDismissed } = useHomeStore()
   const navigate = useNavigate()
   const goWatch = useCallback(() => {
     if (heroItem?.id) navigate(`/watch/${heroItem.id}`)
@@ -49,15 +49,20 @@ export default function HeroSection() {
 
   const handleHeroRate = useCallback(async (rating) => {
     if (!heroItem?.url || heroRating) return
-    recordRating(heroItem.url, 'home_hero', rating)
+    const dismissed = heroItem
+    recordRating(dismissed.url, 'home_hero', rating)
+    // Optimistic dismissal: drop the hero immediately on thumbs-down so
+    // the next eligible card slides in. Server filters via scoreVideos
+    // on the next fetch, so the persistence is already covered.
+    if (rating === 'down') dismissAndAdvance(dismissed)
     try {
       await fetch('/api/ratings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          videoUrl: heroItem.url, surfaceType: 'home_hero', surfaceKey: null,
-          rating, tags: heroItem.tags || [], creator: heroItem.uploader || '',
-          title: heroItem.title || '', thumbnail: heroItem.thumbnail || '', source: heroItem.source || '',
+          videoUrl: dismissed.url, surfaceType: 'home_hero', surfaceKey: null,
+          rating, tags: dismissed.tags || [], creator: dismissed.uploader || '',
+          title: dismissed.title || '', thumbnail: dismissed.thumbnail || '', source: dismissed.source || '',
         }),
       })
     } catch (err) { console.warn('Hero rating failed:', err.message) }
@@ -65,14 +70,15 @@ export default function HeroSection() {
       showActionToast("Got it. We'll show less like this.", {
         position: 'bottom', timeout: 10000,
         actions: [{ label: 'Undo', primary: true, onClick: () => {
-          undoRating(heroItem.url, 'home_hero')
-          fetch('/api/ratings/undo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoUrl: heroItem.url }) }).catch(() => {})
+          undoRating(dismissed.url, 'home_hero')
+          restoreDismissed()
+          fetch('/api/ratings/undo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoUrl: dismissed.url }) }).catch(() => {})
         }}],
       })
-    } else if (!isToastPaused() && heroItem.uploader) {
-      showToast(`Saved. More from ${heroItem.uploader} coming your way.`, 'success')
+    } else if (!isToastPaused() && dismissed.uploader) {
+      showToast(`Saved. More from ${dismissed.uploader} coming your way.`, 'success')
     }
-  }, [heroItem, heroRating, recordRating, undoRating, isToastPaused, showToast, showActionToast])
+  }, [heroItem, heroRating, recordRating, undoRating, isToastPaused, showToast, showActionToast, dismissAndAdvance, restoreDismissed])
 
   const [previewing, setPreviewing] = useState(false)
   const [showBadge, setShowBadge] = useState(false)

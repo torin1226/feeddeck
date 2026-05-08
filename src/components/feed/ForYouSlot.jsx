@@ -142,22 +142,45 @@ const ForYouSlot = memo(function ForYouSlot({ video, index, isActive, onVideoRef
               thumbnail={video.thumbnail || ''}
               source={video.source || ''}
               visible={!theatreMode}
+              item={video}
             />
           )}
 
-          {/* Theatre button — top right */}
-          <button
-            onClick={() => useFeedStore.getState().setTheatreMode(true)}
-            className="absolute top-8 right-8 z-content px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-lg text-white/70 text-sm font-medium border border-white/10 hover:bg-black/60 hover:text-white transition-colors"
-            aria-label="Enter theatre mode"
-          >
-            ⛶ Theatre
-          </button>
+          {/* Top-right controls — mute toggle + theatre */}
+          <div className="absolute top-8 right-8 z-content flex items-center gap-2">
+            <button
+              onClick={() => useFeedStore.getState().setMuted(!muted)}
+              className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-lg border border-white/10 text-white/70 flex items-center justify-center hover:bg-black/60 hover:text-white transition-colors"
+              aria-label={muted ? 'Unmute' : 'Mute'}
+              title={muted ? 'Unmute' : 'Mute'}
+            >
+              {muted ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                  <line x1="23" y1="9" x2="17" y2="15" />
+                  <line x1="17" y1="9" x2="23" y2="15" />
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                </svg>
+              )}
+            </button>
+            <button
+              onClick={() => useFeedStore.getState().setTheatreMode(true)}
+              className="px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-lg text-white/70 text-sm font-medium border border-white/10 hover:bg-black/60 hover:text-white transition-colors"
+              aria-label="Enter theatre mode"
+            >
+              ⛶ Theatre
+            </button>
+          </div>
 
           {/* Progress bar at bottom — expanded click target */}
           <div
             className="absolute bottom-0 left-0 right-0 z-content group cursor-pointer"
-            style={{ padding: '8px 0 0 0' }}
+            style={{ padding: '14px 0 0 0' }}
             onClick={(e) => {
               const vid = videoRef.current
               if (!vid || !vid.duration) return
@@ -166,9 +189,9 @@ const ForYouSlot = memo(function ForYouSlot({ video, index, isActive, onVideoRef
               vid.currentTime = pct * vid.duration
             }}
           >
-            <div className="h-1 group-hover:h-2 bg-white/10 transition-all duration-150">
+            <div className="h-2 group-hover:h-3 bg-white/20 transition-all duration-150">
               <div
-                className="h-full bg-white/40 group-hover:bg-white/60 transition-all duration-300"
+                className="h-full bg-white/70 group-hover:bg-white transition-all duration-300"
                 style={{ width: `${progress * 100}%` }}
               />
             </div>

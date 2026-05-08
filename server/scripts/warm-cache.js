@@ -186,11 +186,28 @@ if (modes.includes('nsfw')) {
       ORDER BY sort_order
     `).all()
 
+    // Upsert that PRESERVES added_at on existing rows. INSERT OR REPLACE
+    // would delete-then-insert, re-stamping every row's added_at to "now"
+    // — which is what made all 142 ph_likes rows tie on the timestamp
+    // tiebreaker after a single re-import. ON CONFLICT keeps the original
+    // added_at; only genuinely new rows get datetime('now'). liked_at is
+    // COALESCEd so a previously-captured ISO timestamp survives a scrape
+    // that returned null.
     const upsertItem = db.prepare(`
-      INSERT OR REPLACE INTO persistent_row_items
+      INSERT INTO persistent_row_items
         (row_key, video_url, title, thumbnail, duration, uploader,
          view_count, like_count, upload_date, liked_at, tags)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(row_key, video_url) DO UPDATE SET
+        title       = excluded.title,
+        thumbnail   = excluded.thumbnail,
+        duration    = excluded.duration,
+        uploader    = excluded.uploader,
+        view_count  = excluded.view_count,
+        like_count  = excluded.like_count,
+        upload_date = COALESCE(excluded.upload_date, persistent_row_items.upload_date),
+        liked_at    = COALESCE(excluded.liked_at, persistent_row_items.liked_at),
+        tags        = excluded.tags
     `)
     const trimNonLikes = db.prepare(`
       DELETE FROM persistent_row_items

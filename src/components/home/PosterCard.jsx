@@ -43,6 +43,7 @@ const PosterCard = memo(
     const existingRating = useRatingsStore((s) => s.ratedUrls[item?.url])
     const isToastPaused = useRatingsStore((s) => s.isToastPaused)
     const showToast = useToastStore((s) => s.showToast)
+    const dismissAndAdvance = useHomeStore((s) => s.dismissAndAdvance)
     const previewVideoRef = useRef(null)
 
     useEffect(() => {
@@ -134,6 +135,10 @@ const PosterCard = memo(
     const handleRate = async (rating) => {
       if (existingRating || !item?.url) return
       recordRating(item.url, surfaceKey, rating)
+      // Drop the card immediately on thumbs-down. Server-side filtering
+      // covers the persistence on the next fetch; this is the optimistic
+      // hide so the user doesn't keep staring at it.
+      if (rating === 'down') dismissAndAdvance(item)
       try {
         await fetch('/api/ratings', {
           method: 'POST',
@@ -435,6 +440,7 @@ const PosterCard = memo(
             source={item.genre || ''}
             visible={showThumbs}
             onRated={onRated}
+            item={item}
           />
         )}
       </div>

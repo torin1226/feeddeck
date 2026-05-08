@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import useRatingsStore from '../../stores/ratingsStore'
+import useHomeStore from '../../stores/homeStore'
 
 // ============================================================
 // FullscreenOverlay
@@ -39,6 +40,8 @@ export default function FullscreenOverlay({
   const ratedUrls = useRatingsStore((s) => s.ratedUrls)
   const recordRating = useRatingsStore((s) => s.recordRating)
   const undoRating = useRatingsStore((s) => s.undoRating)
+  const dismissAndAdvance = useHomeStore((s) => s.dismissAndAdvance)
+  const restoreDismissed = useHomeStore((s) => s.restoreDismissed)
 
   const currentRating = item?.url ? ratedUrls?.[item.url] : null
   const upActive = currentRating === 'up'
@@ -49,6 +52,8 @@ export default function FullscreenOverlay({
     const surfaceKey = `watch_page:${item.id}`
     if (currentRating === next) {
       undoRating?.(item.url, surfaceKey)
+      // If a dismiss happened paired with this rating, restore it too.
+      restoreDismissed()
       fetch('/api/ratings/undo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -57,6 +62,10 @@ export default function FullscreenOverlay({
       return
     }
     recordRating(item.url, surfaceKey, next)
+    // Drop the item from the homepage state on thumbs-down. The watch
+    // page itself keeps playing — this just clears it from Up Next /
+    // category rows so when the user returns home it's gone.
+    if (next === 'down') dismissAndAdvance(item)
     fetch('/api/ratings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -72,7 +81,7 @@ export default function FullscreenOverlay({
         source: item.genre || '',
       }),
     }).catch(() => {})
-  }, [item, currentRating, recordRating, undoRating])
+  }, [item, currentRating, recordRating, undoRating, dismissAndAdvance, restoreDismissed])
 
   const handleScrubClick = useCallback((e) => {
     if (!duration) return

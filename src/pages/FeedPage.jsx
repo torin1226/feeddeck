@@ -141,7 +141,7 @@ export default function FeedPage() {
   const handleSwipeUp = useCallback(() => {
     // Open source URL in new tab
     const video = buffer[currentIndex]
-    if (video?.url) window.open(video.url, '_blank')
+    if (video?.url) window.open(video.url, '_blank', 'noopener,noreferrer')
   }, [buffer, currentIndex])
 
   const handleDoubleTap = useCallback((e) => {

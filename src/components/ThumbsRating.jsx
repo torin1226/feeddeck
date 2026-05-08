@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import useRatingsStore from '../stores/ratingsStore'
 import useToastStore from '../stores/toastStore'
+import useHomeStore from '../stores/homeStore'
 
 // ============================================================
 // ThumbsRating
@@ -22,6 +23,9 @@ export default function ThumbsRating({
   source = '',
   visible = true,
   onRated,
+  // Optional full item — when provided, a thumbs-down also drops the item
+  // from the homepage carousel/category state and the Undo restores it.
+  item = null,
   positionClass = 'absolute bottom-3 left-1/2 -translate-x-1/2',
 }) {
   const [animating, setAnimating] = useState(null) // 'up' | 'down' | null
@@ -41,6 +45,8 @@ export default function ThumbsRating({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ videoUrl }),
     }).catch(err => console.warn('Undo rating failed:', err.message))
+    // Put the dismissed card back where it came from (no-op if no item).
+    useHomeStore.getState().restoreDismissed()
   }, [videoUrl, surfaceKey, surfaceType, undoRating])
 
   const handleRate = useCallback(async (rating) => {
@@ -50,6 +56,14 @@ export default function ThumbsRating({
 
     // Optimistic UI update
     recordRating(videoUrl, surfaceKey || surfaceType, rating)
+
+    // Optimistic dismissal: remove the card immediately on thumbs-down so
+    // the user doesn't keep staring at content they just rejected. Server-
+    // side scoreVideos() filters downvoted URLs on the next fetch, so this
+    // is purely a UX accelerator — Undo via restoreDismissed re-inserts it.
+    if (rating === 'down' && item) {
+      useHomeStore.getState().dismissAndAdvance(item)
+    }
 
     // Fire API call
     try {
@@ -91,7 +105,7 @@ export default function ThumbsRating({
     // Clear animation state after animation completes
     if (animationTimer.current) clearTimeout(animationTimer.current)
     animationTimer.current = setTimeout(() => setAnimating(null), 350)
-  }, [videoUrl, surfaceType, surfaceKey, tags, creator, title, thumbnail, source, animating, existingRating, recordRating, isToastPaused, showToast, showActionToast, handleUndo, onRated])
+  }, [videoUrl, surfaceType, surfaceKey, tags, creator, title, thumbnail, source, animating, existingRating, recordRating, isToastPaused, showToast, showActionToast, handleUndo, onRated, item])
 
   if (!visible || !videoUrl) return null
 

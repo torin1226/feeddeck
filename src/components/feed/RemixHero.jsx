@@ -151,6 +151,7 @@ export default function RemixHero({ video }) {
         thumbnail={video.thumbnail || ''}
         source={video.source || ''}
         positionClass="absolute bottom-44 left-1/2 -translate-x-1/2"
+        item={video}
       />
     </div>
   )
