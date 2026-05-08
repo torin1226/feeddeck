@@ -4,8 +4,10 @@ import { randomBytes } from 'crypto'
 import { db } from '../database.js'
 import { registry, ytdlp as ytdlpAdapter, scraper as scraperAdapter } from '../sources/index.js'
 import { logger } from '../logger.js'
-import { getMode, formatDuration } from '../utils.js'
+import { getMode, formatDuration, safeParse } from '../utils.js'
 import { scoreVideos } from '../scoring.js'
+import { resolveTopics, recordDiscoveredCreators } from '../topics.js'
+import { isClickbaitTitle } from '../content-filters.js'
 
 const router = Router()
 
@@ -613,7 +615,12 @@ router.get('/api/homepage', (req, res) => {
       const prRows = stmts.persistentRows.all(mode)
       persistent = prRows
         .map(pr => {
-          const items = stmts.persistentItems.all(pr.key)
+          const rawItems = stmts.persistentItems.all(pr.key)
+          if (rawItems.length === 0) return null
+          // Apply mode-aware scoring: hard-excludes downvoted, re-sorts by score.
+          // For NSFW persistent rows, this surfaces likes-pool / subscribed-models
+          // matches even within already-curated lists.
+          const items = scoreVideos(rawItems, pr.label, { mode })
           if (items.length === 0) return null
           return {
             key: pr.key,
@@ -631,9 +638,10 @@ router.get('/api/homepage', (req, res) => {
               like_count: v.like_count,
               subscriber_count: null,
               upload_date: v.upload_date,
-              tags: v.tags ? JSON.parse(v.tags) : [],
+              tags: v.tags ? (safeParse(v.tags, []) || []) : [],
               durationFormatted: formatDuration(v.duration),
               viewed: 0,
+              _score: v._score,
             })),
           }
         })
@@ -650,12 +658,23 @@ router.get('/api/homepage', (req, res) => {
         videos = stmts.videosFallback.all(cat.key)
       }
 
+      // Apply mode-aware scoring: hard-excludes downvoted URLs, re-sorts by
+      // score so liked-tag matches and boosted creators float to the top
+      // and disliked-tag matches sink. Up Next inherits the order via _score.
+      // Subscription rows get the +subscriber bonus by definition (every video
+      // in this row is from a creator the user actively subscribes to).
+      const isSubsRow = cat.key === 'social_subscriptions' || cat.key === 'ph_subs'
+      const scored = scoreVideos(videos, cat.label, {
+        mode,
+        optsFor: isSubsRow ? () => ({ isSubscribed: true }) : undefined,
+      })
+
       return {
         key: cat.key,
         label: cat.label,
-        videos: videos.map(v => ({
+        videos: scored.map(v => ({
           ...v,
-          tags: v.tags ? JSON.parse(v.tags) : [],
+          tags: v.tags ? (typeof v.tags === 'string' ? (safeParse(v.tags, []) || []) : v.tags) : [],
           durationFormatted: formatDuration(v.duration),
         })),
       }
@@ -683,18 +702,29 @@ router.get('/api/homepage', (req, res) => {
 
     // Check if any category needs refill (below 8 videos). Persistent rows
     // refill on a different schedule (warm-cache Phase 1.5) and aren't included.
+    // A single sessionCache Map is shared across all refills triggered by this
+    // request so a topic appearing in multiple rows runs yt-dlp once.
     const needsRefill = categoryRows.some(cat => cat.videos.length < 8)
     if (needsRefill) {
+      const sharedCache = new Map()
       for (const cat of categoryRows) {
         if (cat.videos.length < 8) {
-          refillCategory(cat.key).catch(err =>
+          refillCategory(cat.key, sharedCache).catch(err =>
             logger.error('Refill error:', { error: err.message })
           )
         }
       }
     }
 
-    res.json({ categories: result, needsRefill })
+    // `state` is the self-describing signal the client uses to decide
+    // whether to render skeletons + retry vs. render content. Without
+    // this, the client can't distinguish "cache empty, refill running"
+    // from "no content exists" — a distinction that turned every cold
+    // boot into a "show fake dogs" event.
+    const totalVideos = result.reduce((sum, r) => sum + r.videos.length, 0)
+    const state = totalVideos === 0 ? 'warming' : 'ready'
+
+    res.json({ categories: result, needsRefill, state })
   } catch (err) {
     logger.error('Homepage error:', { error: err.message })
     res.status(500).json({ error: 'Failed to load homepage' })
@@ -838,26 +868,48 @@ let _refillStmts
 function getRefillStmts() {
   if (!_refillStmts) {
     _refillStmts = {
-      getCat: db.prepare('SELECT query, mode FROM categories WHERE key = ?'),
+      getCat: db.prepare('SELECT key, label, query, mode, topic_sources, fallback_queries FROM categories WHERE key = ?'),
       countUnviewed: db.prepare('SELECT COUNT(*) as n FROM homepage_cache WHERE category_key = ? AND viewed = 0'),
       purgeViewed: db.prepare('DELETE FROM homepage_cache WHERE category_key = ? AND viewed = 1'),
       insert: db.prepare(`
         INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, fetched_at, expires_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
       `),
+      crossCatCount: db.prepare(`
+        SELECT COUNT(DISTINCT category_key) as cnt FROM homepage_cache
+        WHERE url = ? AND category_key != ?
+      `),
     }
   }
   return _refillStmts
 }
 
-async function refillCategory(categoryKey) {
+function _parseJsonArray(s) {
+  if (!s) return []
+  try { const r = JSON.parse(s); return Array.isArray(r) ? r : [] } catch { return [] }
+}
+
+function _hashId(s) {
+  // Deterministic short hash for synthetic IDs when the source video doesn't have one.
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0
+  return Math.abs(h).toString(36)
+}
+
+/**
+ * Refill a homepage category using the topic pipeline.
+ *
+ * sessionCache is an optional Map shared across multiple refillCategory
+ * calls in the same warm-cache run. It deduplicates yt-dlp searches when
+ * the same topic or creator URL appears in multiple rows' resolved sets.
+ */
+async function refillCategory(categoryKey, sessionCache = new Map()) {
   const stmts = getRefillStmts()
   const cat = stmts.getCat.get(categoryKey)
   if (!cat) return
 
-  // Purge viewed entries so stable search queries (ytsearch10:) can re-insert
-  // the same composite IDs with fresh metadata instead of being blocked by
-  // INSERT OR IGNORE on already-viewed rows.
+  // Purge viewed entries so stable search queries can re-insert the
+  // same composite IDs with fresh metadata.
   const { n: unviewed } = stmts.countUnviewed.get(categoryKey)
   if (unviewed < 8) {
     const purged = stmts.purgeViewed.run(categoryKey)
@@ -866,37 +918,197 @@ async function refillCategory(categoryKey) {
     }
   }
 
-  const query = cat.query
+  const sources = _parseJsonArray(cat.topic_sources)
+  const fallbacks = _parseJsonArray(cat.fallback_queries)
 
-  logger.info(`  🔄 Refilling category: ${categoryKey} (query: "${query}")`)
+  // Legacy path: rows without topic_sources keep using the single-query
+  // refill until they're migrated. social_subscriptions, social_reddit_unexp,
+  // social_reddit_nfl, and any nsfw row still on the old layout fall here.
+  if (sources.length === 0) {
+    return _refillLegacy(cat, stmts)
+  }
 
+  logger.info(`  🔄 Topic-pipeline refill: ${categoryKey} (sources: ${sources.join(', ')})`)
+
+  // -------- Resolve topics + creators + direct videos --------
+  let resolved = { topics: [], creators: [], directVideos: [] }
   try {
-    let videos
+    resolved = await resolveTopics(sources, { rowKey: categoryKey, mode: cat.mode })
+  } catch (err) {
+    logger.warn(`  ⚠️ resolveTopics failed for ${categoryKey}`, { error: err.message })
+  }
+
+  const collected = [...(resolved.directVideos || [])]
+
+  // -------- Fan-out: topic searches (capped, deduped via sessionCache) --------
+  for (const topic of (resolved.topics || []).slice(0, 6)) {
+    const cacheKey = `ytsearch5:${topic}`
+    if (sessionCache.has(cacheKey)) {
+      collected.push(...sessionCache.get(cacheKey))
+      continue
+    }
+    try {
+      const r = await registry.search(cacheKey, { adapter: 'yt-dlp', limit: 5 })
+      const vids = Array.isArray(r) ? r : (r?.videos || [])
+      sessionCache.set(cacheKey, vids)
+      collected.push(...vids)
+    } catch (err) {
+      logger.debug(`topic search failed: ${topic}`, { error: err.message })
+    }
+  }
+
+  // -------- Fan-out: creator searches --------
+  for (const c of (resolved.creators || []).slice(0, 5)) {
+    const target = c.channel_url || `https://www.youtube.com/${c.handle}/videos`
+    if (sessionCache.has(target)) {
+      collected.push(...sessionCache.get(target))
+      continue
+    }
+    try {
+      const r = await registry.search(target, { adapter: 'yt-dlp', limit: 2 })
+      const vids = Array.isArray(r) ? r : (r?.videos || [])
+      sessionCache.set(target, vids)
+      collected.push(...vids)
+    } catch (err) {
+      logger.debug(`creator search failed: ${c.handle}`, { error: err.message })
+    }
+  }
+
+  // -------- Legacy fallback ytsearches when collected is sparse --------
+  if (collected.length < 8 && fallbacks.length > 0) {
+    for (const q of fallbacks.slice(0, 3)) {
+      if (sessionCache.has(q)) { collected.push(...sessionCache.get(q)); continue }
+      try {
+        const r = await registry.search(q, { adapter: 'yt-dlp', limit: 5 })
+        const vids = Array.isArray(r) ? r : (r?.videos || [])
+        sessionCache.set(q, vids)
+        collected.push(...vids)
+      } catch { /* swallow */ }
+    }
+  }
+
+  // -------- Discovered-creators fallback (DB-only) --------
+  if (collected.length < 5) {
+    try {
+      const top = db.prepare(
+        `SELECT creator, channel_url FROM discovered_creators
+         WHERE row_key = ? ORDER BY times_seen DESC, last_seen_at DESC LIMIT 5`
+      ).all(categoryKey)
+      for (const c of top) {
+        const target = c.channel_url ||
+          `https://www.youtube.com/results?search_query=${encodeURIComponent(c.creator)}`
+        if (sessionCache.has(target)) { collected.push(...sessionCache.get(target)); continue }
+        try {
+          const r = await registry.search(target, { adapter: 'yt-dlp', limit: 2 })
+          const vids = Array.isArray(r) ? r : (r?.videos || [])
+          sessionCache.set(target, vids)
+          collected.push(...vids)
+        } catch { /* swallow */ }
+      }
+    } catch { /* swallow */ }
+  }
+
+  // -------- Dedup, score, persist --------
+  const seen = new Set()
+  let deduped = collected.filter(v => v?.url && !seen.has(v.url) && (seen.add(v.url), true))
+
+  // NSFW categories must only contain content from known adult domains.
+  // Topic searches resolve tags like "couple"/"petite" via ytsearch which
+  // returns mainstream YouTube results — filter those out.
+  if (cat.mode === 'nsfw') {
+    const nsfwDomains = /pornhub|redgifs|xvideos|spankbang|fikfap|redtube|youporn|xhamster|eporner/i
+    const before = deduped.length
+    deduped = deduped.filter(v => {
+      try { return nsfwDomains.test(new URL(v.url).hostname) } catch { return false }
+    })
+    if (deduped.length < before) {
+      logger.info(`  🚫 Filtered ${before - deduped.length} non-NSFW URLs from ${categoryKey}`)
+    }
+  }
+
+  // Social categories: drop clickbait farm titles ("Try Not To Laugh — Top 100",
+  // "FUNNY VIDEOS Compilation 2026 #109", #viral.*#trending.*#shorts spam).
+  if (cat.mode === 'social') {
+    const before = deduped.length
+    deduped = deduped.filter(v => !isClickbaitTitle(v.title))
+    if (deduped.length < before) {
+      logger.info(`  🚫 Filtered ${before - deduped.length} clickbait titles from ${categoryKey}`)
+    }
+  }
+
+  // Fire-and-forget creator recording — keeps DB writes off the critical path.
+  setImmediate(() => recordDiscoveredCreators(categoryKey, deduped, sources))
+
+  const scored = scoreVideos(deduped, cat.label, { mode: cat.mode }).slice(0, 30)
+
+  // Skip videos already present in 3+ other categories to prevent
+  // generic trending content from flooding every shelf.
+  const MAX_CROSS_CAT = 3
+  let added = 0
+  let skippedCrossCat = 0
+  for (const v of scored) {
+    try {
+      const { cnt } = stmts.crossCatCount.get(v.url, categoryKey)
+      if (cnt >= MAX_CROSS_CAT) { skippedCrossCat++; continue }
+
+      const id = v.id || `${categoryKey}_${_hashId(v.url)}`
+      const compositeId = id.startsWith(categoryKey) ? id : `${categoryKey}_${id}`
+      const result = stmts.insert.run(
+        compositeId, categoryKey, v.url, v.title, v.thumbnail, v.duration ?? 0,
+        v.source || null, v.uploader || null,
+        v.view_count ?? null, v.like_count ?? null, v.subscriber_count ?? null,
+        v.upload_date ?? null,
+        Array.isArray(v.tags) ? JSON.stringify(v.tags) : (typeof v.tags === 'string' ? v.tags : '[]')
+      )
+      if (result.changes > 0) added++
+    } catch (err) {
+      logger.warn(`  ⚠️ Insert failed for ${categoryKey}`, { error: err.message })
+    }
+  }
+  if (skippedCrossCat > 0) logger.info(`  🚫 Skipped ${skippedCrossCat} videos already in ${MAX_CROSS_CAT}+ other categories`)
+  logger.info(`  ✅ Topic-pipeline added ${added} videos to ${categoryKey}`)
+}
+
+/**
+ * Legacy single-query refill — preserves the prior behaviour for rows
+ * that haven't been migrated to topic_sources yet (subscriptions, reddit
+ * subreddit URLs, untouched nsfw categories).
+ */
+async function _refillLegacy(cat, stmts) {
+  const query = cat.query
+  if (!query) return
+  logger.info(`  🔄 Legacy refill: ${cat.key} (query: "${query}")`)
+  try {
+    let result
     if (cat.mode === 'nsfw' && query.startsWith('http')) {
       try {
         const domain = new URL(query).hostname.replace(/^www\./, '')
-        videos = await registry.search(query, { site: domain, limit: 12 })
+        result = await registry.search(query, { site: domain, limit: 12 })
       } catch {
-        videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
+        result = await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
       }
     } else {
-      videos = await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
+      result = await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
     }
+    const videos = Array.isArray(result) ? result : (result?.videos || [])
 
     let added = 0
     for (const v of videos) {
       try {
-        const compositeId = `${categoryKey}_${v.id}`
-        const result = stmts.insert.run(compositeId, categoryKey, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []))
-        if (result.changes > 0) added++
+        const compositeId = `${cat.key}_${v.id}`
+        const r = stmts.insert.run(
+          compositeId, cat.key, v.url, v.title, v.thumbnail, v.duration,
+          v.source, v.uploader, v.view_count, v.like_count ?? null,
+          v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || [])
+        )
+        if (r.changes > 0) added++
       } catch (err) {
-        logger.warn(`  ⚠️ Insert failed for ${v.id} in ${categoryKey}:`, { error: err.message })
+        logger.warn(`  ⚠️ Insert failed for ${v.id} in ${cat.key}:`, { error: err.message })
       }
     }
-
-    logger.info(`  ✅ Added ${added} videos to ${categoryKey}`)
+    logger.info(`  ✅ Legacy added ${added} videos to ${cat.key}`)
   } catch (err) {
-    logger.error(`  ❌ Refill failed for ${categoryKey}:`, { error: err.message })
+    logger.error(`  ❌ Legacy refill failed for ${cat.key}:`, { error: err.message })
   }
 }
 

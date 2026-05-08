@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useModeStore from '../stores/modeStore'
 import useLibraryStore from '../stores/libraryStore'
@@ -54,13 +54,19 @@ export default function LibraryPage() {
 
   useEffect(() => { fetchLiked() }, [fetchLiked])
 
-  // Reload library when mode changes so videos array reflects only the
-  // current mode's content. nuclearFlush already clears the store; this
-  // pulls fresh server data.
+  // Reload library on mount and whenever mode changes. nuclearFlush already
+  // clears the store on mode switch; this pulls fresh server data for the new
+  // mode. On the very first mount only, seed demo data if the library is
+  // empty after load. Subsequent mode changes never re-seed.
+  const seededRef = useRef(false)
   useEffect(() => {
-    loadFromServer()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentMode])
+    loadFromServer().then(() => {
+      if (!seededRef.current && useLibraryStore.getState().videos.length === 0) {
+        seededRef.current = true
+        seedDemoData()
+      }
+    })
+  }, [currentMode, loadFromServer, seedDemoData])
 
   // Ctrl+Shift+D toggles debug panel
   useEffect(() => {
@@ -72,17 +78,6 @@ export default function LibraryPage() {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [])
-
-  // Load library on startup
-  useEffect(() => {
-    loadFromServer().then(() => {
-      const current = useLibraryStore.getState().videos
-      if (current.length === 0) {
-        seedDemoData()
-      }
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Mode firewall: every list of videos rendered on this page is filtered

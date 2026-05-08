@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import useModeStore from '../stores/modeStore'
 
 // ============================================================
@@ -11,12 +11,16 @@ import useModeStore from '../stores/modeStore'
 export default function ModeToggle() {
   const { isSFW, toggleMode } = useModeStore()
   const [announcement, setAnnouncement] = useState('')
+  const announcementTimer = useRef(null)
+
+  useEffect(() => () => clearTimeout(announcementTimer.current), [])
 
   const handleToggle = () => {
     toggleMode()
     const newMode = isSFW ? 'Full library' : 'Social'
     setAnnouncement(`Switched to ${newMode} mode`)
-    setTimeout(() => setAnnouncement(''), 1000)
+    if (announcementTimer.current) clearTimeout(announcementTimer.current)
+    announcementTimer.current = setTimeout(() => setAnnouncement(''), 1000)
   }
 
   return (

@@ -19,7 +19,6 @@ import { db } from '../database.js'
 const CREATORS_PER_CYCLE = {
   reddit: 5,
   tiktok: 3,
-  instagram: 2,
   twitter: 3,
 }
 
@@ -34,7 +33,7 @@ export class CreatorAdapter extends SourceAdapter {
   constructor() {
     super({
       name: 'creator',
-      supportedDomains: ['reddit.com', 'tiktok.com', 'instagram.com', 'twitter.com', 'x.com'],
+      supportedDomains: ['reddit.com', 'tiktok.com', 'twitter.com', 'x.com'],
       capabilities: {
         search: true,
         categories: false,
@@ -307,7 +306,6 @@ export class CreatorAdapter extends SourceAdapter {
     const s = site.replace(/^www\./, '').toLowerCase()
     if (s.includes('reddit')) return 'reddit'
     if (s.includes('tiktok')) return 'tiktok'
-    if (s.includes('instagram')) return 'instagram'
     if (s.includes('twitter') || s.includes('x.com')) return 'twitter'
     return null
   }

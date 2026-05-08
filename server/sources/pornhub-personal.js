@@ -206,9 +206,14 @@ export async function fetchLikes({ limit = 50 } = {}) {
             const durationText = durEl?.textContent?.trim() || ''
             const viewsText = viewsEl?.textContent?.trim() || ''
             const uploader = uploaderEl?.textContent?.trim() || ''
-            const likedAtText = dateEl?.getAttribute('datetime') || dateEl?.textContent?.trim() || ''
+            // Prefer the machine-readable datetime attribute over text
+            // ("2 days ago" can't be ordered without parsing). When PH
+            // exposes datetime="2026-04-30T14:23:00+00:00", we keep it
+            // as ISO and the warm-cache upsert stores it as liked_at.
+            const likedAtIso = dateEl?.getAttribute('datetime') || ''
+            const likedAtText = dateEl?.textContent?.trim() || ''
 
-            out.push({ url, title, thumbnail, durationText, viewsText, uploader, likedAtText })
+            out.push({ url, title, thumbnail, durationText, viewsText, uploader, likedAtIso, likedAtText })
           }
           return out
         })
@@ -218,7 +223,7 @@ export async function fetchLikes({ limit = 50 } = {}) {
           if (!dedup.has(it.url)) dedup.set(it.url, it)
         }
 
-        return Array.from(dedup.values()).slice(0, limit).map(it => ({
+        const baseList = Array.from(dedup.values()).slice(0, limit).map(it => ({
           id: randomUUID(),
           url: it.url,
           title: it.title,
@@ -228,9 +233,19 @@ export async function fetchLikes({ limit = 50 } = {}) {
           view_count: parseViewCount(it.viewsText),
           like_count: null,
           upload_date: null,
-          liked_at: null, // PH does not expose like timestamp consistently; rely on added_at ordering
+          // Use the parsed ISO datetime when PH exposes it; fall back to
+          // null. The warm-cache upsert COALESCEs nulls so a previously
+          // captured liked_at sticks across re-imports.
+          liked_at: it.likedAtIso || null,
           tags: [],
         }))
+
+        // yt-dlp metadata enrichment: ph_likes only carries thumbnail/title
+        // from Puppeteer, so we fetch upload_date in a small concurrency
+        // pool. Failures are non-fatal — items just stay with upload_date
+        // null and the homepage carousel falls back to other tiebreakers.
+        const enriched = await enrichUploadDates(baseList)
+        return enriched
       } catch (err) {
         lastError = err.message
       }
@@ -258,6 +273,60 @@ function parseViewCount(text) {
   const n = parseFloat(m[1])
   const mult = { K: 1e3, M: 1e6, B: 1e9 }[m[2].toUpperCase()] || 1
   return Math.round(n * mult)
+}
+
+// Run yt-dlp on a single URL with PH cookies, return upload_date string
+// (YYYY-MM-DD) or null if unavailable / it errored. Cookie args + a
+// 30s timeout — we don't want a single slow video to stall the whole
+// warm-cache run.
+async function fetchUploadDate(url) {
+  const cookieArgs = getCookieArgs(url)
+  const args = [
+    ...cookieArgs,
+    '--dump-json',
+    '--no-download',
+    '--ignore-errors',
+    '--no-warnings',
+    url,
+  ]
+  try {
+    const { stdout } = await execFileAsync('yt-dlp', args, {
+      encoding: 'utf8',
+      timeout: 30_000,
+      maxBuffer: MAX_BUFFER,
+      windowsHide: true,
+    })
+    const line = stdout.split('\n').find(l => l.trim().startsWith('{'))
+    if (!line) return null
+    const raw = JSON.parse(line)
+    const ud = raw.upload_date
+    if (typeof ud !== 'string' || !/^\d{8}$/.test(ud)) return null
+    return `${ud.slice(0, 4)}-${ud.slice(4, 6)}-${ud.slice(6, 8)}`
+  } catch {
+    return null
+  }
+}
+
+// Pool-based enrichment: fetch upload_date for each item with bounded
+// concurrency. Skips items that already have a non-null upload_date.
+// PH rate-limits aggressive scraping; 3 in flight is a safe default.
+async function enrichUploadDates(items, { concurrency = 3 } = {}) {
+  if (!Array.isArray(items) || items.length === 0) return items
+  const out = items.slice()
+  const queue = items.map((it, i) => ({ it, i })).filter(({ it }) => !it.upload_date)
+  if (queue.length === 0) return out
+
+  let cursor = 0
+  const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+    while (cursor < queue.length) {
+      const idx = cursor++
+      const { it, i } = queue[idx]
+      const ud = await fetchUploadDate(it.url)
+      if (ud) out[i] = { ...out[i], upload_date: ud }
+    }
+  })
+  await Promise.all(workers)
+  return out
 }
 
 /**

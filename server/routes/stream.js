@@ -13,7 +13,7 @@ const execFileAsync = promisify(execFile)
 const router = Router()
 
 // -----------------------------------------------------------
-// Health check
+// Liveness check — process is alive
 // -----------------------------------------------------------
 router.get('/api/health', async (req, res) => {
   const ytdlpAvailable = ytdlpAdapter.isAvailable()
@@ -24,6 +24,30 @@ router.get('/api/health', async (req, res) => {
     adapters: registry.adapters.map(a => a.name),
     database: db ? 'connected' : 'disconnected',
   })
+})
+
+// -----------------------------------------------------------
+// Readiness check — server can serve content
+//
+// 200 = ready: warm-cache has completed AND homepage_cache has
+//       at least one fresh-unviewed row (i.e. /api/homepage will
+//       return content, not state:'warming').
+// 503 = not ready: still cold-starting. Deployment platforms
+//       (systemd, Beelink ship) should wait before routing traffic.
+// -----------------------------------------------------------
+let _readyStmt
+router.get('/api/health/ready', async (_req, res) => {
+  if (!_readyStmt) {
+    _readyStmt = db.prepare(
+      `SELECT COUNT(*) AS n FROM homepage_cache
+       WHERE viewed = 0 AND expires_at > datetime('now')`
+    )
+  }
+  const cacheCount = _readyStmt.get().n
+  const { isFirstWarmComplete } = await import('../index.js')
+  const warmComplete = isFirstWarmComplete()
+  const ready = warmComplete && cacheCount > 0
+  res.status(ready ? 200 : 503).json({ ready, warmComplete, cacheCount })
 })
 
 // -----------------------------------------------------------
@@ -190,8 +214,20 @@ router.get('/api/proxy-stream', async (req, res) => {
       headers['Range'] = req.headers.range
     }
 
-    // 15s timeout to prevent hanging on slow/dead CDNs
-    const upstream = await fetch(url, { headers, signal: AbortSignal.timeout(15000) })
+    // PLAYBACK: 15s timeout applies to GETTING HEADERS only. Once headers
+    // arrive, clear the timer — the body stream can take much longer than 15s
+    // because the browser buffers ~30-50s ahead, then pauses (backpressure).
+    // AbortSignal.timeout() is wallclock and would terminate the upstream
+    // socket mid-playback, causing video to stop after the buffer drains
+    // (the user-reported "stops around 50s" symptom).
+    const controller = new AbortController()
+    const headersTimeout = setTimeout(() => controller.abort(), 15000)
+    let upstream
+    try {
+      upstream = await fetch(url, { headers, signal: controller.signal })
+    } finally {
+      clearTimeout(headersTimeout)
+    }
 
     // Forward status and key headers
     res.status(upstream.status)
@@ -200,9 +236,14 @@ router.get('/api/proxy-stream', async (req, res) => {
       const val = upstream.headers.get(h)
       if (val) res.setHeader(h, val)
     }
+    // PROXY: always declare Range support regardless of what the upstream sent.
+    // CDNs omit Accept-Ranges on 206 responses; without this the browser may
+    // not know seeking is supported after a Range-initiated connection.
+    res.setHeader('Accept-Ranges', 'bytes')
 
     // Pipe the body using Node streams (more robust than manual reader pump).
-    // FALLBACK: cleanup happens via res.on('close') when client disconnects.
+    // FALLBACK: cleanup happens via res.on('close') when client disconnects —
+    // we abort the upstream then so dangling sockets don't leak.
     // HYDRATION: do NOT add a per-chunk timeout here -- when the browser fills
     // its media buffer (~30s), it stops draining and pipe() applies backpressure,
     // pausing the readable. A "no data for N seconds" timer cannot distinguish
@@ -211,7 +252,7 @@ router.get('/api/proxy-stream', async (req, res) => {
     const nodeStream = Readable.fromWeb(upstream.body)
     nodeStream.pipe(res)
     nodeStream.on('error', () => { if (!res.writableEnded) res.end() })
-    res.on('close', () => { nodeStream.destroy() })
+    res.on('close', () => { nodeStream.destroy(); controller.abort() })
   } catch (err) {
     logger.error('Proxy stream error:', { error: err.message })
     if (!res.headersSent) res.status(500).send('Stream proxy failed')
@@ -240,7 +281,16 @@ router.get('/api/hls-proxy', async (req, res) => {
     }
     if (req.headers.range) headers['Range'] = req.headers.range
 
-    const upstream = await fetch(url, { headers, signal: AbortSignal.timeout(15000) })
+    // PLAYBACK: 15s applies to headers only. See proxy-stream above for rationale —
+    // segment downloads can take longer than 15s under browser backpressure.
+    const controller = new AbortController()
+    const headersTimeout = setTimeout(() => controller.abort(), 15000)
+    let upstream
+    try {
+      upstream = await fetch(url, { headers, signal: controller.signal })
+    } finally {
+      clearTimeout(headersTimeout)
+    }
 
     if (url.includes('.m3u8')) {
       // Rewrite m3u8 playlist: proxy ALL non-comment lines (segments, variant playlists)
@@ -252,6 +302,9 @@ router.get('/api/hls-proxy', async (req, res) => {
       })
       res.setHeader('Content-Type', 'application/vnd.apple.mpegurl')
       res.setHeader('Access-Control-Allow-Origin', '*')
+      // PROXY: HLS playlists reference CDN URLs that expire in ~2hr; stale
+      // cached playlists cause segment 403s mid-playback. Never cache.
+      res.setHeader('Cache-Control', 'no-store')
       res.send(rewritten)
     } else {
       // Stream segment bytes using Node streams
@@ -265,7 +318,7 @@ router.get('/api/hls-proxy', async (req, res) => {
       const nodeStream = Readable.fromWeb(upstream.body)
       nodeStream.pipe(res)
       nodeStream.on('error', () => { if (!res.writableEnded) res.end() })
-      res.on('close', () => { nodeStream.destroy() })
+      res.on('close', () => { nodeStream.destroy(); controller.abort() })
     }
   } catch (err) {
     logger.error('HLS proxy error:', { error: err.message })

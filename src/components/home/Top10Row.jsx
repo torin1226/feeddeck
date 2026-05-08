@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import useHomeStore from '../../stores/homeStore'
 import { registerPreviewTarget, prefetchStreamUrl } from '../../hooks/useFocusPreview'
 
@@ -9,7 +10,8 @@ import { registerPreviewTarget, prefetchStreamUrl } from '../../hooks/useFocusPr
 // ============================================================
 
 export default function Top10Row() {
-  const { top10, setHeroItem, setTheatreMode, setFocusedItem } = useHomeStore()
+  const { top10, setFocusedItem } = useHomeStore()
+  const navigate = useNavigate()
   const rowRef = useRef(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(false)
@@ -60,9 +62,7 @@ export default function Top10Row() {
   if (!top10 || top10.length === 0) return null
 
   const handleClick = (item) => {
-    setHeroItem(item)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-    setTheatreMode(true)
+    navigate(`/watch/${item.id}`)
   }
 
   return (
@@ -191,7 +191,7 @@ function Top10Card({ item, onClick, onFocus }) {
       <span
         className="text-[clamp(80px,17vh,180px)] font-display font-black leading-none text-transparent select-none shrink-0 -mr-3 relative z-10"
         style={{
-          WebkitTextStroke: '2px rgba(244,63,94,0.5)',
+          WebkitTextStroke: '2px rgba(30,58,138,0.6)',
         }}
       >
         {item.rank}

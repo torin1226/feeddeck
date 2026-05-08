@@ -3,7 +3,7 @@ import express from 'express'
 import { db } from '../database.js'
 import { logger } from '../logger.js'
 import { formatDuration, inferMode, getMode } from '../utils.js'
-import { scoreVideo, isDownvoted, MIN_VISIBLE_SCORE } from '../scoring.js'
+import { scoreVideos, MIN_VISIBLE_SCORE } from '../scoring.js'
 
 const router = Router()
 
@@ -61,6 +61,11 @@ router.get('/api/feed/next', (req, res) => {
   // Optional filters
   const sourcesParam = req.query.sources // comma-separated domains
   const tagsParam = req.query.tags // comma-separated tags
+  // IDs already exposed on the homepage — skip them in the feed so the
+  // user never sees the same video in both surfaces in the same session.
+  const excludeIds = new Set(
+    (req.query.excludeIds || '').split(',').map(s => s.trim()).filter(Boolean)
+  )
 
   try {
     // Build dynamic WHERE clause based on filters
@@ -75,35 +80,45 @@ router.get('/api/feed/next', (req, res) => {
       }
     }
 
-    // Pull a wide candidate set, then score in JS using the point-based engine.
+    // Pull the full unwatched pool (capped) and score every row, so the top-N
+    // by taste score reflects the actual cache contents -- not a random window
+    // of it. Cap at 500 so a runaway cache can't blow up memory; prefer the
+    // freshest rows when over the cap.
     // The SQL exposes:
     //   - is_subscribed: row's creator is in subscription_backups
     //   - from_saved_search: source's query matches a system_searches entry
-    // These flags feed scoreVideo() so the additive points stack correctly.
+    // These flags feed scoreVideos() so the additive points stack correctly.
+    const CANDIDATE_CAP = 500
     const perSourceLimit = Math.max(2, Math.ceil(count / 5))
     const rawUnwatched = db.prepare(`
       SELECT fc.id, fc.url, fc.stream_url AS streamUrl, fc.title, fc.creator AS uploader, fc.thumbnail,
              fc.duration, fc.orientation, fc.source_domain AS source, fc.tags,
              fc.upload_date, fc.like_count, fc.view_count, fc.subscriber_count,
-             CASE WHEN sb.id IS NOT NULL THEN 1 ELSE 0 END AS is_subscribed,
-             CASE WHEN ss.id IS NOT NULL THEN 1 ELSE 0 END AS from_saved_search
+             CASE WHEN fc.creator IS NOT NULL AND EXISTS (
+               SELECT 1 FROM subscription_backups sb
+               WHERE sb.handle = fc.creator OR sb.display_name = fc.creator
+             ) THEN 1 ELSE 0 END AS is_subscribed,
+             CASE WHEN EXISTS (
+               SELECT 1 FROM sources s
+               JOIN system_searches ss ON s.query = ss.query AND ss.active = 1
+               WHERE s.domain = fc.source_domain
+             ) THEN 1 ELSE 0 END AS from_saved_search,
+             (SELECT row_key FROM persistent_row_items WHERE video_url = fc.url LIMIT 1) AS _persistent_row
       FROM feed_cache fc
-      LEFT JOIN sources s ON fc.source_domain = s.domain
-      LEFT JOIN subscription_backups sb ON fc.creator IS NOT NULL
-        AND (sb.handle = fc.creator OR sb.display_name = fc.creator)
-      LEFT JOIN system_searches ss ON s.query IS NOT NULL AND ss.query = s.query AND ss.active = 1
       WHERE fc.mode = ? AND fc.watched = 0${whereExtra}
-      ORDER BY RANDOM()
-      LIMIT ${count * 10}
+      ORDER BY fc.fetched_at DESC
+      LIMIT ${CANDIDATE_CAP}
     `).all(...params)
 
-    const allUnwatched = rawUnwatched.filter(v => !isDownvoted(v.url))
-    for (const v of allUnwatched) {
-      v._score = scoreVideo(v, 'feed', null, {
+    // scoreVideos() loads the taste profile once, filters downvoted/blocked,
+    // attaches _score, and sorts DESC. Carry the per-row SQL flags through.
+    const allUnwatched = scoreVideos(rawUnwatched, 'feed', {
+      mode,
+      optsFor: v => ({
         isSubscribed: !!v.is_subscribed,
         fromSavedSearch: !!v.from_saved_search,
-      })
-    }
+      }),
+    })
 
     // Drop low-quality content (per user spec: "don't show low scores, that is bad content").
     // Only filter when we have temporal or quality metadata to judge by.
@@ -111,6 +126,7 @@ router.get('/api/feed/next', (req, res) => {
     // upload_date or like_count, so we can't tell if low views means "bad" or "just new".
     // Without upload_date we can't contextualize view count, so treat as unknown quality.
     const visible = allUnwatched.filter(v => {
+      if (excludeIds.size > 0 && excludeIds.has(v.id)) return false
       const hasData = v.upload_date != null || v.like_count != null
       if (hasData && v._score < MIN_VISIBLE_SCORE) return false
       return true

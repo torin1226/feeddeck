@@ -1,6 +1,37 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+
+// Mock hls.js for the HLS-lifecycle tests (M0.5). The mock instance records
+// loadSource / attachMedia / destroy calls so each test can assert which
+// stage the preview reached. Tests that don't drive HLS aren't affected
+// because the mock only resolves when the dynamic import runs.
+const hlsInstances = []
+class MockHls {
+  constructor(opts) {
+    this.opts = opts
+    this.loadSourceCalls = []
+    this.attachMediaCalls = []
+    this.destroyed = false
+    this.errorHandler = null
+    hlsInstances.push(this)
+  }
+  on(_event, cb) { this.errorHandler = cb }
+  loadSource(url) { this.loadSourceCalls.push(url) }
+  attachMedia(el) { this.attachMediaCalls.push(el) }
+  destroy() { this.destroyed = true }
+  // Test helper: simulate a fatal HLS error.
+  __fireFatalError() {
+    if (this.errorHandler) this.errorHandler(null, { fatal: true, type: 'networkError' })
+  }
+}
+MockHls.isSupported = vi.fn(() => true)
+MockHls.Events = { ERROR: 'hlsError' }
+MockHls.ErrorTypes = { NETWORK_ERROR: 'networkError', MEDIA_ERROR: 'mediaError' }
+
+vi.mock('hls.js', () => ({ default: MockHls }))
+
 import {
   registerPreviewTarget,
+  prefetchStreamUrl,
   _resetForTests,
   _applyFocusForTests,
   _peekForTests,
@@ -14,7 +45,7 @@ import {
 // same code path the React effect uses, just without subscribing.
 // ============================================================
 
-function makeFakeVideo() {
+function makeFakeVideo({ canPlayNativeHls = false } = {}) {
   // jsdom HTMLMediaElement is mostly a no-op. Only emulate the bits
   // useFocusPreview interacts with (attach src, fire canplay) so we can
   // assert opacity flip and play() invocation without driving real media.
@@ -25,6 +56,11 @@ function makeFakeVideo() {
   el.play = vi.fn().mockResolvedValue(undefined)
   el.load = vi.fn()
   el.pause = vi.fn()
+  // Default: non-Safari (no native HLS). Tests opt in to native via flag.
+  el.canPlayType = vi.fn((mime) => {
+    if (mime === 'application/vnd.apple.mpegurl') return canPlayNativeHls ? 'probably' : ''
+    return 'maybe'
+  })
 
   const origAdd = el.addEventListener.bind(el)
   el.addEventListener = vi.fn((evt, cb, opts) => {
@@ -53,6 +89,8 @@ function focused(item, surface, opts = {}) {
 beforeEach(() => {
   vi.useFakeTimers()
   _resetForTests()
+  hlsInstances.length = 0
+  MockHls.isSupported = vi.fn(() => true)
   globalThis.fetch = vi.fn().mockImplementation(() =>
     Promise.resolve({
       ok: true,
@@ -194,19 +232,247 @@ describe('useFocusPreview', () => {
     expect(video.style.opacity).toBe('0')
   })
 
-  it('skips HLS .m3u8 streams (handed off to M0.5)', async () => {
-    const video = makeFakeVideo()
-    registerPreviewTarget('yt-1', video)
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ streamUrl: 'https://cdn.example.com/playlist.m3u8' }),
-    })
-    _applyFocusForTests(focused(ytItem, 'gallery-shelf'))
+  // ============================================================
+  // M0.5 — NSFW HLS hover preview
+  // ============================================================
+  describe('HLS preview lifecycle', () => {
+    const hlsItem = { id: 'nsfw-1', url: 'https://example.com/v' }
 
-    await vi.advanceTimersByTimeAsync(220)
-    expect(globalThis.fetch).toHaveBeenCalled()
-    expect(video.play).not.toHaveBeenCalled()
-    expect(video.style.opacity).toBe('0')
+    it('attaches an HLS instance via /api/hls-proxy when stream is .m3u8', async () => {
+      const video = makeFakeVideo()
+      registerPreviewTarget('nsfw-1', video)
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ streamUrl: 'https://cdn.example.com/playlist.m3u8' }),
+      })
+
+      _applyFocusForTests(focused(hlsItem, 'gallery-shelf'))
+      await vi.advanceTimersByTimeAsync(220)
+      // Drain the dynamic import + then() chain.
+      await vi.runAllTimersAsync()
+
+      expect(hlsInstances).toHaveLength(1)
+      const hls = hlsInstances[0]
+      expect(hls.loadSourceCalls[0]).toContain('/api/hls-proxy')
+      expect(hls.loadSourceCalls[0]).toContain(encodeURIComponent('https://cdn.example.com/playlist.m3u8'))
+      expect(hls.attachMediaCalls[0]).toBe(video)
+      expect(_peekForTests().activeHls).toBe(hls)
+    })
+
+    it('switching focus destroys the prior HLS instance (no leak)', async () => {
+      const v1 = makeFakeVideo()
+      const v2 = makeFakeVideo()
+      registerPreviewTarget('nsfw-1', v1)
+      registerPreviewTarget('yt-1', v2)
+      let urlForId = 'https://cdn.example.com/playlist.m3u8'
+      globalThis.fetch = vi.fn().mockImplementation(() =>
+        Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ streamUrl: urlForId }),
+        })
+      )
+
+      _applyFocusForTests(focused(hlsItem, 'gallery-shelf'))
+      await vi.advanceTimersByTimeAsync(220)
+      await vi.runAllTimersAsync()
+      expect(hlsInstances).toHaveLength(1)
+      const hls = hlsInstances[0]
+      expect(hls.destroyed).toBe(false)
+
+      // Switch focus to a non-HLS card.
+      urlForId = 'https://cdn.example.com/v.mp4'
+      _applyFocusForTests(focused(ytItem, 'gallery-shelf'))
+      expect(hls.destroyed).toBe(true)
+      expect(_peekForTests().activeHls).toBeNull()
+    })
+
+    it('clearing focus destroys the active HLS instance', async () => {
+      const video = makeFakeVideo()
+      registerPreviewTarget('nsfw-1', video)
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ streamUrl: 'https://cdn.example.com/playlist.m3u8' }),
+      })
+
+      _applyFocusForTests(focused(hlsItem, 'gallery-shelf'))
+      await vi.advanceTimersByTimeAsync(220)
+      await vi.runAllTimersAsync()
+      const hls = hlsInstances[0]
+
+      _applyFocusForTests(null)
+      expect(hls.destroyed).toBe(true)
+      expect(_peekForTests().activeHls).toBeNull()
+    })
+
+    it('repeated HLS hovers do not leak instances (50 hover-outs)', async () => {
+      const video = makeFakeVideo()
+      registerPreviewTarget('nsfw-1', video)
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ streamUrl: 'https://cdn.example.com/playlist.m3u8' }),
+      })
+
+      for (let i = 0; i < 50; i++) {
+        _applyFocusForTests(focused(hlsItem, 'gallery-shelf'))
+        await vi.advanceTimersByTimeAsync(220)
+        await vi.runAllTimersAsync()
+        _applyFocusForTests(null)
+      }
+
+      // All 50 instances created, all 50 destroyed, none active.
+      expect(hlsInstances).toHaveLength(50)
+      expect(hlsInstances.every((h) => h.destroyed)).toBe(true)
+      expect(_peekForTests().activeHls).toBeNull()
+    })
+
+    it('uses native HLS path on Safari instead of attaching hls.js', async () => {
+      const video = makeFakeVideo({ canPlayNativeHls: true })
+      registerPreviewTarget('nsfw-1', video)
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ streamUrl: 'https://cdn.example.com/playlist.m3u8' }),
+      })
+
+      _applyFocusForTests(focused(hlsItem, 'gallery-shelf'))
+      await vi.advanceTimersByTimeAsync(220)
+      await vi.runAllTimersAsync()
+
+      expect(hlsInstances).toHaveLength(0)
+      expect(video.getAttribute('src')).toContain('/api/proxy-stream')
+      expect(_peekForTests().activeHls).toBeNull()
+    })
+
+    it('falls back to /api/proxy-stream when MSE not supported', async () => {
+      MockHls.isSupported = vi.fn(() => false)
+      const video = makeFakeVideo()
+      registerPreviewTarget('nsfw-1', video)
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ streamUrl: 'https://cdn.example.com/playlist.m3u8' }),
+      })
+
+      _applyFocusForTests(focused(hlsItem, 'gallery-shelf'))
+      await vi.advanceTimersByTimeAsync(220)
+      await vi.runAllTimersAsync()
+
+      // hls.js is consulted (MSE check) but no instance is attached.
+      // The mock constructor fires only on `new MockHls(...)`, so
+      // hlsInstances stays empty when we exit before that line.
+      expect(hlsInstances).toHaveLength(0)
+      expect(video.getAttribute('src')).toContain('/api/proxy-stream')
+      expect(_peekForTests().activeHls).toBeNull()
+    })
+
+    it('fatal HLS error invalidates the URL cache', async () => {
+      const video = makeFakeVideo()
+      registerPreviewTarget('nsfw-1', video)
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ streamUrl: 'https://cdn.example.com/playlist.m3u8' }),
+      })
+
+      _applyFocusForTests(focused(hlsItem, 'gallery-shelf'))
+      await vi.advanceTimersByTimeAsync(220)
+      await vi.runAllTimersAsync()
+      expect(_peekForTests().urlCacheCount).toBe(1)
+
+      hlsInstances[0].__fireFatalError()
+      expect(_peekForTests().urlCacheCount).toBe(0)
+      expect(hlsInstances[0].destroyed).toBe(true)
+    })
+
+    it('fatal HLS error releases activeVideo and clears the element', async () => {
+      // Regression: prior to 2026-05-06 the fatal-error handler nulled
+      // activeHls but left activeVideo === targetEl with a frozen
+      // (invisible-but-attached) src. Next focus's hideActiveVideo() would
+      // walk a stale reference. The handler must mirror MP4 onError shape.
+      const video = makeFakeVideo()
+      registerPreviewTarget('nsfw-1', video)
+      // Native HLS path bypasses MockHls — force the hls.js branch.
+      video.canPlayType = vi.fn(() => '')
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ streamUrl: 'https://cdn.example.com/playlist.m3u8' }),
+      })
+
+      _applyFocusForTests(focused(hlsItem, 'gallery-shelf'))
+      await vi.advanceTimersByTimeAsync(220)
+      await vi.runAllTimersAsync()
+      expect(_peekForTests().activeVideo).toBe(video)
+
+      hlsInstances[0].__fireFatalError()
+      expect(video.getAttribute('src')).toBeNull()
+      expect(video.style.opacity).toBe('0')
+      expect(_peekForTests().activeVideo).toBeNull()
+      expect(_peekForTests().activeHls).toBeNull()
+    })
+
+    it('hls.js dynamic import resolving after focus moved does NOT attach a stale instance', async () => {
+      // Regression for the .then() race-guard inside attachHlsPreview.
+      // We exercise the path explicitly: advance past debounce so the
+      // display timer fires + import starts, then move focus before the
+      // .then() of the import runs. Only the second focus should attach.
+      // (With vi.mock's synchronous resolution and fake timers, this is
+      // the closest we can get to the real-world async race; the second
+      // focus's display timer still fires after a debounce, so we end up
+      // verifying the .then() guard catches the first focus on the way
+      // out rather than catching a concurrent attach.)
+      const v1 = makeFakeVideo()
+      const v2 = makeFakeVideo()
+      registerPreviewTarget('nsfw-1', v1)
+      registerPreviewTarget('nsfw-2', v2)
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ streamUrl: 'https://cdn.example.com/playlist.m3u8' }),
+      })
+
+      _applyFocusForTests(focused(hlsItem, 'gallery-shelf'))
+      // Cancel BEFORE the display timer can fire (debounce 120ms; we
+      // wait only 50ms). activeToken is reset; the timer fires later
+      // and the inner check `activeToken !== token` returns early.
+      await vi.advanceTimersByTimeAsync(50)
+      _applyFocusForTests(focused(
+        { id: 'nsfw-2', url: 'https://example.com/v2' },
+        'gallery-shelf'
+      ))
+      await vi.runAllTimersAsync()
+
+      // Only the second focus's instance exists. The first focus's
+      // display timer fired after cancel, hit `activeToken !== token`
+      // at the top of the timer body, and bailed before reaching
+      // attachHlsPreview at all.
+      expect(hlsInstances).toHaveLength(1)
+      expect(hlsInstances[0].attachMediaCalls[0]).toBe(v2)
+      expect(_peekForTests().activeHls).toBe(hlsInstances[0])
+    })
+
+    it('Safari native-HLS path is also race-guarded at the top of attachHlsPreview', async () => {
+      // Defensive guard added 2026-05-06: the Safari branch is
+      // synchronous, so a stale token never had a real async window
+      // before. The hoisted check at the top of attachHlsPreview is
+      // belt-and-suspenders for any future call site that bypasses the
+      // display-timer's check. Here we assert that under a normal
+      // cancel-before-timer-fires sequence, no Safari-side mutation
+      // sneaks through onto the canceled target.
+      const video = makeFakeVideo({ canPlayNativeHls: true })
+      registerPreviewTarget('nsfw-1', video)
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ streamUrl: 'https://cdn.example.com/playlist.m3u8' }),
+      })
+
+      _applyFocusForTests(focused(hlsItem, 'gallery-shelf'))
+      await vi.advanceTimersByTimeAsync(50)
+      _applyFocusForTests(null)
+      await vi.runAllTimersAsync()
+
+      // No instance, no active video, no leftover src on the canceled
+      // target — the Safari branch never ran for the canceled focus.
+      expect(hlsInstances).toHaveLength(0)
+      expect(_peekForTests().activeVideo).toBeNull()
+      expect(_peekForTests().activeHls).toBeNull()
+      expect(video.getAttribute('src')).toBeNull()
+    })
   })
 
   it('eager-prefetches adjacentItems into the URL cache', async () => {
@@ -291,5 +557,39 @@ describe('useFocusPreview', () => {
     registerPreviewTarget('yt-1', v2)
     cleanup1()
     expect(_peekForTests().videoTargetCount).toBe(1) // v2 still registered
+  })
+})
+
+// ============================================================
+// urlCache size cap (2026-05-05 Resource lens)
+//
+// Long browse sessions write a urlCache entry per focused card.
+// Without a cap the map grows unbounded. CAP = 100; FIFO eviction.
+// ============================================================
+
+describe('useFocusPreview urlCache cap', () => {
+  const URL_CACHE_CAP = 100
+
+  async function fillCache(count) {
+    for (let i = 0; i < count; i++) {
+      prefetchStreamUrl(`item-${i}`, `https://example.com/v${i}.mp4`)
+    }
+    // Drain microtasks + any pending fetch resolutions.
+    await vi.runAllTimersAsync()
+  }
+
+  it('caches all entries while under the cap', async () => {
+    await fillCache(50)
+    expect(_peekForTests().urlCacheCount).toBe(50)
+  })
+
+  it('caps at 100 once writes exceed the limit', async () => {
+    await fillCache(URL_CACHE_CAP + 50)
+    expect(_peekForTests().urlCacheCount).toBe(URL_CACHE_CAP)
+  })
+
+  it('stays bounded under a 1000-focus stress test', async () => {
+    await fillCache(1000)
+    expect(_peekForTests().urlCacheCount).toBe(URL_CACHE_CAP)
   })
 })

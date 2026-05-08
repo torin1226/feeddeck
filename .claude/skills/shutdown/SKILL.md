@@ -42,7 +42,7 @@ For anything deferred, decide where it belongs in the backlog (which milestone, 
 
 ## Step 3: Update Backlog
 
-Open BACKLOG.md and make these updates:
+Open `../BACKLOG.md` (vault root — `feeddeck/BACKLOG.md` is a redirect stub as of 2026-05-02) and make these updates:
 
 1. Move any completed tasks from this session to the Completed section with today's date
 2. Add any new discovered tasks or tech debt from Step 2 to the Discovered Tasks section

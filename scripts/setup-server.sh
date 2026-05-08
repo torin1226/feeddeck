@@ -126,6 +126,12 @@ ExecStart=$(which node) server/index.js
 Restart=on-failure
 RestartSec=5
 
+# Memory ceiling (Beelink N95 has 8GB total; reserve headroom for Chromium + yt-dlp + OS)
+# MemoryHigh: kernel begins reclaiming pages when crossed (soft throttle).
+# MemoryMax: process is OOM-killed if exceeded (hard ceiling). Restart=on-failure brings it back.
+MemoryHigh=1G
+MemoryMax=1.5G
+
 # Environment
 Environment=NODE_ENV=production
 Environment=PORT=3000

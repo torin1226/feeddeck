@@ -26,7 +26,7 @@ router.get('/api/videos', (req, res) => {
     res.json({ videos })
   } catch (err) {
     logger.error('DB read error:', { error: err.message })
-    res.json({ videos: [] })
+    res.status(500).json({ error: 'Failed to load videos' })
   }
 })
 
@@ -92,7 +92,7 @@ router.get('/api/videos/favorites', (req, res) => {
     res.json({ videos })
   } catch (err) {
     logger.error('Favorites fetch error', { error: err.message })
-    res.json({ videos: [] })
+    res.status(500).json({ error: 'Failed to load favorites' })
   }
 })
 
@@ -107,7 +107,7 @@ router.get('/api/videos/watch-later', (req, res) => {
     res.json({ videos })
   } catch (err) {
     logger.error('Watch later fetch error', { error: err.message })
-    res.json({ videos: [] })
+    res.status(500).json({ error: 'Failed to load watch later' })
   }
 })
 

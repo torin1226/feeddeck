@@ -3,7 +3,7 @@ import { useLocation, useSearchParams } from 'react-router-dom'
 import useViewTransitionNavigate from '../../hooks/useViewTransitionNavigate'
 import useHomeStore from '../../stores/homeStore'
 import useModeStore from '../../stores/modeStore'
-import useThemeStore from '../../stores/themeStore'
+import useDeviceStore from '../../stores/deviceStore'
 
 // ============================================================
 // HomeHeader
@@ -16,12 +16,13 @@ export default function HomeHeader() {
   const navigate = useViewTransitionNavigate()
   const location = useLocation()
   const [urlParams] = useSearchParams()
-  const { setHeroItem, toggleTheatre } = useHomeStore()
   const shuffleHome = useHomeStore(s => s.shuffleHome)
   const shuffling = useHomeStore(s => s.shuffling)
   const refreshing = useHomeStore(s => s.refreshing)
   const { isSFW, toggleMode } = useModeStore()
-  const { theme, toggleTheme } = useThemeStore()
+  const mobilePreview = useDeviceStore(s => s.mobilePreview)
+  const toggleMobilePreview = useDeviceStore(s => s.toggleMobilePreview)
+  const isDev = import.meta.env.DEV
 
   // --- Search state ---
   const [searchOpen, setSearchOpen] = useState(false)
@@ -168,23 +169,14 @@ export default function HomeHeader() {
   }, [doSearch])
 
   const handleResultClick = useCallback((item) => {
-    // Set as hero item and enter theatre mode to play it
-    setHeroItem({
-      ...item,
-      thumbnailSm: item.thumbnail,
-      desc: item.title,
-      genre: item.source || 'Video',
-      rating: '8.0',
-      daysAgo: 1,
-    })
-    // Navigate home if not already there, then enter theatre
-    if (location.pathname !== '/') {
-      navigate('/')
+    const id = item.id || item.url
+    if (!id) {
+      closeSearch()
+      return
     }
-    // Small delay to let hero update, then enter theatre
-    setTimeout(() => toggleTheatre(), 50)
     closeSearch()
-  }, [setHeroItem, toggleTheatre, closeSearch, navigate, location.pathname])
+    navigate(`/watch/${encodeURIComponent(id)}`)
+  }, [closeSearch, navigate])
 
   const navItems = [
     { label: 'Home', path: '/' },
@@ -290,7 +282,7 @@ export default function HomeHeader() {
               {/* Error */}
               {searchError && !searching && (
                 <div className="px-4 py-5 text-center">
-                  <div className="text-rose-400 text-sm font-medium">Search failed</div>
+                  <div className="text-blue-400 text-sm font-medium">Search failed</div>
                   <div className="text-text-muted/70 text-xs mt-1 break-words">{searchError}</div>
                 </div>
               )}
@@ -386,14 +378,23 @@ export default function HomeHeader() {
         >
           ⚙
         </button>
-        <button
-          onClick={toggleTheme}
-          className="p-2 rounded-lg text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          {theme === 'dark' ? '☀' : '🌙'}
-        </button>
+        {isDev && (
+          <button
+            onClick={toggleMobilePreview}
+            className={`p-2 rounded-lg transition-colors cursor-pointer ${
+              mobilePreview
+                ? 'bg-accent text-black hover:bg-accent/80'
+                : 'text-text-secondary hover:text-text-primary'
+            }`}
+            title="Toggle mobile preview (Ctrl+M)"
+            aria-label="Toggle mobile preview"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+              <line x1="12" y1="18" x2="12" y2="18" />
+            </svg>
+          </button>
+        )}
         <button
           onClick={toggleMode}
           title={isSFW ? 'Switch to full library' : 'Switch to Social mode'}

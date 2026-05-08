@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route, useLocation } from 'react-router-dom'
+import { Routes, Route, useLocation, Navigate, useParams } from 'react-router-dom'
 import useKeyboard from '../hooks/useKeyboard'
 import useQueueSync from '../hooks/useQueueSync'
 import useDeviceStore from '../stores/deviceStore'
@@ -8,7 +8,6 @@ import ErrorBoundary from './ErrorBoundary'
 import FloatingQueue from './FloatingQueue'
 import GlobalToast from './GlobalToast'
 import OfflineBanner from './OfflineBanner'
-import ShuffleDebugOverlay from './ShuffleDebugOverlay'
 
 // Code-split route-level pages for smaller initial bundle
 const HomePage = lazy(() => import('../pages/HomePage'))
@@ -17,6 +16,12 @@ const FeedPage = lazy(() => import('../pages/FeedPage'))
 const SettingsPage = lazy(() => import('../pages/SettingsPage'))
 const VideoDetailPage = lazy(() => import('../pages/VideoDetailPage'))
 const SearchPage = lazy(() => import('../pages/SearchPage'))
+
+// Legacy /video/:id → /watch/:id permanent redirect.
+function RedirectVideoToWatch() {
+  const { id } = useParams()
+  return <Navigate to={`/watch/${id}`} replace />
+}
 
 // ============================================================
 // AppShell
@@ -31,7 +36,6 @@ export default function AppShell() {
   const location = useLocation()
   const isFeed = location.pathname === '/feed'
   const mobilePreview = useDeviceStore(s => s.mobilePreview)
-  const toggleMobilePreview = useDeviceStore(s => s.toggleMobilePreview)
   const modeHydrated = useModeStore(s => s._hydrated)
 
   // Block ALL rendering until mode store has hydrated.
@@ -59,7 +63,8 @@ export default function AppShell() {
             <Route path="/library" element={<ErrorBoundary name="Library"><LibraryPage /></ErrorBoundary>} />
             <Route path="/feed" element={<ErrorBoundary name="Feed"><FeedPage /></ErrorBoundary>} />
             <Route path="/settings" element={<ErrorBoundary name="Settings"><SettingsPage /></ErrorBoundary>} />
-            <Route path="/video/:id" element={<ErrorBoundary name="Video"><VideoDetailPage /></ErrorBoundary>} />
+            <Route path="/watch/:id" element={<ErrorBoundary name="Video"><VideoDetailPage /></ErrorBoundary>} />
+            <Route path="/video/:id" element={<RedirectVideoToWatch />} />
             <Route path="/search" element={<ErrorBoundary name="Search"><SearchPage /></ErrorBoundary>} />
           </Routes>
         </Suspense>
@@ -69,7 +74,6 @@ export default function AppShell() {
       {!isFeed && <FloatingQueue />}
       <GlobalToast />
       <OfflineBanner />
-      <ShuffleDebugOverlay />
     </>
   )
 
@@ -95,24 +99,6 @@ export default function AppShell() {
       ) : (
         content
       )}
-
-      {/* Mobile preview toggle button — dev only to avoid conflict with FloatingQueue */}
-      {import.meta.env.DEV && <button
-        onClick={toggleMobilePreview}
-        title="Toggle mobile preview (Ctrl+M)"
-        aria-label="Toggle mobile preview"
-        className={`fixed z-system bottom-4 right-4 w-10 h-10 rounded-full flex items-center justify-center
-          cursor-pointer transition-all shadow-float
-          ${mobilePreview
-            ? 'bg-accent text-black hover:bg-accent/80'
-            : 'bg-surface-overlay border border-surface-border text-text-secondary hover:text-text-primary hover:border-text-muted'
-          }`}
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
-          <line x1="12" y1="18" x2="12" y2="18" />
-        </svg>
-      </button>}
     </>
   )
 }

@@ -17,6 +17,9 @@ import { COOKIE_MAP } from '../cookies.js'
 //     XVideos, SpankBang, RedTube, YouPorn, FikFap.
 //   - 2026-04-20 (commit b06c073): FikFap CDN got the redgifs
 //     referer because b-cdn.net was grouped with redgifs.com.
+//   - 2026-05-05: SpankBang CDN host is vdownload-XX.sb-cd.com
+//     (not *.spankbang.com); allowlist had only the page domain
+//     so every SpankBang stream URL was 403'd at the proxy.
 // The test for "every NSFW domain has its own referer" is the
 // upstream catch-all so the next addition cannot drift silently.
 // ============================================================
@@ -26,6 +29,9 @@ describe('isAllowedCdnUrl', () => {
     expect(isAllowedCdnUrl('https://ev-h.phncdn.com/videos/abc.mp4')).toBe(true)
     expect(isAllowedCdnUrl('https://r5---sn-abc.googlevideo.com/videoplayback?xyz')).toBe(true)
     expect(isAllowedCdnUrl('https://vz-5d293dac-178.b-cdn.net/abc.m3u8')).toBe(true)
+    // SpankBang video CDN — page domain is spankbang.com but stream URLs
+    // resolve to vdownload-XX.sb-cd.com. Both must be allowed.
+    expect(isAllowedCdnUrl('https://vdownload-44.sb-cd.com/1/6/16986933-1080p.mp4')).toBe(true)
   })
 
   it('rejects URLs whose hostname is not allowed', () => {

@@ -1,6 +1,7 @@
-import { useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import useRatingsStore from '../stores/ratingsStore'
 import useToastStore from '../stores/toastStore'
+import useHomeStore from '../stores/homeStore'
 
 // ============================================================
 // ThumbsRating
@@ -22,8 +23,14 @@ export default function ThumbsRating({
   source = '',
   visible = true,
   onRated,
+  // Optional full item — when provided, a thumbs-down also drops the item
+  // from the homepage carousel/category state and the Undo restores it.
+  item = null,
+  positionClass = 'absolute bottom-3 left-1/2 -translate-x-1/2',
 }) {
   const [animating, setAnimating] = useState(null) // 'up' | 'down' | null
+  const animationTimer = useRef(null)
+  useEffect(() => () => clearTimeout(animationTimer.current), [])
   const recordRating = useRatingsStore(s => s.recordRating)
   const existingRating = useRatingsStore(s => s.ratedUrls[videoUrl])
   const isToastPaused = useRatingsStore(s => s.isToastPaused)
@@ -38,6 +45,8 @@ export default function ThumbsRating({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ videoUrl }),
     }).catch(err => console.warn('Undo rating failed:', err.message))
+    // Put the dismissed card back where it came from (no-op if no item).
+    useHomeStore.getState().restoreDismissed()
   }, [videoUrl, surfaceKey, surfaceType, undoRating])
 
   const handleRate = useCallback(async (rating) => {
@@ -47,6 +56,14 @@ export default function ThumbsRating({
 
     // Optimistic UI update
     recordRating(videoUrl, surfaceKey || surfaceType, rating)
+
+    // Optimistic dismissal: remove the card immediately on thumbs-down so
+    // the user doesn't keep staring at content they just rejected. Server-
+    // side scoreVideos() filters downvoted URLs on the next fetch, so this
+    // is purely a UX accelerator — Undo via restoreDismissed re-inserts it.
+    if (rating === 'down' && item) {
+      useHomeStore.getState().dismissAndAdvance(item)
+    }
 
     // Fire API call
     try {
@@ -86,8 +103,9 @@ export default function ThumbsRating({
     onRated?.(rating, videoUrl)
 
     // Clear animation state after animation completes
-    setTimeout(() => setAnimating(null), 350)
-  }, [videoUrl, surfaceType, surfaceKey, tags, creator, title, thumbnail, source, animating, existingRating, recordRating, isToastPaused, showToast, showActionToast, handleUndo, onRated])
+    if (animationTimer.current) clearTimeout(animationTimer.current)
+    animationTimer.current = setTimeout(() => setAnimating(null), 350)
+  }, [videoUrl, surfaceType, surfaceKey, tags, creator, title, thumbnail, source, animating, existingRating, recordRating, isToastPaused, showToast, showActionToast, handleUndo, onRated, item])
 
   if (!visible || !videoUrl) return null
 
@@ -95,7 +113,7 @@ export default function ThumbsRating({
   if (existingRating) {
     return (
       <div
-        className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full"
+        className={`${positionClass} z-20 flex items-center gap-2 px-3 py-1.5 rounded-full`}
         style={{
           background: 'rgba(0,0,0,0.4)',
           backdropFilter: 'blur(12px)',
@@ -116,7 +134,7 @@ export default function ThumbsRating({
 
   return (
     <div
-      className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-4"
+      className={`${positionClass} z-20 flex items-center gap-4`}
       style={{
         opacity: visible ? 1 : 0,
         transform: `translateX(-50%) scale(${visible ? 1 : 0.9})`,
@@ -162,7 +180,7 @@ export default function ThumbsRating({
             transition: `transform 350ms ${EASE_SPRING}`,
           }}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill={animating === 'up' ? '#f43f5e' : 'none'} stroke={animating === 'up' ? '#f43f5e' : 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/80" style={{ transition: 'fill 300ms, stroke 300ms' }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill={animating === 'up' ? '#3b82f6' : 'none'} stroke={animating === 'up' ? '#3b82f6' : 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/80" style={{ transition: 'fill 300ms, stroke 300ms' }}>
             <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3" />
           </svg>
         </button>

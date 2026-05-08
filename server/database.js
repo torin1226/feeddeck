@@ -393,6 +393,16 @@ export function initDatabase() {
       last_updated DATETIME DEFAULT (datetime('now'))
     );
 
+    -- Pruning: creators flagged after 4+ downs. action='blocked' filters them
+    -- from scoring; action='dismissed' just hides them from the review prompt.
+    CREATE TABLE IF NOT EXISTS blocked_creators (
+      creator TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      action TEXT NOT NULL DEFAULT 'blocked',
+      reviewed_at DATETIME DEFAULT (datetime('now')),
+      PRIMARY KEY (creator, mode)
+    );
+
     -- 3.12 Taste Feedback: multi-signal taste profile (replaces tag_preferences as primary scoring input)
     CREATE TABLE IF NOT EXISTS taste_profile (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -460,17 +470,13 @@ export function initDatabase() {
     _seedCategories(db)
   }
 
-  // Migrate: replace old/generic category seeds with curated ones from CONTENT_QUERIES.md
-  try {
-    const hasNewSeeds = db.prepare("SELECT COUNT(*) as n FROM categories WHERE key = 'nsfw_trending'").get()
-    if (hasNewSeeds.n === 0) {
-      db.exec("DELETE FROM homepage_cache")
-      db.exec("DELETE FROM categories")
-      _seedCategories(db)
-    }
-  } catch (err) {
-    logger.error('Category migration failed -- DB may have stale seeds:', { error: err.message })
-  }
+  // [Removed 2026-04-30] Obsolete CONTENT_QUERIES.md migration. The block
+  // used `nsfw_trending` as its "do I have curated seeds?" marker, but the
+  // social_news + nsfw_for_you layout migrations below DROP `nsfw_trending`
+  // — so the marker check fired on every boot, wiping homepage_cache to
+  // zero and causing the placeholder-dogs symptom users saw after every
+  // server restart. The new topic-pipeline layout migrations are the
+  // successor; this block is archaeology.
 
   // Seed default feed sources if empty
   const srcCount = db.prepare('SELECT COUNT(*) as n FROM sources').get()
@@ -511,22 +517,23 @@ export function initDatabase() {
     }
   } catch {}
 
-  // Migrate: add diversifying NSFW categories if missing (Phase 1.4)
+  // Cleanup: drop orphan NSFW category keys left over from the Phase 1.4
+  // diversifying-rows seed. The 2026-04 NSFW row layout migration replaced
+  // these with topic-pipeline configs, but the seed kept re-inserting them
+  // every boot via INSERT OR IGNORE, leaving inert rows with no
+  // topic_sources and no inserter. /api/homepage filters them out, so the
+  // bug was user-invisible — this just keeps the categories table tidy.
   try {
-    const insertCat = db.prepare('INSERT OR IGNORE INTO categories (key, label, query, mode, sort_order) VALUES (?, ?, ?, ?, ?)')
-    const extraCategories = [
-      ['nsfw_redgifs_pov',   'POV Clips',     'https://www.redgifs.com/search?query=pov&order=trending',  'nsfw', 25],
-      ['nsfw_redgifs_solo',  'RedGifs Solo',  'https://www.redgifs.com/search?query=solo&order=trending', 'nsfw', 26],
-      ['nsfw_xvideos_new',   'XVideos New',   'https://www.xvideos.com/new',                              'nsfw', 27],
-      ['nsfw_xvideos_hits',  'XVideos Hits',  'https://www.xvideos.com/hits',                             'nsfw', 28],
-      ['nsfw_spankbang_new', 'SpankBang New', 'https://spankbang.com/new_videos',                         'nsfw', 29],
-      ['nsfw_fikfap_new',    'FikFap New',    'https://fikfap.com/new',                                   'nsfw', 30],
+    const orphans = [
+      'nsfw_redgifs_pov', 'nsfw_redgifs_solo',
+      'nsfw_xvideos_new', 'nsfw_xvideos_hits',
+      'nsfw_spankbang_new', 'nsfw_fikfap_new',
     ]
-    for (const row of extraCategories) {
-      insertCat.run(...row)
-    }
+    const placeholders = orphans.map(() => '?').join(',')
+    db.prepare(`DELETE FROM homepage_cache WHERE category_key IN (${placeholders})`).run(...orphans)
+    db.prepare(`DELETE FROM categories WHERE key IN (${placeholders})`).run(...orphans)
   } catch (err) {
-    logger.error('Diversifying NSFW category seed failed:', { error: err.message })
+    logger.warn('orphan NSFW category cleanup failed', { error: err.message })
   }
 
   // Seed system_searches if empty (Phase 1.3): saved searches that boost feed scoring (+10 pts via scoring.js).
@@ -564,6 +571,13 @@ export function initDatabase() {
     const insertSrc = db.prepare('INSERT OR IGNORE INTO sources (domain, mode, label, query, weight, active) VALUES (?, ?, ?, ?, ?, ?)')
     insertSrc.run('instagram.com', 'social', 'Instagram', '__creators__', 0.8, 0)
     insertSrc.run('twitter.com', 'social', 'Twitter/X', '__creators__', 0.7, 0)
+  } catch {}
+
+  // Migrate: move Instagram off yt-dlp (broken extractor) to Puppeteer scraper via explore/reels
+  try {
+    db.prepare(
+      "UPDATE sources SET query = 'https://www.instagram.com/explore/reels/', active = 1 WHERE domain = 'instagram.com' AND (query = '__creators__' OR active = 0)"
+    ).run()
   } catch {}
 
   // Migrate: add fetch_interval and last_fetched to sources if missing
@@ -724,6 +738,44 @@ export function initDatabase() {
     logger.error('creator_boosts mode migration failed:', { error: err.message })
   }
 
+  // creators: add mode column + backfill from url. Schema-only follow-up
+  // to the 2026-04-25 mode firewall — read paths still need to be updated
+  // to filter by mode (tracked separately in the discovered-tasks queue).
+  try {
+    const cols = db.prepare("PRAGMA table_info(creators)").all()
+    if (cols.length > 0 && !cols.some(c => c.name === 'mode')) {
+      db.exec("ALTER TABLE creators ADD COLUMN mode TEXT")
+      const rows = db.prepare("SELECT id, url FROM creators WHERE mode IS NULL").all()
+      const upd = db.prepare("UPDATE creators SET mode = ? WHERE id = ?")
+      for (const r of rows) {
+        upd.run(inferMode(r.url), r.id)
+      }
+      logger.info('Backfilled creators.mode', { rows: rows.length })
+    }
+  } catch (err) {
+    logger.error('creators mode migration failed:', { error: err.message })
+  }
+
+  // subscription_backups: add mode column + backfill. profile_url is
+  // nullable, so fall back to the platform name as a domain hint
+  // (e.g. 'pornhub' -> 'pornhub.com' which inferMode matches against
+  // NSFW_DOMAINS). Schema-only; read paths follow-up.
+  try {
+    const cols = db.prepare("PRAGMA table_info(subscription_backups)").all()
+    if (cols.length > 0 && !cols.some(c => c.name === 'mode')) {
+      db.exec("ALTER TABLE subscription_backups ADD COLUMN mode TEXT")
+      const rows = db.prepare("SELECT id, profile_url, platform FROM subscription_backups WHERE mode IS NULL").all()
+      const upd = db.prepare("UPDATE subscription_backups SET mode = ? WHERE id = ?")
+      for (const r of rows) {
+        const hint = r.profile_url || (r.platform ? `${r.platform}.com` : null)
+        upd.run(inferMode(hint), r.id)
+      }
+      logger.info('Backfilled subscription_backups.mode', { rows: rows.length })
+    }
+  } catch (err) {
+    logger.error('subscription_backups mode migration failed:', { error: err.message })
+  }
+
   // Migrate: seed taste_profile from existing tag_preferences (one-time)
   try {
     const tasteCount = db.prepare('SELECT COUNT(*) as n FROM taste_profile').get()
@@ -742,6 +794,411 @@ export function initDatabase() {
     }
   } catch (err) {
     logger.error('taste_profile migration failed:', { error: err.message })
+  }
+
+  // ============================================================
+  // DYNAMIC TASTE MODEL MIGRATIONS (2026-04-30)
+  // Phase 1 of the multi-search topic pipeline plan.
+  // tag_preferences gains `weight` (accumulated strength) and
+  // `last_seen` (for recency decay). New table `tag_associations`
+  // tracks tag co-occurrence so liking similar things lifts
+  // adjacent content automatically.
+  // ============================================================
+  try {
+    const cols = new Set(db.prepare("PRAGMA table_info(tag_preferences)").all().map(c => c.name))
+    if (!cols.has('weight')) {
+      db.exec("ALTER TABLE tag_preferences ADD COLUMN weight REAL DEFAULT 1.0")
+      logger.info('Added tag_preferences.weight column')
+    }
+    if (!cols.has('last_seen')) {
+      db.exec("ALTER TABLE tag_preferences ADD COLUMN last_seen TEXT")
+      // Backfill last_seen from updated_at for existing rows
+      db.exec("UPDATE tag_preferences SET last_seen = updated_at WHERE last_seen IS NULL")
+      logger.info('Added tag_preferences.last_seen column (backfilled from updated_at)')
+    }
+  } catch (err) {
+    logger.error('tag_preferences dynamic-model migration failed:', { error: err.message })
+  }
+
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS tag_associations (
+      tag_a TEXT NOT NULL,
+      tag_b TEXT NOT NULL,
+      co_occurrences INTEGER DEFAULT 1,
+      last_seen DATETIME DEFAULT (datetime('now')),
+      PRIMARY KEY (tag_a, tag_b)
+    )`)
+    db.exec("CREATE INDEX IF NOT EXISTS idx_assoc_a ON tag_associations(tag_a, co_occurrences DESC)")
+    db.exec("CREATE INDEX IF NOT EXISTS idx_assoc_b ON tag_associations(tag_b, co_occurrences DESC)")
+  } catch (err) {
+    logger.error('tag_associations table creation failed:', { error: err.message })
+  }
+
+  // ============================================================
+  // TOPIC PIPELINE MIGRATIONS (2026-04-30, Phase 2)
+  //
+  // categories gains topic_sources + fallback_queries (JSON arrays).
+  // New tables: discovered_creators (per-row creator history),
+  // trends_cache (in-DB cache for trends24/twitter/eporner scrapes).
+  // ============================================================
+  try {
+    const catCols = new Set(db.prepare("PRAGMA table_info(categories)").all().map(c => c.name))
+    if (!catCols.has('topic_sources')) {
+      db.exec("ALTER TABLE categories ADD COLUMN topic_sources TEXT DEFAULT '[]'")
+      logger.info('Added categories.topic_sources column')
+    }
+    if (!catCols.has('fallback_queries')) {
+      db.exec("ALTER TABLE categories ADD COLUMN fallback_queries TEXT DEFAULT '[]'")
+      logger.info('Added categories.fallback_queries column')
+    }
+  } catch (err) {
+    logger.error('categories topic-pipeline migration failed:', { error: err.message })
+  }
+
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS discovered_creators (
+      creator TEXT NOT NULL,
+      platform TEXT NOT NULL DEFAULT 'youtube',
+      row_key TEXT NOT NULL,
+      source TEXT NOT NULL,
+      channel_url TEXT,
+      first_seen_at DATETIME DEFAULT (datetime('now')),
+      last_seen_at  DATETIME DEFAULT (datetime('now')),
+      times_seen INTEGER DEFAULT 1,
+      PRIMARY KEY (platform, creator, row_key)
+    )`)
+    db.exec("CREATE INDEX IF NOT EXISTS idx_discovered_row ON discovered_creators(row_key, times_seen DESC)")
+  } catch (err) {
+    logger.error('discovered_creators table creation failed:', { error: err.message })
+  }
+
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS trends_cache (
+      source_key TEXT PRIMARY KEY,
+      fetched_at DATETIME NOT NULL DEFAULT (datetime('now')),
+      payload_json TEXT NOT NULL,
+      ttl_minutes INTEGER NOT NULL DEFAULT 360
+    )`)
+  } catch (err) {
+    logger.error('trends_cache table creation failed:', { error: err.message })
+  }
+
+  // Social row layout migration. Marker key: social_news. Drops 8 stale
+  // single-keyword/disliked-tag/penalized-creator rows, adds 6 new rows
+  // wired to the topic pipeline, retrofits existing topical rows with
+  // topic_sources configs. Keyed on absence of social_news so it runs
+  // once and never re-triggers.
+  //
+  // Wrapped in a transaction so /api/homepage can never observe a
+  // half-migrated state — if the process crashes mid-migration, ROLLBACK
+  // restores the prior layout and the marker check re-triggers it on
+  // next boot. Without this, an interrupted migration could leave the
+  // marker present (categories partially inserted) but homepage_cache
+  // dropped, putting the app into a permanently-empty cold state.
+  try {
+    const haveNews = db.prepare("SELECT 1 FROM categories WHERE key = 'social_news'").get()
+    if (!haveNews) {
+      db.exec('BEGIN')
+      try {
+      const drop = [
+        'social_trending', 'social_viral', 'social_satisfying',
+        'social_nature', 'social_fireship', 'social_tiktok_fyp',
+        'social_reddit_satis', 'social_shorts',
+      ]
+      const dropCache = db.prepare("DELETE FROM homepage_cache WHERE category_key = ?")
+      const dropCat   = db.prepare("DELETE FROM categories WHERE key = ?")
+      for (const k of drop) {
+        try { dropCache.run(k) } catch {}
+        try { dropCat.run(k) } catch {}
+      }
+
+      // Reseed/insert. INSERT OR REPLACE so a re-run of this block (after
+      // a fresh DB rebuild) won't choke on existing rows. Use a synthetic
+      // legacy `query` field — kept for backward compat with code paths
+      // that haven't been migrated yet; the pipeline reads topic_sources.
+      const upsert = db.prepare(
+        `INSERT INTO categories (key, label, query, mode, sort_order, topic_sources, fallback_queries)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET
+           label = excluded.label,
+           query = excluded.query,
+           sort_order = excluded.sort_order,
+           topic_sources = excluded.topic_sources,
+           fallback_queries = excluded.fallback_queries`
+      )
+      const SOCIAL_LAYOUT = [
+        // [key, label, legacy_query, sort_order, topic_sources_json, fallback_queries_json]
+        ['social_news',           'News',                  'topic:trends24:news-and-politics',
+          0, '["trends24:news-and-politics","liked_tags:news"]',
+          '["ytsearch10:top news today"]'],
+        ['social_subscriptions',  'My Subscriptions',      'https://www.youtube.com/feed/subscriptions',
+          1, '[]', '[]'],
+        ['social_what_now',       "What's Trending Now",   'topic:trends24:all',
+          2, '["trends24:all"]', '[]'],
+        ['social_ai',             'AI & Coding',           'topic:liked_tags:ai',
+          3, '["liked_tags:ai,vibe coding,claude tutorial,claude routines","trends24:science-and-technology"]',
+          '["ytsearch10:AI coding tutorial 2026"]'],
+        ['social_tech',           'Tech & Gadgets',        'ytsearch10:best new tech gadgets',
+          4, '["trends24:science-and-technology","liked_tags:tech"]',
+          '["ytsearch10:best new tech gadgets"]'],
+        ['social_design',         'Design',                'ytsearch10:UI UX design tips',
+          5, '["liked_tags:design,ux","trends24:howto-and-style","boosted_creators:5"]',
+          '["ytsearch10:UI UX design tips"]'],
+        ['social_late_night',     'Late Night Comedy',     'topic:trends24:comedy',
+          6, '["trends24:comedy","liked_tags:comedy,funny","boosted_creators:5"]',
+          '["ytsearch10:late night show interview clip"]'],
+        ['social_gaming',         'Gaming',                'topic:trends24:gaming',
+          7, '["trends24:gaming","liked_tags:ps5,new video games"]',
+          '["ytsearch10:gaming highlights this week"]'],
+        ['social_reddit_stories', 'Reddit Stories',        'topic:liked_tags:reddit_stories',
+          8, '["liked_tags:reddit stories,ok storytime"]',
+          '["ytsearch10:reddit stories ok storytime narrated"]'],
+        ['social_music',          'Music',                 'ytsearch10:tiny desk concert',
+          9, '["trends24:music","boosted_creators:5"]',
+          '["ytsearch10:tiny desk concert"]'],
+        ['social_sports',         'Sports Highlights',     'ytsearch10:best sports highlights this week',
+          10, '["trends24:sports","liked_tags:carolina panthers,unc tar heels"]',
+          '["ytsearch10:sports highlights this week"]'],
+        ['social_cooking',        'Cooking',               'ytsearch10:cooking recipe short',
+          11, '["trends24:howto-and-style","liked_tags:cooking"]',
+          '["ytsearch10:cooking recipe short"]'],
+        ['social_reddit_unexp',   'Reddit Unexpected',     'https://www.reddit.com/r/Unexpected/hot',
+          12, '[]', '[]'],
+        ['social_reddit_nfl',     'Reddit NextLevel',      'https://www.reddit.com/r/nextfuckinglevel/hot',
+          13, '[]', '[]'],
+        ['social_explainers',     'Explainers',            'ytsearch10:explained in 5 minutes',
+          14, '["trends24:howto-and-style","liked_tags:tutorial,documentary"]',
+          '["ytsearch10:explained in 5 minutes"]'],
+        ['social_film',           'Film & TV',             'topic:trends24:film-and-animation',
+          15, '["trends24:film-and-animation","liked_tags:new in theaters,scifi"]',
+          '["ytsearch10:movie trailer 2026"]'],
+        ['social_podcasts',       'Podcast Clips',         'topic:liked_tags:podcast',
+          16, '["liked_tags:podcast","trends24:people-and-blogs"]',
+          '["ytsearch10:podcast interview clip"]'],
+        ['social_city_walks',     'City Walks',            'ytsearch10:city walking tour 4K',
+          17, '["liked_tags:travel"]',
+          '["ytsearch10:city walking tour 4K"]'],
+      ]
+      for (const row of SOCIAL_LAYOUT) {
+        // SOCIAL_LAYOUT shape: [key, label, query, sort_order, topic_sources, fallback_queries]
+        // The categories table column order is: (key, label, query, mode, sort_order, topic_sources, fallback_queries)
+        try { upsert.run(row[0], row[1], row[2], 'social', row[3], row[4], row[5]) }
+        catch (err) { logger.warn('social row upsert failed', { key: row[0], error: err.message }) }
+      }
+      logger.info('Migrated social row layout to topic-pipeline configs', { added: SOCIAL_LAYOUT.length, dropped: drop.length })
+        db.exec('COMMIT')
+      } catch (txErr) {
+        db.exec('ROLLBACK')
+        throw txErr
+      }
+    }
+  } catch (err) {
+    logger.error('social row layout migration failed:', { error: err.message })
+  }
+
+  // NSFW row layout migration. Marker key: nsfw_for_you. Drops 18 stale
+  // rows (heavy-duplication PH search keywords + redundant aggregator rows),
+  // upserts 13 retrofitted/new rows wired to the topic pipeline. Phase 3
+  // resolvers (subscribed_models, likes_pool, eporner_api, cross_site)
+  // power the new rows.
+  //
+  // Wrapped in a transaction (mirrors the social_news migration above) so
+  // an interrupted run doesn't leave the DB in a partially-migrated state.
+  try {
+    const haveForYou = db.prepare("SELECT 1 FROM categories WHERE key = 'nsfw_for_you'").get()
+    if (!haveForYou) {
+      db.exec('BEGIN')
+      try {
+      const drop = [
+        // Heavy-duplication PH search keyword rows (folded into nsfw_for_you / cross_site)
+        'nsfw_trending', 'nsfw_hot', 'nsfw_mostviewed', 'nsfw_solo',
+        'nsfw_realcouples', 'nsfw_sensual', 'nsfw_compilation',
+        'nsfw_verified', 'nsfw_popular_women', 'nsfw_new',
+        'nsfw_casting', 'nsfw_massage', 'nsfw_cosplay', 'nsfw_fitness',
+        'nsfw_asmr',
+        // Redundant aggregator rows (folded)
+        'nsfw_xvideos_best', 'nsfw_xvideos_new', 'nsfw_xvideos_hits',
+        'nsfw_spankbang_new',
+        'nsfw_redgifs_clips', 'nsfw_redgifs_amatr', 'nsfw_redgifs_couple',
+        'nsfw_redgifs_pov', 'nsfw_redgifs_solo', 'nsfw_redgifs_trend',
+        'nsfw_fikfap_new', 'nsfw_fikfap_trend',
+      ]
+      const dropCacheStmt = db.prepare("DELETE FROM homepage_cache WHERE category_key = ?")
+      const dropCatStmt   = db.prepare("DELETE FROM categories WHERE key = ?")
+      for (const k of drop) {
+        try { dropCacheStmt.run(k) } catch {}
+        try { dropCatStmt.run(k) } catch {}
+      }
+
+      const upsertNsfw = db.prepare(
+        `INSERT INTO categories (key, label, query, mode, sort_order, topic_sources, fallback_queries)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET
+           label = excluded.label,
+           query = excluded.query,
+           sort_order = excluded.sort_order,
+           topic_sources = excluded.topic_sources,
+           fallback_queries = excluded.fallback_queries`
+      )
+      // [key, label, query, sort_order, topic_sources, fallback_queries]
+      const NSFW_LAYOUT = [
+        ['nsfw_for_you',     'For You',
+          'topic:nsfw_for_you',
+          0, '["liked_tags:","subscribed_models:nsfw_for_you","likes_pool","cross_site:trending"]', '[]'],
+        ['nsfw_top_rated',   'Top Rated This Week',
+          'topic:eporner:top-rated',
+          1, '["eporner_api:top-rated","eporner_api:top-monthly","cross_site:top-rated"]', '[]'],
+        ['nsfw_amateur',     'Amateur',
+          'https://www.pornhub.com/video/search?search=amateur+homemade&hd=1&o=tr',
+          2, '["liked_tags:amateur,homemade,verified amateurs","cross_site:amateur","eporner_api:top-weekly"]',
+          '["https://www.pornhub.com/video/search?search=amateur+homemade&hd=1&o=tr"]'],
+        ['nsfw_recommended', 'PH Recommended',
+          'https://www.pornhub.com/recommended',
+          3, '[]', '[]'],  // auth-driven; legacy path
+        ['nsfw_japanese',    'Japanese',
+          'topic:liked_tags:japanese',
+          4, '["liked_tags:japanese,asian,japanese big tits","cross_site:japanese"]', '[]'],
+        ['nsfw_petite',      'Petite & Young Adult',
+          'topic:liked_tags:petite',
+          5, '["liked_tags:petite,18-25","cross_site:petite"]', '[]'],
+        ['nsfw_pov',         'POV',
+          'topic:liked_tags:pov',
+          6, '["liked_tags:pov","cross_site:pov"]', '[]'],
+        ['nsfw_couples',     'Couples',
+          'topic:liked_tags:couple',
+          7, '["liked_tags:real couples,homemade","cross_site:couple"]', '[]'],
+        ['nsfw_fresh',       'Fresh Picks',
+          'topic:cross_site:newest',
+          8, '["cross_site:newest","liked_tags:"]', '[]'],
+        ['nsfw_redgifs',     'RedGifs',
+          'https://www.redgifs.com/trending',
+          9, '[]', '["https://www.redgifs.com/trending"]'],  // legacy path; cross_site covers richer aggregation
+        ['nsfw_xvideos',     'XVideos',
+          'https://www.xvideos.com/best',
+          10, '[]', '["https://www.xvideos.com/best"]'],
+        ['nsfw_spankbang',   'SpankBang',
+          'https://spankbang.com/trending_videos/',
+          11, '[]', '["https://spankbang.com/trending_videos/"]'],
+        ['nsfw_fikfap',      'FikFap',
+          'https://fikfap.com/trending',
+          12, '[]', '["https://fikfap.com/trending"]'],
+      ]
+      for (const row of NSFW_LAYOUT) {
+        try { upsertNsfw.run(row[0], row[1], row[2], 'nsfw', row[3], row[4], row[5]) }
+        catch (err) { logger.warn('nsfw row upsert failed', { key: row[0], error: err.message }) }
+      }
+      logger.info('Migrated NSFW row layout to topic-pipeline configs', { added: NSFW_LAYOUT.length, dropped: drop.length })
+        db.exec('COMMIT')
+      } catch (txErr) {
+        db.exec('ROLLBACK')
+        throw txErr
+      }
+    }
+  } catch (err) {
+    logger.error('NSFW row layout migration failed:', { error: err.message })
+  }
+
+  // Phase 4 — Wire twitter_trends:us into the trending-flavoured social rows
+  // (News, What's Trending Now). Idempotent: only updates if the topic_sources
+  // string doesn't already contain "twitter_trends".
+  try {
+    const targets = ['social_news', 'social_what_now']
+    for (const key of targets) {
+      const row = db.prepare("SELECT topic_sources FROM categories WHERE key = ?").get(key)
+      if (!row) continue
+      let sources = []
+      try { sources = JSON.parse(row.topic_sources || '[]') } catch { sources = [] }
+      if (sources.some(s => typeof s === 'string' && s.startsWith('twitter_trends'))) continue
+      sources.push('twitter_trends:us')
+      db.prepare("UPDATE categories SET topic_sources = ? WHERE key = ?")
+        .run(JSON.stringify(sources), key)
+    }
+  } catch (err) {
+    logger.warn('twitter_trends wiring migration failed', { error: err.message })
+  }
+
+  // Phase 4.5 — Drop the last lazy-categorization row. social_fails was
+  // a single ytsearch10:best fails compilation that returned AFV / FailArmy
+  // — both penalized at -0.15 in creator_boosts. The "Late Night Comedy"
+  // row already covers comedy/funny via boosted_creators + trends24:comedy,
+  // so dropping social_fails removes a guaranteed-thumbs-down surface
+  // without losing comedy coverage.
+  try {
+    const have = db.prepare("SELECT 1 FROM categories WHERE key = 'social_fails'").get()
+    if (have) {
+      db.prepare("DELETE FROM homepage_cache WHERE category_key = 'social_fails'").run()
+      db.prepare("DELETE FROM categories WHERE key = 'social_fails'").run()
+      logger.info('Dropped social_fails (lazy categorization, dominant penalized creators)')
+    }
+  } catch (err) {
+    logger.warn('social_fails drop migration failed', { error: err.message })
+  }
+
+  // Phase 4 — Auto-deprecation table. Tracks per-row engagement (impressions
+  // and thumbs-down) so the daily hydration routine can flag rows where the
+  // user is bouncing off without us writing a heuristic into the runtime.
+  // Engagement events are recorded by the rating handler; the daily job
+  // (or a manual /api/rows/health endpoint) computes ratios and surfaces
+  // rows above 0.4 thumbs-down/impressions for review.
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS row_engagement (
+      row_key TEXT NOT NULL,
+      day TEXT NOT NULL,
+      impressions INTEGER NOT NULL DEFAULT 0,
+      thumbs_down INTEGER NOT NULL DEFAULT 0,
+      thumbs_up INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (row_key, day)
+    )`)
+    db.exec("CREATE INDEX IF NOT EXISTS idx_row_engagement_day ON row_engagement(day)")
+  } catch (err) {
+    logger.error('row_engagement table creation failed:', { error: err.message })
+  }
+
+  // Stale homepage_cache housekeeping. Expired unviewed rows are filtered
+  // out of every read path (`expires_at > datetime('now')`) but never
+  // deleted, so the table accumulates indefinitely. One-shot purge on boot
+  // keeps the table bounded; idempotent (no-op once drained).
+  try {
+    const result = db.prepare(
+      "DELETE FROM homepage_cache WHERE expires_at < datetime('now') AND viewed = 0"
+    ).run()
+    if (result.changes > 0) {
+      logger.info('Purged stale unviewed homepage_cache rows', { rows: result.changes })
+    }
+  } catch (err) {
+    logger.warn('homepage_cache stale-row purge failed', { error: err.message })
+  }
+
+  // ---------------------------------------------------------------
+  // Recommendation Trail (per Recommendation Trail design 2026-05-01)
+  // Persistent pool of "videos pulled because the user watched X."
+  // Two yt-dlp searches per click (creator channel + keyword) feed
+  // this table; surfaces in the watch-page rail, the homepage hero
+  // carousel, and the top of feed views.
+  // Mode-scoped (firewall). Score field is mutated by demote on
+  // thumbs-down. TTL evicted (watched OR 14 days unwatched).
+  // ---------------------------------------------------------------
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS recommendation_trail (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      video_url TEXT NOT NULL,
+      seed_video_url TEXT NOT NULL,
+      source TEXT NOT NULL CHECK(source IN ('creator', 'keyword')),
+      score REAL NOT NULL DEFAULT 1.0,
+      mode TEXT NOT NULL DEFAULT 'social' CHECK(mode IN ('social', 'nsfw')),
+      title TEXT,
+      thumbnail TEXT,
+      duration INTEGER DEFAULT 0,
+      uploader TEXT,
+      tags TEXT DEFAULT '[]',
+      created_at DATETIME DEFAULT (datetime('now')),
+      watched_at DATETIME,
+      UNIQUE(mode, video_url)
+    )`)
+    db.exec("CREATE INDEX IF NOT EXISTS idx_trail_rank ON recommendation_trail(mode, watched_at, score DESC, created_at DESC)")
+    db.exec("CREATE INDEX IF NOT EXISTS idx_trail_seed ON recommendation_trail(seed_video_url, mode)")
+  } catch (err) {
+    logger.error('recommendation_trail table creation failed:', { error: err.message })
   }
 
   logger.info('Database initialized', { path: DB_PATH })

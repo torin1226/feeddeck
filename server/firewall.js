@@ -20,7 +20,7 @@
 //     (videos, ratings, queue, items, results, history).
 // ============================================================
 
-import { inferMode } from './utils.js'
+import { inferMode, urlOf } from './utils.js'
 import { logger } from './logger.js'
 
 // Keys whose values are arrays of video-like objects we should filter.
@@ -36,12 +36,6 @@ const VIDEO_ARRAY_KEYS = new Set([
   'liked',
   'recommendations',
 ])
-
-/** Pull a URL-like string off any video-shaped object. */
-function urlOf(item) {
-  if (!item || typeof item !== 'object') return null
-  return item.url || item.video_url || item.streamUrl || item.stream_url || item.source || null
-}
 
 /** Does this item belong in the requested mode? */
 function itemMatchesMode(item, requestMode) {

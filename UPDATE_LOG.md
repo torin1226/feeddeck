@@ -1,5 +1,100 @@
 # FeedDeck Update Log
 
+## 2026-05-06 PM (Debug) — `/feed` Time-to-First-Video: 30s → 1.6s
+
+### Completed
+- **Root-caused user-reported "/feed loads slowly" bug** via `/debug` workflow with browser-network inspection.
+- Three compounding issues found and fixed in [feedStore.js](src/stores/feedStore.js) and [FeedVideo.jsx](src/components/feed/FeedVideo.jsx):
+  1. **`/api/feed/watched-ids` is a phantom endpoint** — `feedStore.initFeed()` awaited a route that has never been mounted on the server. Browser hung ~17s before giving up, blocking every downstream fetch. Removed the call (server's `WHERE watched = 0` filter on `/api/feed/next` already provides the dedup).
+  2. **Duplicate `/api/stream-url` requests** — `_warmStreamUrls` and `FeedVideo`'s on-demand fetch each hit the endpoint for the active slot, both blocking on the same yt-dlp resolution. Added a shared `resolveStreamUrl()` promise cache keyed by source URL.
+  3. **No video byte preloading** — `<video>` only began downloading bytes when the user was on that slot. Added `_prefetchOneVideoBytes()` that Range-fetches the first 512KB (or HLS manifest) for each freshly-resolved upcoming video so the browser HTTP cache is warm by the time the element issues its real request.
+- **Browser-verified in real Chrome via preview tools:** time-to-first-frame on `/feed` dropped from ~30s to ~1.6s. Network panel: 0 calls to `/api/feed/watched-ids` (was 1 hung), 2 stream-url (was 11+), 3× 512KB byte-prefetches in flight before user scrolls.
+
+### Decisions Made
+- **Removed the watched-ids fetch entirely rather than implementing the missing endpoint.** The dedup is structurally redundant — `/api/feed/next` already filters server-side via `WHERE fc.mode = ? AND fc.watched = 0`. Adding a server route would still be wasted IO every page load.
+- **Range-prefetch over second hidden `<video>` element.** The shared-singleton `<video>` design preserves user gesture activation across src changes; adding a parallel preload element would complicate that. Range-prefetching warms browser HTTP cache instead — works with the existing single-element architecture.
+- **5s linger on resolved-URL cache, 50-entry FIFO cap on byte-prefetched URLs.** Keeps a long browse session bounded.
+
+### Issues & Blockers
+- None new.
+- Worth flagging for future: every `await fetch('/api/...')` in a render-gating code path should be paired with a server-side test verifying the route is mounted. A missing route is a dev-time test failure, not a production hang. This bug shipped 2026-04-07 and lived for ~30 days.
+
+### Key Files Changed
+- `src/stores/feedStore.js` — removed watched-ids fetch from `initFeed`; added `resolveStreamUrl()` promise cache + `_prefetchOneVideoBytes()` helpers
+- `src/components/feed/FeedVideo.jsx` — switched on-demand fetch to use `resolveStreamUrl()` (deduplicates against warmer)
+- `src/__tests__/feedStore-initFeed-fast.test.js` (new) — 2 tests: must not call watched-ids, must not block on background warming
+- `src/__tests__/feedStore-resolveStreamUrl-dedup.test.js` (new) — 3 tests: shared in-flight, null-on-failure, null-on-missing-url
+- `BACKLOG.md` — completed entry added at top of Completed (Recent)
+- `_memory/debug_feed_watched_ids_phantom_endpoint.md` (auto-memory) — debug solution note
+
+### Next Session Should
+1. **Commit this work.** Working tree includes Torin/parallel-session unrelated edits (warm-cache.js, ThumbsRating.jsx, ForYouSlot.jsx, RemixHero.jsx, HeroSection.jsx, PosterCard.jsx, DetailMeta.jsx, FullscreenOverlay.jsx, pornhub-personal.js, backfill-ph-likes-timestamps.mjs) — review those separately before committing the feed-speedup files.
+2. **Decide on a defense-in-depth measure:** add an Express 404 handler that returns JSON `{error: 'unknown route'}` for unmatched `/api/*` GETs. Would have surfaced this bug instantly instead of letting it hang for ~30 days.
+3. **Optional follow-up:** consider hoisting the trail fetch (`/api/recommendations/trail`) out of `fetchFeedBatch` so initFeed doesn't await it either. Currently it's awaited inline; if trail latency spikes, initFeed gets slow again.
+
+## 2026-05-05 PM (Session 2) — Daily Playback Quality Sprint
+
+### Completed
+- **Verified `98a40f0` wallclock fix** via Node.js port of the Python backpressure survival test. Stream survived 20s pause; 544KB read after pause in <0.1s. Confirms the bug that killed videos at the ~50s mark is genuinely closed.
+- **Pre-resolution job for NULL stream URLs shipped** (commit `da2cfbd`). Added a 3rd-tick (every 15 min) pass to `startStreamUrlTTLMonitor` that picks 20 random unwatched NULL-stream-URL feed_cache entries and pre-resolves via the existing `_preResolveStreamUrls()`. RANDOM() distributes proportionally across all sources. Manual validation: 5/5 RedGifs resolved 3.2-3.6s → cached at 41ms.
+- **Diagnostics confirmed healthy:** Proxy TTFB 83ms, seek 25/50/75% all HTTP 206 with TTFB 50-202ms, Accept-Ranges always present.
+- **Calibration captured:** Reddit r/Unexpected = NO (consistent with weak-Reddit pattern); FikFap @anniemorricone = "maybe" (first FikFap signal — surfaces but doesn't strongly hit). Saved to `project_quality_calibration.md`.
+
+### Decisions Made
+- Co-located the new pre-resolution pass inside `startStreamUrlTTLMonitor` (3rd-tick modulo) rather than as a separate interval. Keeps interval count low and groups all stream-URL warming logic in one place.
+- Used `RANDOM() LIMIT 20` rather than scoring-ordered sampling. Simpler; any pre-resolved URL is a hit regardless of whether it's the next item shown.
+
+### Issues & Blockers
+- **YouTube cookies still expired** — needs Torin to manually re-import via Arc browser. Warm-cache running in degraded mode for social content.
+- **Python not installed on Windows dev machine** — backpressure test had to be ported to Node.js. Working fine; just a portability note.
+
+### Key Files Changed
+- `server/index.js` — added 3rd-tick NULL-URL pre-resolution pass to `startStreamUrlTTLMonitor`
+- `PROGRESS_REPORT_2026-05-05.md` — appended Session 2 metrics, score 88 → 92 → 94
+- `_memory/sessions/2026-05-05-playback-2.md` — new session log
+
+### Next Session Should
+1. **YouTube cookie refresh** (Torin's action) — biggest open lift on content quality
+2. Monitor pre-resolve hit rate after server has ~1hr uptime: query feed_cache resolved count, expect ~+80 from baseline of 1728
+3. AP5 Instagram fix — last open Active Push 2026-05-03 item
+
+---
+
+## 2026-04-30 PM - Homepage Placeholder-Dogs Bug: Five-Layer Fix
+
+### Completed
+- **Killed the placeholder-dogs bug at the root.** Users were seeing fake "Tiny Golden Retriever at the Beach" content on `/home` (social) instead of real videos. Investigation found three compounding bugs, all fixed in commit `58bbe6c`:
+  1. **Migration wipe loop** (root cause): `server/database.js` had a guard at line ~463 that wiped `homepage_cache` if `nsfw_trending` was missing from categories — but the new `nsfw_for_you` layout migration drops that key, so the guard fired on every boot. Cache stayed empty for 30-180s after every restart. Block deleted (it was archaeology — the new layout migrations supersede it).
+  2. **Silent placeholder fallback** in `homeStore.fetchHomepage`: when API returned empty, `generateData()` rendered random dogs with no banner and no retry. Replaced with skeleton-rendering self-healing retry (exponential backoff, 1s→2s→4s→8s, cap 15s, max 12 attempts).
+  3. **No readiness probe**: nothing told deployment platforms or the client that the cache was warming. Added `/api/health/ready` (503 until first warm-cache completes AND cache has fresh-unviewed rows; 200 thereafter).
+- **Layout migrations now transactional.** Both `social_news` and `nsfw_for_you` migrations wrapped in BEGIN/COMMIT/ROLLBACK so an interrupted run can't half-migrate.
+- **API self-describing.** `/api/homepage` now returns `state: 'warming'|'ready'` so the client doesn't have to infer warming-state from `categories.length`.
+- **Readiness flag persisted** to `data/.warm-complete` (file mtime, 10-min validity) so `node --watch` (dev) and fast restarts (prod incidents) don't flap the readiness probe. The on-disk cache survives restarts; the readiness gate now reflects that. `data/` is gitignored so the file doesn't leak between branches.
+- **Regression test added.** `src/__tests__/homeStore-empty-response.test.js` (7 tests). Greps for breed names in `heroItem.title` so any future regression to dog-placeholders fails loudly. Tests 159 → 166.
+
+### Decisions Made
+- `_memory/decisions/2026-04-30-homepage-readiness-and-self-healing.md` written. Captures: marker-keys-must-not-be-touched-by-other-migrations rule, no-silent-placeholder-fallbacks-in-prod rule, persist-readiness-state principle. Linked from FeedDeck error/decision memory plus user's auto-memory at `~/.claude/projects/.../memory/debug_placeholder_dogs_migration_loop.md`.
+- 10-min validity window for `data/.warm-complete` is a guess. Revisit after real-use signal.
+
+### Issues & Blockers
+- **Orphan NSFW category keys** (`nsfw_redgifs_pov`, `nsfw_redgifs_solo`, `nsfw_xvideos_new`, `nsfw_xvideos_hits`, `nsfw_spankbang_new`, `nsfw_fikfap_new`) — leftovers from pre-fix wipe-loop cycles. They have no `topic_sources`, no inserter targets them, `/api/homepage` filters out empty categories. User-invisible. Filed P3 in Discovered Tasks for an idempotent one-shot DELETE.
+- This work landed during the May 1 ship-freeze window. Per the 2026-04-27 director decision, net-new feature work is supposed to be blocked. This is a **bug fix for a user-visible regression**, not a feature, so it qualifies — but the May 1 director should retrospect whether the work should hold for post-ship Day 1+ given proximity to deploy. Tests + lint + build all clean, so the deploy risk is low.
+
+### Key Files Changed
+- `src/stores/homeStore.js` — kill silent fallback, add retry orchestration, `homepageState` field
+- `src/__tests__/homeStore-empty-response.test.js` — new regression suite (7 tests)
+- `server/routes/content.js` — `state` field on `/api/homepage`
+- `server/routes/stream.js` — new `/api/health/ready` endpoint
+- `server/database.js` — delete obsolete migration wipe loop, wrap layout migrations in transactions
+- `server/index.js` — `_firstWarmComplete` flag + `data/.warm-complete` persist/read
+
+### Next Session Should
+- Run the live homepage in browser after a fresh server restart (without `node --watch`) to confirm the readiness probe gate works end-to-end and flips to 200 once warm-cache completes. The `node --watch` dev loop made it hard to observe a stable warm-complete cycle in this session.
+- Consider whether to add the orphan-category cleanup (Discovered Tasks P3) before May 1 ship or after. It's user-invisible so deferral is fine.
+- VideoDetailPage decision still pending Torin (carried 120+h, deadline today EOD per the morning director session).
+
+---
+
 ## 2026-04-29 - Skeleton Hydration: SkeletonFeedSlide for FeedPage
 
 ### Completed

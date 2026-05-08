@@ -2,7 +2,7 @@ import { Router } from 'express'
 import express from 'express'
 import { db } from '../database.js'
 import { logger } from '../logger.js'
-import { invalidateProfileCache, scoreVideos, getScoreBreakdown } from '../scoring.js'
+import { invalidateProfileCache, scoreVideos, getScoreBreakdown, recordEngagement } from '../scoring.js'
 import { inferMode, getMode } from '../utils.js'
 
 const router = Router()
@@ -91,13 +91,13 @@ router.post('/api/ratings', express.json(), (req, res) => {
     if (creator) {
       const creatorKey = creator.trim()
       if (creatorKey) {
-        const boostDelta = rating === 'up' ? 0.25 : -0.15
+        const boostDelta = rating === 'up' ? 0.25 : -0.25
         const existing = db.prepare(
           'SELECT creator, boost_score, surface_boosts FROM creator_boosts WHERE creator = ? AND (mode IS NULL OR mode = ?)'
         ).get(creatorKey, videoMode)
 
         if (existing) {
-          const newScore = Math.max(-1, existing.boost_score + boostDelta)
+          const newScore = Math.max(-1, Math.min(1, existing.boost_score + boostDelta))
           let surfaceBoosts = {}
           try { surfaceBoosts = JSON.parse(existing.surface_boosts || '{}') } catch {}
           if (surfaceKey) {
@@ -110,7 +110,7 @@ router.post('/api/ratings', express.json(), (req, res) => {
           const surfaceBoosts = surfaceKey ? { [surfaceKey]: boostDelta } : {}
           db.prepare(
             'INSERT INTO creator_boosts (creator, boost_score, surface_boosts, mode, last_updated) VALUES (?, ?, ?, ?, datetime(\'now\'))'
-          ).run(creatorKey, Math.max(-1, boostDelta), JSON.stringify(surfaceBoosts), videoMode)
+          ).run(creatorKey, Math.max(-1, Math.min(1, boostDelta)), JSON.stringify(surfaceBoosts), videoMode)
         }
       }
     }
@@ -135,7 +135,50 @@ router.post('/api/ratings', express.json(), (req, res) => {
       throw txErr
     }
 
-    invalidateProfileCache()
+    // Dynamic taste model: bumps tag_preferences weight + last_seen, increments
+    // tag_associations co-occurrence, invalidates profile cache.
+    recordEngagement({ rating, tags: Array.isArray(tags) ? tags : [], mode: videoMode })
+
+    // Recommendation Trail demote: when a watch-page thumbs-down lands,
+    // soften (not purge) any trail entries that were pulled because the
+    // user clicked this video. Score is multiplied by TRAIL_DEMOTE_FACTOR
+    // (0.3) so the entries sink in carousel/rail rankings but stay visible.
+    if (rating === 'down' && surfaceType === 'watch_page') {
+      try {
+        const TRAIL_DEMOTE_FACTOR = 0.3
+        const result = db.prepare(
+          `UPDATE recommendation_trail
+           SET score = score * ?
+           WHERE mode = ? AND seed_video_url = ?`
+        ).run(TRAIL_DEMOTE_FACTOR, videoMode, videoUrl)
+        if (result.changes > 0) {
+          logger.info('trail: demoted entries', {
+            seed: videoUrl.slice(0, 80),
+            count: result.changes,
+          })
+        }
+      } catch (demErr) {
+        logger.warn('trail demote on thumbs-down failed (non-fatal)', { error: demErr.message })
+      }
+    }
+
+    // Phase 4 — row engagement tally. Used by /api/rows/health (and the
+    // daily hydration routine) to surface rows the user keeps bouncing
+    // off. Skips when no surfaceKey is supplied (non-row surfaces).
+    if (surfaceKey) {
+      try {
+        db.prepare(
+          `INSERT INTO row_engagement (row_key, day, impressions, thumbs_down, thumbs_up)
+           VALUES (?, date('now'), 1, ?, ?)
+           ON CONFLICT(row_key, day) DO UPDATE SET
+             impressions = impressions + 1,
+             thumbs_down = thumbs_down + excluded.thumbs_down,
+             thumbs_up   = thumbs_up   + excluded.thumbs_up`
+        ).run(surfaceKey, rating === 'down' ? 1 : 0, rating === 'up' ? 1 : 0)
+      } catch (engErr) {
+        logger.debug('row_engagement update failed (non-fatal)', { error: engErr.message })
+      }
+    }
 
     res.json({ ok: true, rating })
   } catch (err) {
@@ -197,7 +240,7 @@ router.post('/api/ratings/undo', express.json(), (req, res) => {
         }
       }
 
-      // Reverse creator_boosts (+0.15 to undo the -0.15 applied on thumbs-down)
+      // Reverse creator_boosts (+0.25 to undo the -0.25 applied on thumbs-down)
       if (creator) {
         const creatorKey = creator.trim()
         if (creatorKey) {
@@ -205,11 +248,11 @@ router.post('/api/ratings/undo', express.json(), (req, res) => {
             'SELECT creator, boost_score, surface_boosts FROM creator_boosts WHERE creator = ? AND (mode IS NULL OR mode = ?)'
           ).get(creatorKey, videoMode)
           if (boostRow) {
-            const newScore = Math.max(-1, boostRow.boost_score + 0.15)
+            const newScore = Math.max(-1, Math.min(1, boostRow.boost_score + 0.25))
             let surfaceBoosts = {}
             try { surfaceBoosts = JSON.parse(boostRow.surface_boosts || '{}') } catch {}
             if (surfaceKey) {
-              surfaceBoosts[surfaceKey] = (surfaceBoosts[surfaceKey] || 0) + 0.15
+              surfaceBoosts[surfaceKey] = (surfaceBoosts[surfaceKey] || 0) + 0.25
             }
             db.prepare(
               'UPDATE creator_boosts SET boost_score = ?, surface_boosts = ?, last_updated = datetime(\'now\') WHERE creator = ?'
@@ -332,6 +375,70 @@ router.get('/api/ratings/history', (req, res) => {
   } catch (err) {
     logger.error('Rating history error:', { error: err.message })
     res.json({ ratings: [] })
+  }
+})
+
+// -----------------------------------------------------------
+// GET /api/rows/health
+// Phase 4 — surface deprecation candidates + emergent tag clusters.
+//
+// Returns:
+//   underperformingRows[] — rows over the last 30 days where
+//     thumbs_down/impressions ≥ 0.4 with at least 5 impressions.
+//     The hydration routine eyeballs these and proposes drops.
+//
+//   emergentClusters[] — tag co-occurrence pairs above a threshold
+//     that aren't represented by any row's topic_sources csv yet.
+//     Used to spot organic theme growth without writing heuristics.
+//
+// Both lists are read-only signals; nothing in here mutates rows
+// or auto-deprecates. Low intervention by design — the user (or
+// Claude in a routine pass) decides what to do.
+// -----------------------------------------------------------
+router.get('/api/rows/health', (_req, res) => {
+  try {
+    const thirtyDaysAgo = "date('now', '-30 days')"
+    const rows = db.prepare(
+      `SELECT row_key,
+              SUM(impressions) AS impressions,
+              SUM(thumbs_down) AS thumbs_down,
+              SUM(thumbs_up)   AS thumbs_up
+       FROM row_engagement
+       WHERE day >= ${thirtyDaysAgo}
+       GROUP BY row_key
+       ORDER BY impressions DESC`
+    ).all()
+    const underperformingRows = rows
+      .filter(r => r.impressions >= 5 && (r.thumbs_down / r.impressions) >= 0.4)
+      .map(r => ({
+        row_key: r.row_key,
+        impressions: r.impressions,
+        thumbs_down: r.thumbs_down,
+        thumbs_up: r.thumbs_up,
+        downRatio: +(r.thumbs_down / r.impressions).toFixed(3),
+      }))
+
+    // Cluster detection: tag pairs with >=3 co-occurrences whose
+    // joined form ("ai claude", "japanese asian") doesn't show up
+    // in any existing row's topic_sources csv.
+    const pairs = db.prepare(
+      `SELECT tag_a, tag_b, co_occurrences FROM tag_associations
+       WHERE co_occurrences >= 3 ORDER BY co_occurrences DESC LIMIT 30`
+    ).all()
+    const allTopicSourcesText = db.prepare(
+      `SELECT topic_sources FROM categories WHERE topic_sources IS NOT NULL`
+    ).all().map(r => (r.topic_sources || '').toLowerCase()).join(' ')
+    const emergentClusters = pairs
+      .filter(p => {
+        const a = p.tag_a.toLowerCase(); const b = p.tag_b.toLowerCase()
+        return !allTopicSourcesText.includes(a) || !allTopicSourcesText.includes(b)
+      })
+      .map(p => ({ tag_a: p.tag_a, tag_b: p.tag_b, co_occurrences: p.co_occurrences }))
+
+    res.json({ underperformingRows, emergentClusters })
+  } catch (err) {
+    logger.error('rows/health error:', { error: err.message })
+    res.status(500).json({ error: err.message })
   }
 })
 

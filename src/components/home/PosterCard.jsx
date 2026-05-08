@@ -1,4 +1,5 @@
 import { forwardRef, memo, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import useHomeStore from '../../stores/homeStore'
 import useQueueStore from '../../stores/queueStore'
 import useRatingsStore from '../../stores/ratingsStore'
@@ -35,14 +36,14 @@ function distProps(dist) {
 const PosterCard = memo(
   forwardRef(function PosterCard({ item, dist, isFocused, onClick, loading = 'lazy', variant = 'poster', progressPercent, surfaceKey, onRated }, ref) {
     const [showThumbs, setShowThumbs] = useState(false)
-    const setHeroItem = useHomeStore((s) => s.setHeroItem)
-    const setTheatreMode = useHomeStore((s) => s.setTheatreMode)
+    const navigate = useNavigate()
     const markViewed = useHomeStore((s) => s.markViewed)
     const addToQueue = useQueueStore((s) => s.addToQueue)
     const recordRating = useRatingsStore((s) => s.recordRating)
     const existingRating = useRatingsStore((s) => s.ratedUrls[item?.url])
     const isToastPaused = useRatingsStore((s) => s.isToastPaused)
     const showToast = useToastStore((s) => s.showToast)
+    const dismissAndAdvance = useHomeStore((s) => s.dismissAndAdvance)
     const previewVideoRef = useRef(null)
 
     useEffect(() => {
@@ -103,9 +104,9 @@ const PosterCard = memo(
       overflow: 'hidden',
       cursor: 'pointer',
       border: '1px solid',
-      borderColor: isFocused ? '#f43f5e' : 'var(--glass-border)',
+      borderColor: isFocused ? 'rgba(30,58,138,0.3)' : 'var(--glass-border)',
       boxShadow: isFocused
-        ? '0 0 0 2px #f43f5e, 0 0 48px rgba(244,63,94,0.18), 0 20px 60px rgba(0,0,0,0.5)'
+        ? '0 0 24px rgba(30,58,138,0.4), 0 0 60px rgba(30,58,138,0.2), 0 20px 60px rgba(0,0,0,0.5)'
         : 'inset 0 1px 0 var(--glass-highlight), 0 4px 24px rgba(0,0,0,0.35)',
       zIndex: isFocused ? 10 : 1,
       opacity: finalOpacity,
@@ -134,6 +135,10 @@ const PosterCard = memo(
     const handleRate = async (rating) => {
       if (existingRating || !item?.url) return
       recordRating(item.url, surfaceKey, rating)
+      // Drop the card immediately on thumbs-down. Server-side filtering
+      // covers the persistence on the next fetch; this is the optimistic
+      // hide so the user doesn't keep staring at it.
+      if (rating === 'down') dismissAndAdvance(item)
       try {
         await fetch('/api/ratings', {
           method: 'POST',
@@ -361,8 +366,8 @@ const PosterCard = memo(
               {/* Actions */}
               <div style={{ display: 'flex', gap: '7px', alignItems: 'center' }}>
                 <button
-                  style={{ ...btnBase, backgroundColor: '#f43f5e', color: '#fff', padding: '7px 16px', gap: '5px' }}
-                  onClick={(e) => { e.stopPropagation(); markViewed(item.id); setHeroItem(item); window.scrollTo({ top: 0, behavior: 'smooth' }); setTheatreMode(true) }}
+                  style={{ ...btnBase, backgroundColor: 'rgba(30,58,138,0.55)', backdropFilter: 'blur(8px)', border: '1px solid rgba(30,58,138,0.3)', color: '#fff', padding: '7px 16px', gap: '5px' }}
+                  onClick={(e) => { e.stopPropagation(); markViewed(item.id); navigate(`/watch/${item.id}`) }}
                 >
                   ▶ Play
                 </button>
@@ -435,6 +440,7 @@ const PosterCard = memo(
             source={item.genre || ''}
             visible={showThumbs}
             onRated={onRated}
+            item={item}
           />
         )}
       </div>

@@ -14,6 +14,10 @@ export default function GlobalToast() {
   const clearToast = useToastStore(s => s.clearToast)
   const [visible, setVisible] = useState(false)
   const progressRef = useRef(null)
+  // Tracks the 300ms dismiss-animation timer so it can be cleared if a
+  // new toast arrives or the component unmounts. Without this, a stale
+  // dismiss timer can clear a freshly-arrived toast.
+  const dismissTimerRef = useRef(null)
 
   useEffect(() => {
     if (!toast) { setVisible(false); return }
@@ -36,10 +40,17 @@ export default function GlobalToast() {
 
     const timer = setTimeout(() => {
       setVisible(false)
-      setTimeout(clearToast, 300)
+      dismissTimerRef.current = setTimeout(clearToast, 300)
     }, timeout)
 
-    return () => { clearTimeout(timer); cancelAnimationFrame(raf) }
+    return () => {
+      clearTimeout(timer)
+      if (dismissTimerRef.current) {
+        clearTimeout(dismissTimerRef.current)
+        dismissTimerRef.current = null
+      }
+      cancelAnimationFrame(raf)
+    }
   }, [toast, clearToast])
 
   if (!toast) return null
@@ -80,7 +91,8 @@ export default function GlobalToast() {
                   e.stopPropagation()
                   action.onClick?.()
                   setVisible(false)
-                  setTimeout(clearToast, 300)
+                  if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current)
+                  dismissTimerRef.current = setTimeout(clearToast, 300)
                 }}
                 className={`text-xs font-semibold whitespace-nowrap px-2.5 py-1 rounded-full transition-colors ${
                   action.primary

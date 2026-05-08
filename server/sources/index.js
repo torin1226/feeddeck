@@ -47,6 +47,17 @@ registry.register(cobalt, { primary: false })
 // Cleanup hook for graceful shutdown
 export async function closeAllSources() {
   await scraper.close()
+  // trends24 launches its own puppeteer browser via getPuppeteer().launch().
+  // Shut it down too so SIGTERM doesn't leave a Chromium process behind.
+  // Lazy-import so we don't pay the trends24 module cost when no row uses it.
+  try {
+    const trends24 = await import('./trends24.js')
+    if (typeof trends24.shutdown === 'function') {
+      await trends24.shutdown()
+    }
+  } catch {
+    // trends24 may not have been loaded; nothing to close.
+  }
 }
 
 // Export individual adapters for direct access when needed

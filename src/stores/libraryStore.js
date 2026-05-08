@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import useModeStore from './modeStore'
 import { safeStorage } from './safeStorage'
 import { inferMode } from '../utils/mode'
@@ -127,25 +127,28 @@ const useLibraryStore = create(
 
       // -----------------------------------------------------------
       // Load from server. Mode-scoped: only returns videos for the
-      // currently active mode. Replacing videos with the server set
-      // also discards stale cross-mode entries that might have been
-      // persisted before the firewall existed.
+      // currently active mode. Always replace on 200 (including with
+      // an empty array) so cross-mode leakage from a prior session
+      // can't survive a successful empty response. On non-2xx, retain
+      // prior state and surface an error for the UI to react to.
       // -----------------------------------------------------------
       loadFromServer: async () => {
-        set({ loading: true })
+        set({ loading: true, error: null })
         try {
           const mode = useModeStore.getState().isSFW ? 'social' : 'nsfw'
           const res = await fetch(`/api/videos?mode=${mode}`)
           if (res.ok) {
             const data = await res.json()
-            if (data.videos?.length) {
-              // Tag each row with mode so render-time guards can confirm.
+            if (Array.isArray(data.videos)) {
               const tagged = data.videos.map(v => ({ ...v, mode: v.mode || mode }))
               set({ videos: tagged })
             }
+          } else {
+            set({ error: `Failed to load library (${res.status})` })
           }
         } catch {
-          // Server not running yet — that's fine, use localStorage
+          // Network/server unreachable — keep prior state, no error toast
+          // (this is the cold-start case where localStorage is the truth).
         } finally {
           set({ loading: false })
         }
@@ -184,7 +187,9 @@ const useLibraryStore = create(
     }),
     {
       name: 'fd-lib',
-      storage: safeStorage,
+      // Wrap safeStorage with createJSONStorage — persist middleware passes
+      // a {state, version} object to setItem, so storage MUST serialize.
+      storage: createJSONStorage(() => safeStorage),
     }
   )
 )

@@ -114,6 +114,7 @@ export default function BrowseSection() {
     if (feedTransition) return
     setFeedTransition(true)
     useFeedStore.getState().prefetch()
+    if (transitionTimer.current) clearTimeout(transitionTimer.current)
     transitionTimer.current = setTimeout(() => {
       navigate('/feed')
     }, 800)
@@ -124,9 +125,11 @@ export default function BrowseSection() {
   }, [])
 
   const goToFeed = () => {
+    if (feedTransition) return
     setFeedTransition(true)
     useFeedStore.getState().prefetch()
-    setTimeout(() => navigate('/feed'), 400)
+    if (transitionTimer.current) clearTimeout(transitionTimer.current)
+    transitionTimer.current = setTimeout(() => navigate('/feed'), 400)
   }
 
   return (

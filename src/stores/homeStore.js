@@ -29,6 +29,25 @@ let idCounter = 100
 let _fetchVersion = 0 // Guards against nuclearFlush/resetHome racing with fetchHomepage
 let _swapVersion = 0 // Guards against mode-change racing with refresh/shuffle swaps
 
+// Cap on exposedItemIds to keep the /api/feed/next?excludeIds= query
+// string under Express's URL-length budget. UUID-shaped IDs at ~36 chars
+// each + commas hit ~8 KB around 200 entries; FIFO eviction past this.
+const EXPOSED_IDS_CAP = 200
+
+// Self-healing retry for cold-cache / warming windows. Each retry attempt
+// re-enters fetchHomepage with attempt+1 so a fresh /api/homepage call
+// goes out. Cancelled by mode change (version bump) and resetHome.
+const RETRY_BASE_MS = 1000
+const RETRY_MAX_MS = 15000
+const RETRY_MAX_ATTEMPTS = 12   // ~2 min total worst case at 15s cap
+let _warmingTimer = null
+const _cancelWarmingRetry = () => {
+  if (_warmingTimer) {
+    clearTimeout(_warmingTimer)
+    _warmingTimer = null
+  }
+}
+
 // Per-pinned-row rotation offset, advanced by shuffleHome.
 // persistent_row_items has no `viewed` flag, so pinned rows can't be
 // rotated server-side like homepage_cache rows. We rotate client-side
@@ -43,6 +62,11 @@ const _pinnedOffsets = new Map() // row key -> integer offset
 // hasn't committed the viewed flag yet (mark-viewed POSTs are
 // fire-and-forget and can lag behind a fast nav).
 const _recentlyHidden = new Set()
+
+// Most recent thumbs-down dismissal — single-slot capture so the toast's
+// Undo can put the card back where it came from. Cleared once Undo is
+// invoked or once a new dismissal supersedes it.
+let _lastDismissed = null
 
 // Pinned rows that should NEVER shuffle. The user's saved likes are
 // curated content; users care about their order, not novelty.
@@ -168,8 +192,14 @@ const useHomeStore = create((set, get) => ({
   carouselItems: [],
   theatreMode: false,
   inlinePlay: false, // true = video playing in hero area, categories still visible
+  upNextHidden: false, // true = HeroCarousel pushed below the hero into normal row flow
   // Error from last failed homepage fetch (null = no error)
   fetchError: null,
+  // Lifecycle state of the homepage fetch:
+  //   'ready'   — content rendered (heroItem populated)
+  //   'warming' — backend cache empty / retry pending; show skeletons
+  //   'error'   — retry budget exhausted; show banner with manual retry
+  homepageState: 'ready',
 
   // Single source of truth for "what card is the user looking at right now."
   // Owned by whichever surface most recently took focus (hero, gallery row,
@@ -177,6 +207,13 @@ const useHomeStore = create((set, get) => ({
   // instead of taking explicit start/cancel calls per card. Cleared on
   // resetHome and on fetchHomepage start.
   focusedItem: null,
+
+  // IDs of videos the user has been shown on the homepage this session.
+  // Used by feedStore to exclude these from the /feed so the two surfaces
+  // don't duplicate content. Session-scoped: persisted to sessionStorage
+  // (not localStorage) so it survives in-tab navigation but resets on
+  // a new tab/window.
+  exposedItemIds: new Set(),
 
   // Category rows
   categories: [],
@@ -196,6 +233,8 @@ const useHomeStore = create((set, get) => ({
   setHeroItem: (item) => set({ heroItem: item }),
   setTheatreMode: (on) => set({ theatreMode: on, inlinePlay: false }),
   toggleTheatre: () => set((s) => ({ theatreMode: !s.theatreMode, inlinePlay: false })),
+  setUpNextHidden: (hidden) => set({ upNextHidden: hidden }),
+  toggleUpNextHidden: () => set((s) => ({ upNextHidden: !s.upNextHidden })),
   startInlinePlay: () => set({ inlinePlay: true, theatreMode: false }),
   stopInlinePlay: () => set({ inlinePlay: false }),
 
@@ -238,7 +277,29 @@ const useHomeStore = create((set, get) => ({
     set({ focusedItem: next })
   },
 
-  // Generate placeholder data (fallback when API has no cached content)
+  // Record that the user has been shown these items on the homepage.
+  // Items already in the set are skipped to avoid unnecessary re-renders.
+  // Persists to sessionStorage so /feed exclusions survive in-tab navigation.
+  markExposed: (items) => {
+    const current = get().exposedItemIds
+    const toAdd = (items || []).filter(it => it?.id && !current.has(it.id))
+    if (toAdd.length === 0) return
+    const next = new Set(current)
+    for (const it of toAdd) next.add(it.id)
+    // FIFO eviction: Set iteration is insertion-ordered, so deleting
+    // the first key drops the oldest exposure. Keeps excludeIds= under
+    // the URL-length budget on long browse sessions.
+    while (next.size > EXPOSED_IDS_CAP) {
+      next.delete(next.values().next().value)
+    }
+    set({ exposedItemIds: next })
+    try { sessionStorage.setItem('fd-exposed-ids', JSON.stringify([...next])) } catch {}
+  },
+
+  // Generate dummy "fluffy dog" placeholder data. Kept for design preview
+  // only — fetchHomepage NEVER calls this anymore. The old behavior
+  // (rendering fake dogs whenever the cache was warming) made the app
+  // look broken; the homepage now shows skeletons + auto-retries instead.
   generateData: () => {
     idCounter = 100
     const carouselItems = genItems(24)
@@ -266,6 +327,8 @@ const useHomeStore = create((set, get) => ({
   // Nuclear reset: clear all content (used on mode switch)
   resetHome: () => {
     _fetchVersion++ // Invalidate any in-flight fetchHomepage
+    _cancelWarmingRetry()
+    try { sessionStorage.removeItem('fd-exposed-ids') } catch {}
     set({
       heroItem: null,
       carouselItems: [],
@@ -274,6 +337,9 @@ const useHomeStore = create((set, get) => ({
       loadedCategoryIndices: [],
       top10: [],
       focusedItem: null,
+      homepageState: 'ready',
+      fetchError: null,
+      exposedItemIds: new Set(),
     })
   },
 
@@ -303,11 +369,133 @@ const useHomeStore = create((set, get) => ({
     return true
   },
 
-  // Fetch real data from backend. Falls back to placeholders if empty.
-  fetchHomepage: async (mode = 'social') => {
+  // Optimistically remove an item the user thumbs-downed and slide a
+  // fresh replacement into the carousel. The server-side downvote filter
+  // (scoreVideos -> downvotedUrls) handles persistence across reloads;
+  // this just gives the immediate hide-and-advance feel.
+  //
+  // Replacement strategy: walk every category's items in order and pick
+  // the first one that is NOT already visible in the (post-filter)
+  // carousel and NOT in _recentlyHidden. That gives a "next up in the
+  // row's order, not already shown, not already watched" pick.
+  //
+  // The captured origin enables restoreDismissed for the toast Undo.
+  dismissAndAdvance: (item) => {
+    if (!item || (!item.url && !item.id)) return
+    if (item.id) _recentlyHidden.add(item.id)
+
+    const state = get()
+    const dismissedKey = item.url || item.id
+    const matches = (v) => v && (v.url || v.id) === dismissedKey
+
+    // Capture origin BEFORE mutating, so Undo can restore the item.
+    const carouselIndex = state.carouselItems.findIndex(matches)
+    const categoryIndex = state.categories.findIndex(c => c.items.some(matches))
+    const inItemIndex = categoryIndex >= 0
+      ? state.categories[categoryIndex].items.findIndex(matches)
+      : -1
+    const wasHero = state.heroItem ? matches(state.heroItem) : false
+    _lastDismissed = { item, carouselIndex, categoryIndex, inItemIndex, wasHero }
+
+    const filteredCarousel = state.carouselItems.filter(v => !matches(v))
+    const filteredCategories = state.categories.map(c => ({
+      ...c,
+      items: c.items.filter(v => !matches(v)),
+    }))
+
+    // Find a replacement that isn't already a carousel card and isn't
+    // recently hidden (covers shuffle-marked-viewed + just-dismissed).
+    const visible = new Set(filteredCarousel.map(v => v.url || v.id))
+    let replacement = null
+    outer: for (const c of filteredCategories) {
+      for (const v of c.items) {
+        const k = v.url || v.id
+        if (!visible.has(k) && !_recentlyHidden.has(v.id)) {
+          replacement = v
+          break outer
+        }
+      }
+    }
+    const newCarousel = replacement
+      ? [...filteredCarousel, replacement]
+      : filteredCarousel
+
+    const newHero = wasHero ? (newCarousel[0] || null) : state.heroItem
+
+    set({
+      carouselItems: newCarousel,
+      categories: filteredCategories,
+      heroItem: newHero,
+    })
+  },
+
+  // Restore the most recently dismissed item to its original position.
+  // Best-effort: if the surrounding state has shifted (a refresh fired,
+  // another dismissal happened, etc.) we still re-insert as close to the
+  // original index as possible. Returns true if a restore happened.
+  restoreDismissed: () => {
+    const origin = _lastDismissed
+    if (!origin || !origin.item) return false
+    const item = origin.item
+    if (item.id) _recentlyHidden.delete(item.id)
+
+    const state = get()
+    const key = item.url || item.id
+    const present = (list) => list.some(v => (v.url || v.id) === key)
+
+    let newCategories = state.categories
+    if (origin.categoryIndex >= 0 && origin.categoryIndex < state.categories.length) {
+      newCategories = state.categories.map((c, i) => {
+        if (i !== origin.categoryIndex) return c
+        if (present(c.items)) return c
+        const insertAt = Math.min(
+          origin.inItemIndex >= 0 ? origin.inItemIndex : c.items.length,
+          c.items.length,
+        )
+        return {
+          ...c,
+          items: [...c.items.slice(0, insertAt), item, ...c.items.slice(insertAt)],
+        }
+      })
+    }
+
+    let newCarousel = state.carouselItems
+    if (origin.carouselIndex >= 0 && !present(state.carouselItems)) {
+      const idx = Math.min(origin.carouselIndex, state.carouselItems.length)
+      newCarousel = [
+        ...state.carouselItems.slice(0, idx),
+        item,
+        ...state.carouselItems.slice(idx),
+      ]
+    }
+
+    const newHero = origin.wasHero ? item : state.heroItem
+
+    set({
+      categories: newCategories,
+      carouselItems: newCarousel,
+      heroItem: newHero,
+    })
+
+    _lastDismissed = null
+    return true
+  },
+
+  // Fetch real data from backend.
+  //
+  // Self-healing: when the backend returns no content (cache warming after
+  // server boot or migration), we DON'T render placeholder dogs — that
+  // misled users into thinking the app was broken. Instead we leave
+  // heroItem null (so HomePage shows skeletons), set homepageState to
+  // 'warming', and schedule an exponential-backoff retry that re-enters
+  // this function. Retry is cancelled by mode change (via _fetchVersion)
+  // and resetHome (via _cancelWarmingRetry).
+  fetchHomepage: async (mode = 'social', _attempt = 0) => {
     const version = ++_fetchVersion
-    // Clear stale content immediately so UI shows loading state
-    set({ heroItem: null, carouselItems: [], categories: [], loadedCategoryIndices: [], top10: [], fetchError: null, focusedItem: null })
+    _cancelWarmingRetry()
+    if (_attempt === 0) {
+      set({ heroItem: null, carouselItems: [], categories: [], loadedCategoryIndices: [], top10: [], fetchError: null, focusedItem: null, homepageState: 'warming' })
+    }
     try {
       const res = await fetch(`/api/homepage?mode=${mode}`)
       if (version !== _fetchVersion) return // Stale fetch (mode changed or resetHome called)
@@ -362,9 +550,19 @@ const useHomeStore = create((set, get) => ({
         }))
       )
 
-      if (allVideos.length === 0) {
-        // No cached content yet — fall back to placeholders
-        get().generateData()
+      if (data.state === 'warming' || allVideos.length === 0) {
+        // Backend cache is warming. Schedule a self-healing retry instead
+        // of rendering placeholder dogs that look like real broken content.
+        if (_attempt < RETRY_MAX_ATTEMPTS) {
+          const delay = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** _attempt)
+          _warmingTimer = setTimeout(() => {
+            _warmingTimer = null
+            if (version === _fetchVersion) get().fetchHomepage(mode, _attempt + 1)
+          }, delay)
+          set({ homepageState: 'warming' })
+        } else {
+          set({ homepageState: 'error', fetchError: 'Content is still loading. Click retry in a moment.' })
+        }
         return
       }
 
@@ -400,6 +598,16 @@ const useHomeStore = create((set, get) => ({
             if (b.uploadTs !== a.uploadTs) return b.uploadTs - a.uploadTs
             return b.fetchedTs - a.fetchedTs
           })
+          // ph_likes is curated by the user — every item is already a like,
+          // so taste-profile / score ordering carries little signal here.
+          // Randomize on every fetch so the hero rotates instead of being
+          // deterministically the highest-scored Gattouz0 video forever.
+          if (cat.key === 'ph_likes' && items.length > 1) {
+            for (let i = items.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1))
+              ;[items[i], items[j]] = [items[j], items[i]]
+            }
+          }
           if (isPinned && cat.key && !PINNED_NO_SHUFFLE.has(cat.key) && items.length > 0) {
             const off = (_pinnedOffsets.get(cat.key) || 0) % items.length
             if (off > 0) items = [...items.slice(off), ...items.slice(0, off)]
@@ -528,20 +736,83 @@ const useHomeStore = create((set, get) => ({
         items: cat.items.filter(isUnclaimed),
       })).filter(cat => cat.items.length > 0)
 
+      // Recommendation Trail injection (per Recommendation Trail design):
+      // Pull persistent trail entries for the current mode and INTERLEAVE
+      // them into the carousel up to a 30% cap. Hero stays at position 0
+      // (familiar carousel feel), trail entries take positions 1, 3, 5...
+      // until the cap is hit. Failures are non-fatal — carousel renders
+      // without trail entries if the call errors.
+      let mergedCarousel = carouselItems
+      try {
+        const trailRes = await fetch(`/api/recommendations/trail?limit=12&mode=${mode}`)
+        if (version === _fetchVersion && trailRes.ok) {
+          const trailData = await trailRes.json()
+          const trailItems = (trailData?.items || [])
+            .filter((t) => t?.url && !claimedUrls.has(t.url))
+            .map((t) => ({
+              id: t.id,
+              url: t.url,
+              title: t.title || 'Recommended',
+              thumbnail: t.thumbnail || '',
+              thumbnailSm: t.thumbnail || '',
+              duration: t.durationFormatted || '',
+              durationSec: t.duration || 0,
+              uploader: t.uploader || '',
+              tags: t.tags || [],
+              desc: t.title || '',
+              genre: 'Recommended',
+              orient: 'h',
+              _fromTrail: true,
+            }))
+          if (trailItems.length > 0) {
+            const carouselSize = carouselItems.length || 24
+            const trailCap = Math.max(1, Math.floor(carouselSize * 0.3))
+            const trailToUse = trailItems.slice(0, trailCap)
+            // Interleave: position 0 stays as the original hero. Trail
+            // takes odd positions starting at 1; fall back to the original
+            // ordering once trail is exhausted.
+            const merged = []
+            const remaining = carouselItems.slice()
+            const head = remaining.shift() // original hero
+            if (head) merged.push(head)
+            const trailQ = trailToUse.slice()
+            while (merged.length < carouselSize) {
+              const wantsTrail = (merged.length % 2 === 1) && trailQ.length > 0
+              if (wantsTrail) merged.push(trailQ.shift())
+              else if (remaining.length > 0) merged.push(remaining.shift())
+              else if (trailQ.length > 0) merged.push(trailQ.shift())
+              else break
+            }
+            mergedCarousel = merged
+          }
+        }
+      } catch { /* non-fatal — carousel works without trail */ }
+
       const finalCategories = categories.length > 0 ? categories : get().categories
       set({
-        carouselItems,
-        heroItem: carouselItems[0],
+        carouselItems: mergedCarousel,
+        heroItem: mergedCarousel[0],
         categories: finalCategories,
         loadedCategoryIndices: finalCategories
           .slice(0, INITIAL_POOL_CATEGORIES)
           .map((_, i) => i),
         top10: top10.length >= 3 ? top10 : [],
+        homepageState: 'ready',
+        fetchError: null,
       })
     } catch (err) {
-      console.warn('Homepage fetch failed, using placeholders:', err.message)
-      set({ fetchError: 'Server unreachable — showing sample content' })
-      get().generateData()
+      if (version !== _fetchVersion) return
+      console.warn('Homepage fetch failed:', err.message)
+      if (_attempt < RETRY_MAX_ATTEMPTS) {
+        const delay = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** _attempt)
+        _warmingTimer = setTimeout(() => {
+          _warmingTimer = null
+          if (version === _fetchVersion) get().fetchHomepage(mode, _attempt + 1)
+        }, delay)
+        set({ fetchError: 'Server unreachable — retrying…', homepageState: 'warming' })
+      } else {
+        set({ fetchError: 'Server unreachable. Click retry to try again.', homepageState: 'error' })
+      }
     }
   },
 
@@ -834,3 +1105,18 @@ const useHomeStore = create((set, get) => ({
 }))
 
 export default useHomeStore
+
+// Restore exposed IDs from sessionStorage so /feed exclusions survive
+// in-tab navigation without re-scanning the homepage.
+try {
+  const stored = sessionStorage.getItem('fd-exposed-ids')
+  if (stored) {
+    const ids = JSON.parse(stored)
+    if (Array.isArray(ids) && ids.length > 0) {
+      // Apply the same cap on hydration so an oversized legacy session
+      // can't reintroduce 414 risk on the first /feed/next call.
+      const capped = ids.length > EXPOSED_IDS_CAP ? ids.slice(-EXPOSED_IDS_CAP) : ids
+      useHomeStore.setState({ exposedItemIds: new Set(capped) })
+    }
+  }
+} catch {}

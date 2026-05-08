@@ -65,6 +65,10 @@ export default function FeedPage() {
   // Auto-hide nav bar on scroll
   const [navHidden, setNavHidden] = useState(false)
   const lastScrollY = useRef(0)
+  // Mode-change initFeed defer (0ms tick to let resetFeed's Zustand notify
+  // settle before initFeed reads the store). Captured so a rapid second
+  // mode toggle or an unmount cancels the pending tick instead of leaking.
+  const modeInitTimer = useRef(null)
 
   // Initialize feed on mount
   useEffect(() => {
@@ -76,7 +80,17 @@ export default function FeedPage() {
     if (prevMode.current !== isSFW) {
       prevMode.current = isSFW
       resetFeed()
-      setTimeout(() => useFeedStore.getState().initFeed(), 0)
+      if (modeInitTimer.current) clearTimeout(modeInitTimer.current)
+      modeInitTimer.current = setTimeout(() => {
+        modeInitTimer.current = null
+        useFeedStore.getState().initFeed()
+      }, 0)
+    }
+    return () => {
+      if (modeInitTimer.current) {
+        clearTimeout(modeInitTimer.current)
+        modeInitTimer.current = null
+      }
     }
   }, [isSFW, resetFeed])
 
@@ -127,7 +141,7 @@ export default function FeedPage() {
   const handleSwipeUp = useCallback(() => {
     // Open source URL in new tab
     const video = buffer[currentIndex]
-    if (video?.url) window.open(video.url, '_blank')
+    if (video?.url) window.open(video.url, '_blank', 'noopener,noreferrer')
   }, [buffer, currentIndex])
 
   const handleDoubleTap = useCallback((e) => {

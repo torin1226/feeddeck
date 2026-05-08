@@ -1,7 +1,7 @@
 import express from 'express'
 import cors from 'cors'
 import { networkInterfaces } from 'os'
-import { existsSync } from 'fs'
+import { existsSync, statSync, writeFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { initDatabase, db } from './database.js'
@@ -298,7 +298,9 @@ function startScheduledTrendingRefresh() {
 
 function startStreamUrlTTLMonitor() {
   const TTL_CHECK_INTERVAL = 5 * 60_000
+  let tickCount = 0
   return setInterval(async () => {
+    tickCount++
     try {
       const cleared = db.prepare(`
         UPDATE feed_cache SET stream_url = NULL, expires_at = NULL
@@ -319,10 +321,26 @@ function startStreamUrlTTLMonitor() {
         LIMIT 10
       `).all()
 
-      if (expiring.length === 0) return
+      if (expiring.length > 0) {
+        logger.info(`  🔄 TTL monitor: ${expiring.length} stream URLs expiring soon, re-resolving...`)
+        await _preResolveStreamUrls(expiring.map(v => v.url))
+      }
 
-      logger.info(`  🔄 TTL monitor: ${expiring.length} stream URLs expiring soon, re-resolving...`)
-      await _preResolveStreamUrls(expiring.map(v => v.url))
+      // BUFFER: Every 3rd tick (every 15 min), proactively resolve a batch of
+      // never-resolved URLs so users hit cache instead of waiting for yt-dlp.
+      // RANDOM() spreads across all sources proportionally rather than draining
+      // one source's entire backlog. 20/tick is enough to stay ahead of browsing.
+      if (tickCount % 3 === 0) {
+        const unresolved = db.prepare(`
+          SELECT url FROM feed_cache
+          WHERE stream_url IS NULL AND watched = 0
+          ORDER BY RANDOM() LIMIT 20
+        `).all()
+        if (unresolved.length > 0) {
+          logger.info(`  🔗 Pre-resolve: warming ${unresolved.length} NULL stream URLs...`)
+          await _preResolveStreamUrls(unresolved.map(v => v.url))
+        }
+      }
     } catch (err) {
       logger.error('TTL monitor error:', { error: err.message })
     }
@@ -347,6 +365,41 @@ process.on('SIGTERM', async () => {
   db.close()
   process.exit(0)
 })
+
+// -----------------------------------------------------------
+// Readiness signal. /api/health/ready (in stream.js) reads this
+// to gate deployment health checks on first warm-cache completion.
+//
+// Persisted across restarts via a .warm-complete flag file in data/.
+// Without persistence, `node --watch` (dev) re-runs the cold-warm gate
+// on every save, making the readiness probe flap for ~30-60s after
+// each restart. The cache is shared across restarts (library.db on
+// disk), so a recent completion is still valid for the new process.
+//
+// Validity window is short enough that a real first-time deploy or
+// long downtime still triggers a fresh cold-warm cycle.
+// -----------------------------------------------------------
+const WARM_FLAG_PATH = join(__dirname, '..', 'data', '.warm-complete')
+const WARM_FLAG_VALIDITY_MS = 10 * 60 * 1000
+let _firstWarmComplete = false
+export function isFirstWarmComplete() { return _firstWarmComplete }
+
+function _readPersistedWarm() {
+  try {
+    if (!existsSync(WARM_FLAG_PATH)) return false
+    const s = statSync(WARM_FLAG_PATH)
+    return (Date.now() - s.mtimeMs) < WARM_FLAG_VALIDITY_MS
+  } catch { return false }
+}
+
+function _persistWarmComplete() {
+  try { writeFileSync(WARM_FLAG_PATH, new Date().toISOString()) } catch {}
+}
+
+if (_readPersistedWarm()) {
+  _firstWarmComplete = true
+  logger.info('  ✅ Recent warm-cache flag detected — readiness gate satisfied without re-warming')
+}
 
 // -----------------------------------------------------------
 // Start server
@@ -432,6 +485,14 @@ app.listen(PORT, '0.0.0.0', () => {
       logger.info('  🔥 Background warm-cache complete', stats)
     } catch (err) {
       logger.error('Background warm-cache failed:', { error: err.message })
+    } finally {
+      // Mark readiness regardless of warm-cache success: failures shouldn't
+      // make the server permanently un-ready (the homepage_cache row count
+      // check in /api/health/ready is the actual content gate; this flag
+      // just confirms the warm-cache pass has executed once).
+      _firstWarmComplete = true
+      _persistWarmComplete()
     }
   })()
 })
+

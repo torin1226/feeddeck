@@ -11,13 +11,37 @@
 // and lazy-loaded content. A headless browser handles all of it.
 // ============================================================
 
+import { readFileSync } from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
 import { SourceAdapter } from './base.js'
 import { logger } from '../logger.js'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+
+// Parse a Netscape-format cookie file into an array of Puppeteer cookie objects.
+// Format per line: domain\tincludeSubdomains\tpath\tsecure\texpires\tname\tvalue
+function parseNetscapeCookies(relPath) {
+  const fullPath = join(__dirname, '..', '..', relPath)
+  let text
+  try { text = readFileSync(fullPath, 'utf-8') } catch { return [] }
+  const cookies = []
+  for (const line of text.split('\n')) {
+    const t = line.trim()
+    if (!t || t.startsWith('#')) continue
+    const parts = t.split('\t')
+    if (parts.length < 7) continue
+    const [domain, , path, secure, expires, name, value] = parts
+    if (!name || !value) continue
+    cookies.push({ name, value, domain, path, secure: secure === 'TRUE', expires: parseInt(expires, 10) || -1 })
+  }
+  return cookies
+}
 
 // Lazy import: puppeteer-extra + stealth plugin for Cloudflare bypass.
 // Falls back to plain puppeteer if puppeteer-extra is not installed.
 let puppeteer = null
-async function getPuppeteer() {
+export async function getPuppeteer() {
   if (!puppeteer) {
     try {
       const extra = await import('puppeteer-extra')
@@ -37,6 +61,33 @@ async function getPuppeteer() {
     }
   }
   return puppeteer
+}
+
+// Instagram reel shortcodes are exactly 11 base64url chars. The grid view exposes
+// nothing else when image-loading is off, so the URL tail is the fallback of last
+// resort. The exact-11 length lets us distinguish a real shortcode ("DXwidkpoiJC")
+// from a username of similar character class ("cristiano" / "kimkardashian"), so
+// the title-fallback never echoes a username back as if it were a code.
+const INSTAGRAM_SHORTCODE_RE = /^[A-Za-z0-9_-]{11}$/
+function _looksLikeShortcode(title) {
+  return !!title && INSTAGRAM_SHORTCODE_RE.test(title.trim())
+}
+
+// Build a human-readable title for an Instagram reel when the caption is missing.
+// URL shape: https://www.instagram.com/{handle}/reel/{shortcode}/  OR  /reel/{shortcode}/
+// Falls back to "Instagram Reel" when the URL has no handle (explore page reels).
+export function instagramFallbackTitle(url, uploader) {
+  const handle = (uploader || '').trim().replace(/^@/, '')
+  if (handle && !_looksLikeShortcode(handle)) return `Reel by @${handle}`
+  try {
+    const path = new URL(url).pathname.split('/').filter(Boolean)
+    // Instagram routes /{handle}/reel/{shortcode}/, so path[0] is the handle
+    // whenever path[1] === 'reel'. The URL structure is the trustworthy signal.
+    if (path.length >= 3 && path[1] === 'reel') {
+      return `Reel by @${path[0]}`
+    }
+  } catch { /* ignore — fall through */ }
+  return 'Instagram Reel'
 }
 
 // Site-specific scraper configs
@@ -147,6 +198,30 @@ const SITE_CONFIGS = {
     thumbnailAttr: ['data-src', 'src'],
     baseUrl: 'https://xhamster.com',
   },
+
+  // Instagram: Puppeteer scraper using Arc browser cookies.
+  // trendingUrl is the public explore/reels page (no per-creator dependency).
+  // searchUrl supports per-handle discovery when a handle is passed as query.
+  // requiresAuth: cookies/instagram.txt is loaded into the page before navigation.
+  'instagram.com': {
+    trendingUrl: 'https://www.instagram.com/explore/reels/',
+    searchUrl: (q) => `https://www.instagram.com/${encodeURIComponent(q.replace(/^@/, ''))}/reels/`,
+    selectors: {
+      // Each reel link is the card; img inside carries the thumbnail + alt caption
+      videoCard: 'a[href*="/reel/"]',
+      title: 'img',   // alt text = caption
+      thumbnail: 'img',
+      duration: null,  // not shown in grid view
+      views: null,
+      uploader: null,
+      link: null,      // card itself is the link
+    },
+    thumbnailAttr: [],
+    baseUrl: 'https://www.instagram.com',
+    requiresAuth: true,
+    authCookieFile: 'cookies/instagram.txt',
+    ogEnrich: true,
+  },
 }
 
 // Sites with first-party JSON APIs. These bypass Puppeteer entirely.
@@ -228,7 +303,7 @@ export class ScraperAdapter extends SourceAdapter {
     return null
   }
 
-  async _newPage() {
+  async _newPage(config = null) {
     const browser = await this._getBrowser()
     if (!browser) return null
     const page = await browser.newPage()
@@ -250,11 +325,20 @@ export class ScraperAdapter extends SourceAdapter {
       )
       await page.setViewport({ width: 1920, height: 1080 })
 
-      // Block images, fonts, and CSS to speed things up (we only need the DOM)
+      // Block heavy resources to speed things up (we only need the DOM).
+      // EXCEPTION: auth-required sites (e.g. Instagram) lazy-load img src/srcset
+      // attributes ONLY after the browser fetches the image. Aborting images on
+      // those sites leaves the alt text and src empty in the DOM, so the card
+      // extractor falls back to the URL shortcode for titles. Allow images
+      // through for auth-required sites; they pay the latency for usable metadata.
+      const allowImages = !!config?.requiresAuth
       await page.setRequestInterception(true)
       page.on('request', (req) => {
         const type = req.resourceType()
-        if (['image', 'font', 'stylesheet', 'media'].includes(type)) {
+        const block = allowImages
+          ? ['font', 'stylesheet', 'media']
+          : ['image', 'font', 'stylesheet', 'media']
+        if (block.includes(type)) {
           try { req.abort() } catch {}
         } else {
           try { req.continue() } catch {}
@@ -276,11 +360,23 @@ export class ScraperAdapter extends SourceAdapter {
 
     let page
     try {
-      page = await this._newPage()
+      page = await this._newPage(config)
       if (!page) {
         logger.warn(`Scraper: Chromium unavailable, skipping ${siteKey} (${url})`)
         return []
       }
+
+      // Load auth cookies before navigating so the page sees a logged-in session
+      if (config.requiresAuth && config.authCookieFile) {
+        const cookies = parseNetscapeCookies(config.authCookieFile)
+        if (cookies.length > 0) {
+          await page.setCookie(...cookies)
+          logger.info(`Scraper: loaded ${cookies.length} cookies for ${siteKey}`)
+        } else {
+          logger.warn(`Scraper: no cookies found for ${siteKey} at ${config.authCookieFile}`)
+        }
+      }
+
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 })
 
       // Cloudflare challenge detection: if the page title indicates a challenge,
@@ -361,34 +457,34 @@ export class ScraperAdapter extends SourceAdapter {
         for (const card of cards) {
           if (results.length >= maxResults) break
 
-          // Title — prefer title attribute (more reliable on adult sites), fall back to text content
-          const titleEl = card.querySelector(cfg.selectors.title)
-          const title = titleEl?.getAttribute('title') || titleEl?.textContent?.trim() || ''
-          if (!title) continue
-
-          // Link
-          const linkEl = card.querySelector(cfg.selectors.link)
-          let href = linkEl?.getAttribute('href') || ''
-          if (href && !href.startsWith('http')) {
-            href = cfg.baseUrl + href
-          }
+          // Link first — extracted early so title can fall back to the URL path segment
+          const linkEl = cfg.selectors.link ? card.querySelector(cfg.selectors.link) : null
+          let href = linkEl?.getAttribute('href') || card.getAttribute('href') || ''
+          if (href && !href.startsWith('http')) href = cfg.baseUrl + href
           if (!href) continue
 
-          // Thumbnail (check multiple attrs for lazy loading)
-          const thumbEl = card.querySelector(cfg.selectors.thumbnail)
+          // Title — prefer title attr, then alt text, then text content, then URL path segment
+          // (Instagram grid view leaves img alt empty; shortcode from URL is the last resort)
+          const titleEl = cfg.selectors.title ? card.querySelector(cfg.selectors.title) : null
+          const title = titleEl?.getAttribute('title') || titleEl?.getAttribute('alt') || titleEl?.textContent?.trim()
+            || href.split('/').filter(Boolean).pop() || ''
+          if (!title) continue
+
+          // Thumbnail — check each attr; handles srcset by extracting the first URL token
+          const thumbEl = cfg.selectors.thumbnail ? card.querySelector(cfg.selectors.thumbnail) : null
           let thumbnail = ''
           if (thumbEl) {
             for (const attr of cfg.thumbnailAttr) {
-              const val = thumbEl.getAttribute(attr)
-              if (val && val.startsWith('http')) {
-                thumbnail = val
-                break
-              }
+              const raw = thumbEl.getAttribute(attr)
+              if (!raw) continue
+              // srcset format: "https://... 320w, https://... 640w" — take first URL
+              const url = raw.trim().split(/\s*,\s*/)[0].trim().split(/\s+/)[0]
+              if (url.startsWith('http')) { thumbnail = url; break }
             }
           }
 
           // Duration text: "12:34", "1:05:30", "10m", "1h 5m"
-          const durEl = card.querySelector(cfg.selectors.duration)
+          const durEl = cfg.selectors.duration ? card.querySelector(cfg.selectors.duration) : null
           const durText = durEl?.textContent?.trim() || ''
           let duration = 0
           const durMatch = durText.match(/(\d+):(\d+)(?::(\d+))?/)
@@ -407,7 +503,7 @@ export class ScraperAdapter extends SourceAdapter {
           }
 
           // Views
-          const viewsEl = card.querySelector(cfg.selectors.views)
+          const viewsEl = cfg.selectors.views ? card.querySelector(cfg.selectors.views) : null
           const viewsText = viewsEl?.textContent?.trim() || ''
           let viewCount = 0
           const viewMatch = viewsText.replace(/,/g, '').match(/([\d.]+)\s*([KkMm])?/)
@@ -419,7 +515,7 @@ export class ScraperAdapter extends SourceAdapter {
           }
 
           // Uploader
-          const uploaderEl = card.querySelector(cfg.selectors.uploader)
+          const uploaderEl = cfg.selectors.uploader ? card.querySelector(cfg.selectors.uploader) : null
           const uploader = uploaderEl?.textContent?.trim() || ''
 
           results.push({ title, url: href, thumbnail, duration, view_count: viewCount, uploader })
@@ -430,7 +526,7 @@ export class ScraperAdapter extends SourceAdapter {
 
       // Normalize into our standard shape
       this._consecutiveFailures = 0
-      return videos.map(v => this.normalizeVideo({
+      const normalized = videos.map(v => this.normalizeVideo({
         id: this._urlToId(v.url),
         webpage_url: v.url,
         title: v.title,
@@ -440,6 +536,13 @@ export class ScraperAdapter extends SourceAdapter {
         uploader: v.uploader,
         source: siteKey,
       }))
+
+      // OG enrichment: fetch real title, thumbnail, and hashtag tags from each page's Open Graph tags.
+      // Required for sites (like Instagram) where Puppeteer can't extract metadata from the grid view.
+      if (config.ogEnrich && config.authCookieFile && normalized.length > 0) {
+        return this._enrichWithOgTags(normalized, config.authCookieFile)
+      }
+      return normalized
     } catch (err) {
       this._consecutiveFailures++
       logger.warn(`Scraper failure #${this._consecutiveFailures} for ${siteKey}: ${err.message}`)
@@ -680,6 +783,86 @@ export class ScraperAdapter extends SourceAdapter {
     }
 
     return videos
+  }
+
+  // Enrich a batch of normalized videos with Open Graph metadata fetched from each URL.
+  // Replaces shortcode titles with real captions, populates thumbnails, and extracts
+  // hashtags as tags for taste-profile scoring.
+  // Runs up to 5 fetches concurrently with a 200ms gap between batches.
+  async _enrichWithOgTags(videos, authCookieFile) {
+    const cookies = parseNetscapeCookies(authCookieFile)
+    const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ')
+    const BATCH = 5
+
+    const enriched = [...videos]
+    for (let i = 0; i < enriched.length; i += BATCH) {
+      const batch = enriched.slice(i, i + BATCH)
+      await Promise.all(batch.map(async (video, batchIdx) => {
+        try {
+          const res = await fetch(video.url, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+              'Cookie': cookieHeader,
+              'Accept': 'text/html,application/xhtml+xml',
+            },
+            redirect: 'follow',
+            signal: AbortSignal.timeout(10_000),
+          })
+          if (!res.ok) return
+
+          const html = await res.text()
+
+          // Extract OG tags — handle both attribute orderings
+          const ogMeta = (prop) => {
+            const m = html.match(new RegExp(`<meta[^>]+property="${prop}"[^>]+content="([^"]*)"`, 'i'))
+              || html.match(new RegExp(`<meta[^>]+content="([^"]*)"[^>]+property="${prop}"`, 'i'))
+            if (!m) return ''
+            // Decode common HTML entities
+            return m[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+              .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#x2F;/g, '/').trim()
+          }
+
+          const ogTitle = ogMeta('og:title')
+          const ogDesc = ogMeta('og:description')
+          const ogImage = ogMeta('og:image')
+
+          // Title: strip Instagram suffix ("... • Instagram", "on Instagram: ...")
+          const cleanTitle = ogTitle
+            .replace(/\s*[•·]\s*(Instagram|Reel)\s*$/, '')
+            .replace(/\s+on Instagram:\s*"?/i, ': ')
+            .trim()
+
+          // Tags: all #hashtags from the caption in og:description
+          const tags = ogDesc ? [...ogDesc.matchAll(/#(\w+)/g)].map(m => m[1]).slice(0, 30) : []
+
+          // Uploader: Instagram og:title often has "Name (@handle)" or "Name on Instagram"
+          const uploaderMatch = ogTitle.match(/[•·]\s*([^•·@]+\(@[^)]+\))\s*[•·]?/)
+            || ogTitle.match(/[•·]\s*([^•·]+?)\s+on Instagram/i)
+          const uploader = uploaderMatch ? uploaderMatch[1].trim() : video.uploader
+
+          if (cleanTitle) enriched[i + batchIdx].title = cleanTitle
+          if (ogImage) enriched[i + batchIdx].thumbnail = ogImage
+          if (tags.length > 0) enriched[i + batchIdx].tags = tags
+          if (uploader) enriched[i + batchIdx].uploader = uploader
+        } catch (err) {
+          logger.warn(`OG enrich failed for ${video.url}: ${err.message}`)
+        }
+      }))
+      if (i + BATCH < enriched.length) await new Promise(r => setTimeout(r, 200))
+    }
+
+    // Final pass: any title still matching a bare shortcode (og:title was missing
+    // or the fetch failed) becomes "Reel by @{handle}" — never a raw shortcode.
+    let fallbackCount = 0
+    for (const v of enriched) {
+      if (_looksLikeShortcode(v.title)) {
+        v.title = instagramFallbackTitle(v.url, v.uploader)
+        fallbackCount++
+      }
+    }
+
+    logger.info(`Scraper: OG enriched ${enriched.filter(v => v.tags.length > 0).length}/${enriched.length} videos with tags${fallbackCount > 0 ? ` (${fallbackCount} fell back to "Reel by @handle")` : ''}`)
+    return enriched
   }
 
   // Cleanup: close the browser when shutting down

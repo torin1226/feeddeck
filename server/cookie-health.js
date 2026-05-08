@@ -6,7 +6,8 @@
 
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { dirname } from 'path'
+import { readFileSync } from 'fs'
+import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { getCookieArgs } from './cookies.js'
 
@@ -45,7 +46,7 @@ const PROBES = {
 
 /**
  * Check cookie health for all configured domains.
- * Returns { youtube: { status, message }, pornhub: { status, message }, ... }
+ * Returns { youtube: { status, message }, pornhub: { status, message }, instagram: { ... }, ... }
  * Status: 'healthy' | 'expired' | 'missing' | 'error'
  */
 export async function checkCookieHealth() {
@@ -55,8 +56,35 @@ export async function checkCookieHealth() {
     results[key] = await _probeOneDomain(key, probe)
   }
 
+  // Instagram uses a fetch-based probe (yt-dlp extractor is currently broken upstream)
+  results.instagram = await _probeInstagram()
+
   return results
 }
+
+// Map a yt-dlp domain (e.g. youtube.com, youtu.be, pornhub.com) to a probe key.
+const DOMAIN_TO_PROBE_KEY = {
+  'youtube.com': 'youtube',
+  'youtu.be': 'youtube',
+  'pornhub.com': 'pornhub',
+  'instagram.com': 'instagram',
+}
+
+/**
+ * Probe a single cookie domain. Used by ytdlp.js to verify that a stderr
+ * "cookies are no longer valid" warning is real before poisoning the skip set.
+ * Returns the same shape as a single entry in checkCookieHealth(), or null if
+ * the domain has no configured probe (caller should fall back to TTL-only).
+ */
+export async function probeCookieForDomain(domain) {
+  const probeKey = DOMAIN_TO_PROBE_KEY[domain]
+  if (!probeKey) return null
+  if (probeKey === 'instagram') return _probeInstagram()
+  if (!PROBES[probeKey]) return null
+  return _probeOneDomain(probeKey, PROBES[probeKey])
+}
+
+export { DOMAIN_TO_PROBE_KEY }
 
 async function _probeOneDomain(key, probe) {
   // Check if cookies exist for this domain
@@ -120,5 +148,53 @@ async function _probeOneDomain(key, probe) {
     const ytErr = stderr.split('\n').find(l => l.startsWith('ERROR:'))
     const detail = ytErr ? ytErr.replace(/^ERROR:\s*/, '') : msg
     return { status: 'error', message: `${probe.label} probe failed: ${detail.substring(0, 250)}` }
+  }
+}
+
+// Instagram probe: uses fetch() with parsed cookies because yt-dlp's instagram extractor
+// is currently broken upstream. Checks if the session cookie grants access to the
+// accounts/edit page (only reachable when logged in).
+async function _probeInstagram() {
+  const cookiePath = join(__dirname, '..', 'cookies', 'instagram.txt')
+  let text
+  try { text = readFileSync(cookiePath, 'utf-8') } catch {
+    return { status: 'missing', message: 'Instagram cookie file not found (cookies/instagram.txt)' }
+  }
+
+  // Parse Netscape cookies into a Cookie header string
+  const pairs = []
+  for (const line of text.split('\n')) {
+    const t = line.trim()
+    if (!t || t.startsWith('#')) continue
+    const parts = t.split('\t')
+    if (parts.length < 7) continue
+    const [, , , , , name, value] = parts
+    if (name && value) pairs.push(`${name}=${value}`)
+  }
+
+  if (pairs.length === 0) {
+    return { status: 'missing', message: 'Instagram cookie file is empty or malformed' }
+  }
+
+  try {
+    const res = await fetch('https://www.instagram.com/accounts/edit/', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+        'Cookie': pairs.join('; '),
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+      redirect: 'follow',
+    })
+
+    // /accounts/edit/ redirects to /accounts/login/ if session is expired
+    if (res.url.includes('/accounts/login')) {
+      return { status: 'expired', message: 'Instagram cookies expired — re-export from Arc browser' }
+    }
+    if (res.status === 200) {
+      return { status: 'healthy', message: 'Instagram cookies valid' }
+    }
+    return { status: 'error', message: `Instagram probe returned HTTP ${res.status}` }
+  } catch (err) {
+    return { status: 'error', message: `Instagram probe failed: ${err.message.substring(0, 200)}` }
   }
 }

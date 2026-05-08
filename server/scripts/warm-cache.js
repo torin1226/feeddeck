@@ -105,11 +105,21 @@ const homepageStalePurged = db.prepare(`
   WHERE fetched_at < datetime('now', '-3 days')
 `).run()
 stats.purged = homepageStalePurged.changes
-console.log(`  Purged ${homepageStalePurged.changes} homepage entries older than 3 days\n`)
+console.log(`  Purged ${homepageStalePurged.changes} homepage entries older than 3 days`)
+
+// Checkpoint WAL after purge to avoid "database is locked" during Phase 1 inserts
+db.prepare('PRAGMA wal_checkpoint(PASSIVE)').get()
+console.log(`  WAL checkpoint complete\n`)
 
 // --- Phase 1: Refill homepage categories ---
 console.log('--- Phase 1: Homepage Categories ---')
 const modes = modeArg === 'all' ? ['social', 'nsfw'] : [modeArg]
+
+// Single sessionCache shared across all categories in this warm run,
+// so a topic appearing in multiple rows (e.g. "ai" used by social_ai
+// AND social_tech) only runs yt-dlp once per topic.
+const { refillCategory } = await import('../routes/content.js')
+const warmSessionCache = new Map()
 
 for (const mode of modes) {
   const categories = db.prepare('SELECT key, query, mode FROM categories WHERE mode = ?').all(mode)
@@ -118,38 +128,11 @@ for (const mode of modes) {
   for (const cat of categories) {
     try {
       console.log(`    🔄 ${cat.key}...`)
-      let videos
-      const query = cat.query
-
-      if (cat.mode === 'nsfw' && query.startsWith('http')) {
-        videos = await withRetry(cat.key, async () => {
-          try {
-            const domain = new URL(query).hostname.replace(/^www\./, '')
-            return await registry.search(query, { site: domain, limit: 12 })
-          } catch {
-            return await registry.search(query, { adapter: 'yt-dlp', limit: 12 })
-          }
-        })
-      } else {
-        videos = await withRetry(cat.key, () => registry.search(query, { adapter: 'yt-dlp', limit: 12 }))
-      }
-
-      const insert = db.prepare(`
-        INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, fetched_at, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
-      `)
-
-      let added = 0
-      for (const v of videos) {
-        try {
-          const compositeId = `${cat.key}_${v.id}`
-          const result = insert.run(compositeId, cat.key, v.url, v.title, v.thumbnail, v.duration, v.source, v.uploader, v.view_count, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []))
-          if (result.changes > 0) added++
-        } catch (err) {
-          console.log(`      ⚠️ Insert failed for ${v.url?.substring(0, 60)}: ${err.message.substring(0, 60)}`)
-        }
-      }
-      console.log(`    ✅ +${added} new videos (${videos.length} fetched)`)
+      const before = db.prepare('SELECT COUNT(*) as n FROM homepage_cache WHERE category_key = ?').get(cat.key).n
+      await withRetry(cat.key, () => refillCategory(cat.key, warmSessionCache))
+      const after = db.prepare('SELECT COUNT(*) as n FROM homepage_cache WHERE category_key = ?').get(cat.key).n
+      const added = Math.max(0, after - before)
+      console.log(`    ✅ +${added} new videos`)
       stats.categoriesRefilled++
       stats.added += added
     } catch (err) {
@@ -203,11 +186,28 @@ if (modes.includes('nsfw')) {
       ORDER BY sort_order
     `).all()
 
+    // Upsert that PRESERVES added_at on existing rows. INSERT OR REPLACE
+    // would delete-then-insert, re-stamping every row's added_at to "now"
+    // — which is what made all 142 ph_likes rows tie on the timestamp
+    // tiebreaker after a single re-import. ON CONFLICT keeps the original
+    // added_at; only genuinely new rows get datetime('now'). liked_at is
+    // COALESCEd so a previously-captured ISO timestamp survives a scrape
+    // that returned null.
     const upsertItem = db.prepare(`
-      INSERT OR REPLACE INTO persistent_row_items
+      INSERT INTO persistent_row_items
         (row_key, video_url, title, thumbnail, duration, uploader,
          view_count, like_count, upload_date, liked_at, tags)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(row_key, video_url) DO UPDATE SET
+        title       = excluded.title,
+        thumbnail   = excluded.thumbnail,
+        duration    = excluded.duration,
+        uploader    = excluded.uploader,
+        view_count  = excluded.view_count,
+        like_count  = excluded.like_count,
+        upload_date = COALESCE(excluded.upload_date, persistent_row_items.upload_date),
+        liked_at    = COALESCE(excluded.liked_at, persistent_row_items.liked_at),
+        tags        = excluded.tags
     `)
     const trimNonLikes = db.prepare(`
       DELETE FROM persistent_row_items
@@ -306,7 +306,16 @@ for (const mode of modes) {
       console.log(`    🔄 ${src.label}...`)
       const query = src.query
 
-      const videos = await withRetry(src.label, () => registry.search(query, { site: src.domain, limit: 20 }))
+      let videos = await withRetry(src.label, () => registry.search(query, { site: src.domain, limit: 20 }))
+
+      // Drop clickbait-farm titles from social sources before insert.
+      if (mode === 'social') {
+        const { isClickbaitTitle } = await import('../content-filters.js')
+        const before = videos.length
+        videos = videos.filter(v => !isClickbaitTitle(v.title))
+        const dropped = before - videos.length
+        if (dropped > 0) console.log(`    🚫 Dropped ${dropped} clickbait titles`)
+      }
 
       const insert = db.prepare(`
         INSERT OR IGNORE INTO feed_cache (id, source_domain, mode, url, title, creator, thumbnail, duration, orientation, tags, view_count, like_count, subscriber_count, upload_date, fetched_at, expires_at)

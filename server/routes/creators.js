@@ -5,8 +5,12 @@
 
 import { Router } from 'express'
 import { db } from '../database.js'
+import { invalidateProfileCache } from '../scoring.js'
 
 const router = Router()
+
+const REVIEW_DOWN_THRESHOLD = 4
+const VALID_MODES = ['social', 'nsfw']
 
 // URL generators per platform
 const URL_GENERATORS = {
@@ -134,6 +138,79 @@ router.put('/api/creators/:id', (req, res) => {
 
   const updated = db.prepare('SELECT * FROM creators WHERE id = ?').get(req.params.id)
   res.json(updated)
+})
+
+// GET /api/creators/needs-review?mode=social
+// Lists creators with ≥REVIEW_DOWN_THRESHOLD thumbs-downs that the user
+// hasn't yet acted on (block or dismiss). Drives the Settings pruning UI.
+router.get('/api/creators/needs-review', (req, res) => {
+  const mode = VALID_MODES.includes(req.query.mode) ? req.query.mode : 'social'
+  try {
+    const rows = db.prepare(`
+      SELECT vr.creator, COUNT(*) AS down_count, MAX(vr.rated_at) AS last_down,
+             (SELECT title FROM video_ratings
+                WHERE creator = vr.creator AND mode = vr.mode AND rating = 'down'
+                ORDER BY rated_at DESC LIMIT 1) AS sample_title
+      FROM video_ratings vr
+      WHERE vr.rating = 'down'
+        AND vr.mode = ?
+        AND vr.creator IS NOT NULL AND vr.creator != ''
+        AND NOT EXISTS (
+          SELECT 1 FROM blocked_creators bc
+          WHERE bc.creator = vr.creator AND bc.mode = vr.mode
+        )
+      GROUP BY vr.creator
+      HAVING COUNT(*) >= ?
+      ORDER BY down_count DESC, last_down DESC
+    `).all(mode, REVIEW_DOWN_THRESHOLD)
+    res.json({ creators: rows, threshold: REVIEW_DOWN_THRESHOLD })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+function recordReview(action) {
+  return (req, res) => {
+    const { creator, mode } = req.body || {}
+    if (!creator || typeof creator !== 'string') {
+      return res.status(400).json({ error: 'creator required' })
+    }
+    if (!VALID_MODES.includes(mode)) {
+      return res.status(400).json({ error: `mode must be one of ${VALID_MODES.join(', ')}` })
+    }
+    try {
+      db.prepare(
+        `INSERT INTO blocked_creators (creator, mode, action, reviewed_at)
+         VALUES (?, ?, ?, datetime('now'))
+         ON CONFLICT(creator, mode) DO UPDATE SET
+           action = excluded.action,
+           reviewed_at = excluded.reviewed_at`
+      ).run(creator.trim(), mode, action)
+      invalidateProfileCache()
+      res.json({ ok: true, creator, mode, action })
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  }
+}
+
+router.post('/api/creators/block', recordReview('blocked'))
+router.post('/api/creators/dismiss', recordReview('dismissed'))
+
+router.post('/api/creators/unblock', (req, res) => {
+  const { creator, mode } = req.body || {}
+  if (!creator || !VALID_MODES.includes(mode)) {
+    return res.status(400).json({ error: 'creator and valid mode required' })
+  }
+  try {
+    const result = db.prepare(
+      'DELETE FROM blocked_creators WHERE creator = ? AND mode = ?'
+    ).run(creator.trim(), mode)
+    invalidateProfileCache()
+    res.json({ ok: true, deleted: result.changes })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
 export default router

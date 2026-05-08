@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 // ============================================================
 // FeedToast
@@ -7,15 +7,25 @@ import { useEffect, useState } from 'react'
 
 export default function FeedToast({ message, onDone }) {
   const [visible, setVisible] = useState(false)
+  // Tracks the 300ms dismiss-animation timer so the component unmount
+  // path can cancel it. Otherwise a stale onDone fires after unmount.
+  const dismissTimerRef = useRef(null)
 
   useEffect(() => {
     // Animate in
-    requestAnimationFrame(() => setVisible(true))
+    const raf = requestAnimationFrame(() => setVisible(true))
     const timer = setTimeout(() => {
       setVisible(false)
-      setTimeout(() => onDone?.(), 300)
+      dismissTimerRef.current = setTimeout(() => onDone?.(), 300)
     }, 2000)
-    return () => clearTimeout(timer)
+    return () => {
+      clearTimeout(timer)
+      if (dismissTimerRef.current) {
+        clearTimeout(dismissTimerRef.current)
+        dismissTimerRef.current = null
+      }
+      cancelAnimationFrame(raf)
+    }
   }, [onDone])
 
   return (

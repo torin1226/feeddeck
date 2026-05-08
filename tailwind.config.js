@@ -15,9 +15,10 @@ export default {
           border: 'var(--color-surface-border)',
         },
         accent: {
-          DEFAULT: '#f43f5e',
-          hover: '#fb7185',
-          muted: '#f43f5e33',
+          DEFAULT: '#3b82f6',
+          hover: '#60a5fa',
+          deep: '#1e3a8a',
+          muted: '#3b82f622',
         },
         text: {
           primary: 'var(--color-text-primary)',
@@ -65,7 +66,7 @@ export default {
         'card-hover': '0 12px 32px rgba(0,0,0,0.4)',
         'float': '0 8px 40px rgba(0,0,0,0.6)',
         'modal': '0 24px 64px rgba(0,0,0,0.7)',
-        'glow-accent': '0 0 0 1px #f43f5e, 0 8px 32px rgba(244,63,94,0.25)',
+        'glow-accent': '0 0 24px rgba(30,58,138,0.4), 0 8px 32px rgba(30,58,138,0.25)',
         'inner-subtle': 'inset 0 1px 0 rgba(255,255,255,0.04)',
         // Glass material shadows — map to CSS custom properties so they
         // respect both dark and light mode without duplication.

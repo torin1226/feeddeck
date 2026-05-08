@@ -106,12 +106,8 @@ export default function SearchPage() {
       } catch {}
     }
 
-    es.addEventListener('error', () => {
-      // 'error' event emitted by server before close
-      setStreamError('Search failed')
-    })
-
     es.onerror = () => {
+      setStreamError('Search failed')
       setStreaming(false)
       es.close()
     }
@@ -180,7 +176,7 @@ export default function SearchPage() {
     if (historyIdRef.current) {
       fetch(`/api/search/history/${historyIdRef.current}/click`, { method: 'PATCH' }).catch(() => {})
     }
-    navigate(`/video/${encodeURIComponent(id)}`)
+    navigate(`/watch/${encodeURIComponent(id)}`)
   }
 
   // Library grid (mode-filtered, capped)
@@ -238,8 +234,8 @@ export default function SearchPage() {
 
           {showError && (
             <div className="py-12 flex flex-col items-center text-center">
-              <EmptyIllustration variant="error" className="w-20 h-20 mb-3 text-rose-400" />
-              <div className="text-sm text-rose-400 font-medium mb-1">{streamError}</div>
+              <EmptyIllustration variant="error" className="w-20 h-20 mb-3 text-blue-400" />
+              <div className="text-sm text-blue-400 font-medium mb-1">{streamError}</div>
               <button
                 onClick={() => {
                   setStreamError(null)
@@ -322,7 +318,7 @@ export default function SearchPage() {
                   <VideoCard
                     key={video.id || video.url}
                     video={video}
-                    onClick={(v) => navigate(`/video/${encodeURIComponent(v.id || v.url)}`)}
+                    onClick={(v) => navigate(`/watch/${encodeURIComponent(v.id || v.url)}`)}
                   />
                 ))}
               </div>

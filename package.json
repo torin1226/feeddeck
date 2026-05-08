@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
     "dev:client": "vite",
-    "dev:server": "node --watch server/index.js",
+    "dev:server": "node server/scripts/preflight-port-check.mjs && node --watch server/index.js",
+    "dev:cleanup": "node server/scripts/preflight-port-check.mjs --cleanup",
     "build": "vite build",
     "preview": "vite preview",
     "start": "node server/index.js",
@@ -15,7 +16,8 @@
     "warm": "node server/scripts/warm-cache.js",
     "warm:social": "node server/scripts/warm-cache.js --social",
     "warm:nsfw": "node server/scripts/warm-cache.js --nsfw",
-    "diagnose:ph": "node server/scripts/diagnose-ph-personal.mjs"
+    "diagnose:ph": "node server/scripts/diagnose-ph-personal.mjs",
+    "hydration:health": "node server/scripts/row-health-report.mjs"
   },
   "dependencies": {
     "@esbuild/linux-x64": "^0.28.0",
