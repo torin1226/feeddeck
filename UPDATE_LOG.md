@@ -1,5 +1,37 @@
 # FeedDeck Update Log
 
+## 2026-05-06 PM (Debug) — `/feed` Time-to-First-Video: 30s → 1.6s
+
+### Completed
+- **Root-caused user-reported "/feed loads slowly" bug** via `/debug` workflow with browser-network inspection.
+- Three compounding issues found and fixed in [feedStore.js](src/stores/feedStore.js) and [FeedVideo.jsx](src/components/feed/FeedVideo.jsx):
+  1. **`/api/feed/watched-ids` is a phantom endpoint** — `feedStore.initFeed()` awaited a route that has never been mounted on the server. Browser hung ~17s before giving up, blocking every downstream fetch. Removed the call (server's `WHERE watched = 0` filter on `/api/feed/next` already provides the dedup).
+  2. **Duplicate `/api/stream-url` requests** — `_warmStreamUrls` and `FeedVideo`'s on-demand fetch each hit the endpoint for the active slot, both blocking on the same yt-dlp resolution. Added a shared `resolveStreamUrl()` promise cache keyed by source URL.
+  3. **No video byte preloading** — `<video>` only began downloading bytes when the user was on that slot. Added `_prefetchOneVideoBytes()` that Range-fetches the first 512KB (or HLS manifest) for each freshly-resolved upcoming video so the browser HTTP cache is warm by the time the element issues its real request.
+- **Browser-verified in real Chrome via preview tools:** time-to-first-frame on `/feed` dropped from ~30s to ~1.6s. Network panel: 0 calls to `/api/feed/watched-ids` (was 1 hung), 2 stream-url (was 11+), 3× 512KB byte-prefetches in flight before user scrolls.
+
+### Decisions Made
+- **Removed the watched-ids fetch entirely rather than implementing the missing endpoint.** The dedup is structurally redundant — `/api/feed/next` already filters server-side via `WHERE fc.mode = ? AND fc.watched = 0`. Adding a server route would still be wasted IO every page load.
+- **Range-prefetch over second hidden `<video>` element.** The shared-singleton `<video>` design preserves user gesture activation across src changes; adding a parallel preload element would complicate that. Range-prefetching warms browser HTTP cache instead — works with the existing single-element architecture.
+- **5s linger on resolved-URL cache, 50-entry FIFO cap on byte-prefetched URLs.** Keeps a long browse session bounded.
+
+### Issues & Blockers
+- None new.
+- Worth flagging for future: every `await fetch('/api/...')` in a render-gating code path should be paired with a server-side test verifying the route is mounted. A missing route is a dev-time test failure, not a production hang. This bug shipped 2026-04-07 and lived for ~30 days.
+
+### Key Files Changed
+- `src/stores/feedStore.js` — removed watched-ids fetch from `initFeed`; added `resolveStreamUrl()` promise cache + `_prefetchOneVideoBytes()` helpers
+- `src/components/feed/FeedVideo.jsx` — switched on-demand fetch to use `resolveStreamUrl()` (deduplicates against warmer)
+- `src/__tests__/feedStore-initFeed-fast.test.js` (new) — 2 tests: must not call watched-ids, must not block on background warming
+- `src/__tests__/feedStore-resolveStreamUrl-dedup.test.js` (new) — 3 tests: shared in-flight, null-on-failure, null-on-missing-url
+- `BACKLOG.md` — completed entry added at top of Completed (Recent)
+- `_memory/debug_feed_watched_ids_phantom_endpoint.md` (auto-memory) — debug solution note
+
+### Next Session Should
+1. **Commit this work.** Working tree includes Torin/parallel-session unrelated edits (warm-cache.js, ThumbsRating.jsx, ForYouSlot.jsx, RemixHero.jsx, HeroSection.jsx, PosterCard.jsx, DetailMeta.jsx, FullscreenOverlay.jsx, pornhub-personal.js, backfill-ph-likes-timestamps.mjs) — review those separately before committing the feed-speedup files.
+2. **Decide on a defense-in-depth measure:** add an Express 404 handler that returns JSON `{error: 'unknown route'}` for unmatched `/api/*` GETs. Would have surfaced this bug instantly instead of letting it hang for ~30 days.
+3. **Optional follow-up:** consider hoisting the trail fetch (`/api/recommendations/trail`) out of `fetchFeedBatch` so initFeed doesn't await it either. Currently it's awaited inline; if trail latency spikes, initFeed gets slow again.
+
 ## 2026-05-05 PM (Session 2) — Daily Playback Quality Sprint
 
 ### Completed

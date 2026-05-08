@@ -56,24 +56,21 @@ const useFeedStore = create((set, get) => ({
   setTheatreMode: (val) => set({ theatreMode: val }),
   toggleTheatreMode: () => set(s => ({ theatreMode: !s.theatreMode })),
 
-  // Initialize the feed — fetch first batch (or use prefetched buffer)
+  // Initialize the feed — fetch first batch (or use prefetched buffer).
+  //
+  // We deliberately do NOT call any cross-session "watched IDs" endpoint:
+  // /api/feed/next already filters server-side via `WHERE watched = 0`,
+  // so the returned batch is already deduplicated. A previous version of
+  // this method awaited /api/feed/watched-ids (which never existed) and
+  // hung the entire init for ~30s before any video could play.
   initFeed: async () => {
     const { initialized, loading } = get()
     if (initialized || loading) return
-    // Load server-side watched IDs to deduplicate across sessions
-    try {
-      const watchRes = await fetch('/api/feed/watched-ids')
-      if (watchRes.ok) {
-        const { ids } = await watchRes.json()
-        if (ids?.length > 0) {
-          const { watchedIds } = get()
-          for (const id of ids) watchedIds.add(id)
-        }
-      }
-    } catch { /* non-fatal — proceed with local watchedIds only */ }
     // If prefetch already loaded videos, just mark as initialized
     if (get().buffer.length > 0) {
       set({ initialized: true })
+      // Buffer was populated by prefetch() which already kicked off
+      // _warmStreamUrls — no need to re-warm.
       return
     }
     set({ loading: true, error: null })
@@ -81,6 +78,7 @@ const useFeedStore = create((set, get) => ({
       const videos = await fetchFeedBatch(get)
       set({ buffer: videos, initialized: true, loading: false, error: null })
       _warmStreamUrls(videos)
+      _prefetchVideoBytes(videos)
     } catch {
       set({ loading: false, initialized: true, error: 'Server unreachable — check that the backend is running' })
     }
@@ -261,31 +259,112 @@ async function fetchFeedBatch(getState) {
 // AbortController for cancelling in-flight warm requests on reset
 let _warmAbortController = new AbortController()
 
-// Eagerly resolve stream URLs for videos that don't have one yet.
-// Fires requests in parallel (max 3) so they're cached server-side
-// by the time the user scrolls to them.
+// Module-level URL-resolve promise cache. Both _warmStreamUrls and
+// FeedVideo's on-demand fetch dedupe through this so a video URL is
+// resolved exactly once per "needs URL" event, regardless of how many
+// callers want it. Without this, the active slot's eager fetch races
+// the warmer and the browser ends up with two parallel /api/stream-url
+// requests waiting on the same yt-dlp call.
+const _streamUrlPromises = new Map()
+
+// Public: shared resolver. Returns the streamUrl or null on failure.
+// Survives focus changes — never aborts in-flight on reset() either,
+// because the cached result helps the next mount.
+export function resolveStreamUrl(sourceUrl) {
+  if (!sourceUrl) return Promise.resolve(null)
+  const cached = _streamUrlPromises.get(sourceUrl)
+  if (cached) return cached
+  const p = fetch(`/api/stream-url?url=${encodeURIComponent(sourceUrl)}`)
+    .then(r => r.ok ? r.json() : null)
+    .then(data => data?.streamUrl || null)
+    .catch(() => null)
+    .finally(() => {
+      // Hold the resolved entry briefly so a re-mount within ~5s reuses
+      // it; drop it after to avoid serving stale CDN URLs that 2-hour
+      // server-side feed_cache will refresh anyway.
+      setTimeout(() => _streamUrlPromises.delete(sourceUrl), 5000)
+    })
+  _streamUrlPromises.set(sourceUrl, p)
+  return p
+}
+
+// Eagerly resolve stream URLs for videos that don't have one yet, then
+// kick off a small Range prefetch on each so the first ~512KB of bytes
+// land in the browser HTTP cache before the video element ever asks for
+// them. The combination is what lets the active slot start playback
+// in <500ms instead of the 8-30s the cold path takes.
 function _warmStreamUrls(videos) {
   const needWarm = videos.filter(v => !v.streamUrl && v.url).slice(0, 5)
   if (needWarm.length === 0) return
 
-  const signal = _warmAbortController.signal
   for (const v of needWarm) {
-    fetch(`/api/stream-url?url=${encodeURIComponent(v.url)}`, { signal })
-      .then(r => r.json())
-      .then(data => {
-        if (data.streamUrl) {
-          // Update the video in the buffer so FeedVideo picks it up
-          const state = useFeedStore.getState()
-          const idx = state.buffer.findIndex(b => b.id === v.id)
-          if (idx !== -1) {
-            const updated = [...state.buffer]
-            updated[idx] = { ...updated[idx], streamUrl: data.streamUrl }
-            useFeedStore.setState({ buffer: updated })
-          }
-        }
-      })
-      .catch(() => {}) // silent — video will still resolve on-demand
+    resolveStreamUrl(v.url).then(streamUrl => {
+      if (!streamUrl) return
+      // Patch the buffer so FeedVideo can pick it up via prop change.
+      const state = useFeedStore.getState()
+      const idx = state.buffer.findIndex(b => b.id === v.id)
+      if (idx !== -1) {
+        const updated = [...state.buffer]
+        updated[idx] = { ...updated[idx], streamUrl }
+        useFeedStore.setState({ buffer: updated })
+      }
+      _prefetchOneVideoBytes(streamUrl)
+    })
   }
+}
+
+// Module-level set tracking which streamUrls already had bytes warmed.
+// Bounded so a long session doesn't grow this without limit.
+const _bytesWarmed = new Set()
+const _BYTES_WARMED_CAP = 50
+
+// Range-prefetch the first ~512KB of bytes for a single resolved
+// streamUrl. The browser caches the 206 response keyed by URL+Range,
+// so when the <video> element later issues its own initial Range
+// request the bytes are already local. HLS manifests are tiny — we
+// just fetch them whole. Aborts if already prefetched or the URL
+// is missing.
+function _prefetchOneVideoBytes(streamUrl) {
+  if (!streamUrl) return
+  if (_bytesWarmed.has(streamUrl)) return
+  _bytesWarmed.add(streamUrl)
+  while (_bytesWarmed.size > _BYTES_WARMED_CAP) {
+    _bytesWarmed.delete(_bytesWarmed.values().next().value)
+  }
+  const signal = _warmAbortController.signal
+  const isHls = streamUrl.includes('.m3u8')
+  const target = isHls
+    ? `/api/hls-proxy?url=${encodeURIComponent(streamUrl)}`
+    : `/api/proxy-stream?url=${encodeURIComponent(streamUrl)}`
+  const headers = isHls ? {} : { Range: 'bytes=0-524287' }
+  // Fire-and-forget — we only care that the bytes hit the cache.
+  fetch(target, { signal, headers }).then(r => {
+    if (!isHls && r.body) {
+      // Drain the response so the browser actually caches it.
+      const reader = r.body.getReader()
+      const pump = () => reader.read().then(({ done }) => {
+        if (!done) return pump()
+      }).catch(() => {})
+      pump()
+    }
+  }).catch(() => {})
+}
+
+// Iterate over a freshly-fetched batch and bytes-prefetch any video
+// that already arrived with a server-resolved streamUrl. Videos that
+// still need URL resolution will get their bytes prefetched after
+// _warmStreamUrls finishes (see _warmStreamUrls's per-item callback).
+function _prefetchVideoBytes(videos) {
+  for (const v of videos.slice(0, 3)) {
+    if (v.streamUrl) _prefetchOneVideoBytes(v.streamUrl)
+  }
+}
+
+// Test helper — clears the URL promise cache and bytes set so unit
+// tests can assert behavior without prior-test pollution.
+export function _resetForTests() {
+  _streamUrlPromises.clear()
+  _bytesWarmed.clear()
 }
 
 export default useFeedStore

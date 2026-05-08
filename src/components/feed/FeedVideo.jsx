@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
-import useFeedStore from '../../stores/feedStore'
+import useFeedStore, { resolveStreamUrl } from '../../stores/feedStore'
 import ThumbsRating from '../ThumbsRating'
 import { isClickOutSource } from '../../utils/isClickOutSource'
 
@@ -135,39 +135,38 @@ export default function FeedVideo({ video, index, isActive, setRef, _onSourceCon
     setRef(index, containerEl.current)
   }, [index, setRef])
 
-  // Resolve stream URL when within preload range
+  // Resolve stream URL when within preload range. We always prefer the
+  // buffer's already-warmed video.streamUrl over firing our own fetch,
+  // even mid-load — that way the warmer's parallel resolve wins and the
+  // active slot doesn't sit on a duplicate in-flight request waiting on
+  // the same yt-dlp call.
   useEffect(() => {
-    // Click-out items (Instagram) skip the stream-URL fetch entirely — there
-    // is nothing to play in-app, the card opens the source URL on tap instead.
     if (clickOut) return
-    if (!shouldLoad || streamUrl || streamLoading || videoError) return
+    if (!shouldLoad || streamUrl || videoError) return
     if (!video.url) return
     if (video.streamUrl) { setStreamUrl(video.streamUrl); return }
+    if (streamLoading) return
 
-    const controller = new AbortController()
+    let cancelled = false
     setStreamLoading(true)
     setDebugMsg('fetching stream...')
 
-    fetch(`/api/stream-url?url=${encodeURIComponent(video.url)}`, { signal: controller.signal })
-      .then(r => r.json())
-      .then(data => {
-        if (data.streamUrl) {
-          setStreamUrl(data.streamUrl)
-          setDebugMsg('got stream url')
-        } else {
-          setDebugMsg('stream error: ' + (data.error || 'no url'))
-          setVideoError(true)
-        }
-        setStreamLoading(false)
-      })
-      .catch((err) => {
-        if (err.name === 'AbortError') return // cleanup cancelled this fetch
-        setStreamLoading(false)
-        setDebugMsg('fetch error: ' + err.message)
+    // Shared resolver dedupes against feedStore's _warmStreamUrls so
+    // we never fire two parallel /api/stream-url requests for the same
+    // source URL.
+    resolveStreamUrl(video.url).then((resolved) => {
+      if (cancelled) return
+      if (resolved) {
+        setStreamUrl(resolved)
+        setDebugMsg('got stream url')
+      } else {
+        setDebugMsg('stream error: no url')
         setVideoError(true)
-      })
+      }
+      setStreamLoading(false)
+    })
 
-    return () => { controller.abort() }
+    return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- streamLoading intentionally omitted to prevent re-trigger loop
   }, [shouldLoad, video.url, video.streamUrl, streamUrl, videoError])
 
