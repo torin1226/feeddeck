@@ -658,6 +658,22 @@ export function initDatabase() {
     logger.warn('homepage_cache stream_url migration failed', { error: err.message })
   }
 
+  // Same columns on persistent_row_items so static pinned rows
+  // (ph_likes, ph_subs) get the same eager-pre-resolve treatment.
+  // Dynamic ph_model_* rows are skipped by the warm-cache pass since they
+  // rotate nightly — resolving them risks wasting work on rows that churn.
+  try {
+    const cols = new Set(db.prepare("PRAGMA table_info(persistent_row_items)").all().map(c => c.name))
+    if (!cols.has('stream_url')) {
+      db.exec("ALTER TABLE persistent_row_items ADD COLUMN stream_url TEXT")
+    }
+    if (!cols.has('stream_url_expires_at')) {
+      db.exec("ALTER TABLE persistent_row_items ADD COLUMN stream_url_expires_at DATETIME")
+    }
+  } catch (err) {
+    logger.warn('persistent_row_items stream_url migration failed', { error: err.message })
+  }
+
   // Migrate: fix 'Your Subscriptions' label to 'My Subscriptions' to match BrowseSection TARGET_LABELS
   try {
     db.exec("UPDATE categories SET label = 'My Subscriptions' WHERE key = 'social_subscriptions' AND label = 'Your Subscriptions'")

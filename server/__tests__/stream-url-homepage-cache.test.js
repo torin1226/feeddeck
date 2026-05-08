@@ -55,6 +55,16 @@ function makeDb() {
       fetched_at DATETIME DEFAULT (datetime('now')),
       expires_at DATETIME DEFAULT (datetime('now', '+7 days'))
     );
+    CREATE TABLE persistent_row_items (
+      row_key TEXT NOT NULL,
+      video_url TEXT NOT NULL,
+      title TEXT,
+      stream_url TEXT,
+      stream_url_expires_at DATETIME,
+      added_at DATETIME DEFAULT (datetime('now')),
+      liked_at DATETIME,
+      PRIMARY KEY (row_key, video_url)
+    );
   `)
   return db
 }
@@ -206,6 +216,89 @@ describe('/api/stream-url + homepage_cache', () => {
     for (const r of rows) {
       expect(r.stream_url).toBe('https://cdn.example.com/resolved.mp4')
     }
+  })
+
+  it('serves a fresh stream_url from persistent_row_items when no other table has the URL', async () => {
+    const url = 'https://www.pornhub.com/view_video.php?viewkey=ph_a'
+    testDb.prepare(
+      `INSERT INTO persistent_row_items (row_key, video_url, stream_url, stream_url_expires_at)
+       VALUES (?, ?, ?, datetime('now', '+1 hours'))`
+    ).run('ph_likes', url, 'https://cdn.example.com/persistent.mp4')
+
+    const app = await buildApp()
+    const r = await callApp(app, 'GET', '/api/stream-url?url=' + encodeURIComponent(url))
+    expect(r.status).toBe(200)
+    expect(r.body.streamUrl).toBe('https://cdn.example.com/persistent.mp4')
+    expect(mockGetStreamUrl).not.toHaveBeenCalled()
+  })
+
+  it('writes the resolved URL into persistent_row_items when a row exists for that URL', async () => {
+    const url = 'https://www.pornhub.com/view_video.php?viewkey=ph_b'
+    testDb.prepare(
+      `INSERT INTO persistent_row_items (row_key, video_url) VALUES (?, ?)`
+    ).run('ph_likes', url)
+
+    const app = await buildApp()
+    await callApp(app, 'GET', '/api/stream-url?url=' + encodeURIComponent(url))
+
+    const row = testDb.prepare(
+      'SELECT stream_url, stream_url_expires_at FROM persistent_row_items WHERE row_key = ? AND video_url = ?'
+    ).get('ph_likes', url)
+    expect(row.stream_url).toBe('https://cdn.example.com/resolved.mp4')
+    expect(row.stream_url_expires_at).not.toBeNull()
+  })
+
+  it('refreshes all persistent_row_items rows that share the same URL across rows (likes + subs overlap)', async () => {
+    const url = 'https://www.pornhub.com/view_video.php?viewkey=ph_overlap'
+    testDb.prepare(
+      `INSERT INTO persistent_row_items (row_key, video_url) VALUES (?, ?)`
+    ).run('ph_likes', url)
+    testDb.prepare(
+      `INSERT INTO persistent_row_items (row_key, video_url) VALUES (?, ?)`
+    ).run('ph_subs', url)
+
+    const app = await buildApp()
+    await callApp(app, 'GET', '/api/stream-url?url=' + encodeURIComponent(url))
+
+    const rows = testDb.prepare(
+      'SELECT row_key, stream_url FROM persistent_row_items WHERE video_url = ?'
+    ).all(url)
+    expect(rows).toHaveLength(2)
+    for (const r of rows) {
+      expect(r.stream_url).toBe('https://cdn.example.com/resolved.mp4')
+    }
+  })
+
+  it('feed_cache wins when fresh in feed_cache and persistent_row_items', async () => {
+    const url = 'https://www.pornhub.com/view_video.php?viewkey=ph_priority'
+    testDb.prepare(
+      `INSERT INTO feed_cache (id, url, stream_url, expires_at)
+       VALUES (?, ?, ?, datetime('now', '+1 hours'))`
+    ).run('fc_prio', url, 'https://cdn.example.com/feed.mp4')
+    testDb.prepare(
+      `INSERT INTO persistent_row_items (row_key, video_url, stream_url, stream_url_expires_at)
+       VALUES (?, ?, ?, datetime('now', '+1 hours'))`
+    ).run('ph_likes', url, 'https://cdn.example.com/persistent.mp4')
+
+    const app = await buildApp()
+    const r = await callApp(app, 'GET', '/api/stream-url?url=' + encodeURIComponent(url))
+    expect(r.status).toBe(200)
+    expect(r.body.streamUrl).toBe('https://cdn.example.com/feed.mp4')
+    expect(mockGetStreamUrl).not.toHaveBeenCalled()
+  })
+
+  it('falls through to yt-dlp when persistent_row_items entry is expired and no other cache has it', async () => {
+    const url = 'https://www.pornhub.com/view_video.php?viewkey=ph_stale'
+    testDb.prepare(
+      `INSERT INTO persistent_row_items (row_key, video_url, stream_url, stream_url_expires_at)
+       VALUES (?, ?, ?, datetime('now', '-1 hours'))`
+    ).run('ph_likes', url, 'https://cdn.example.com/old.mp4')
+
+    const app = await buildApp()
+    const r = await callApp(app, 'GET', '/api/stream-url?url=' + encodeURIComponent(url))
+    expect(r.status).toBe(200)
+    expect(r.body.streamUrl).toBe('https://cdn.example.com/resolved.mp4')
+    expect(mockGetStreamUrl).toHaveBeenCalledOnce()
   })
 
   it('skips the cache lookup when ?format= is provided (forces fresh resolve)', async () => {

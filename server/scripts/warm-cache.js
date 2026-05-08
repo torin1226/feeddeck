@@ -298,9 +298,9 @@ if (modes.includes('nsfw')) {
 // --- Phase 1.6: Eager pre-resolve homepage stream URLs ---
 // Resolves the leading non-pinned categories' first ~10 items so the home
 // page's leftmost cards play with cached-lookup latency instead of cold
-// yt-dlp (~5s on first click). Persistent-row items are still resolved
-// on first click via /api/stream-url; that path now also caches into
-// homepage_cache so subsequent loads are warm.
+// yt-dlp (~5s on first click). Also pre-resolves the static persistent
+// pinned rows (ph_likes, ph_subs); dynamic ph_model_* rows are skipped
+// because top-3 creator_boosts may rotate them out tonight.
 console.log('\n--- Phase 1.6: Eager Pre-resolve Homepage Stream URLs ---')
 const LEADING_CATEGORIES_PER_MODE = 3
 const PER_CATEGORY_LIMIT = 10
@@ -361,6 +361,73 @@ if (homepageUpdateStmt) {
     console.log(`  ${mode}: pre-resolved ${resolved} OK, ${failed} failed`)
     stats.streamUrlsResolved += resolved
     stats.errors += failed
+  }
+
+  // Static persistent rows. UPDATE keys on video_url so a URL appearing in
+  // multiple persistent rows (likes + subs overlap is plausible) gets all
+  // copies refreshed at once.
+  let persistentItemsUpdateStmt
+  try {
+    persistentItemsUpdateStmt = db.prepare(
+      `UPDATE persistent_row_items SET stream_url = ?, stream_url_expires_at = datetime('now', '+2 hours') WHERE video_url = ?`
+    )
+  } catch (err) {
+    console.log(`  ⚠️ Persistent-row pre-resolve skipped (column missing): ${err.message}`)
+    persistentItemsUpdateStmt = null
+  }
+
+  if (persistentItemsUpdateStmt) {
+    let staticRows = []
+    try {
+      staticRows = db.prepare(
+        `SELECT key, label FROM persistent_rows
+         WHERE active = 1 AND fetcher != 'ph_model'
+         ORDER BY sort_order`
+      ).all()
+    } catch (err) {
+      console.log(`  ⚠️ Persistent-rows select failed: ${err.message.substring(0, 60)}`)
+    }
+
+    for (const row of staticRows) {
+      let items
+      try {
+        items = db.prepare(
+          `SELECT video_url FROM persistent_row_items
+           WHERE row_key = ? AND stream_url IS NULL AND video_url IS NOT NULL
+           ORDER BY COALESCE(liked_at, added_at) DESC
+           LIMIT ?`
+        ).all(row.key, PER_CATEGORY_LIMIT)
+      } catch (err) {
+        console.log(`    ⚠️ ${row.key}: select failed: ${err.message.substring(0, 60)}`)
+        continue
+      }
+
+      if (items.length === 0) {
+        console.log(`  ${row.key}: 0 items need resolving`)
+        continue
+      }
+
+      console.log(`  ${row.key} (${row.label}): pre-resolving ${items.length} stream URLs (concurrency: ${CONCURRENCY})...`)
+      let resolved = 0
+      let failed = 0
+      for (let i = 0; i < items.length; i += CONCURRENCY) {
+        const batch = items.slice(i, i + CONCURRENCY)
+        const results = await Promise.allSettled(
+          batch.map(async ({ video_url }) => {
+            const cdnUrl = await registry.getStreamUrl(video_url)
+            persistentItemsUpdateStmt.run(cdnUrl, video_url)
+            return cdnUrl
+          })
+        )
+        for (const r of results) {
+          if (r.status === 'fulfilled') resolved++
+          else failed++
+        }
+      }
+      console.log(`  ${row.key}: pre-resolved ${resolved} OK, ${failed} failed`)
+      stats.streamUrlsResolved += resolved
+      stats.errors += failed
+    }
   }
 }
 

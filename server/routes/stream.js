@@ -102,11 +102,12 @@ router.get('/api/stream-url', async (req, res) => {
   const { url, format } = req.query
   if (!url) return res.status(400).json({ error: 'URL required' })
 
-  // Check feed_cache and homepage_cache for a cached, non-expired stream URL
-  // (skip cache if specific format requested). Either table may have it: feed
-  // items live in feed_cache, homepage cards live in homepage_cache (with
-  // stream_url populated by warm-cache Phase 1.6 or a prior /api/stream-url
-  // resolution). Read both, prefer the freshest non-expired hit.
+  // Check feed_cache, homepage_cache, and persistent_row_items for a cached,
+  // non-expired stream URL (skip cache if specific format requested). Each
+  // surface has its own table: feed items live in feed_cache, homepage cards
+  // in homepage_cache, pinned static rows (ph_likes, ph_subs, ph_model_*) in
+  // persistent_row_items. Read all three; prefer feed_cache when fresh, then
+  // fall through to the freshest of the rest.
   if (!format) {
     try {
       const feedRow = db.prepare(
@@ -118,6 +119,16 @@ router.get('/api/stream-url', async (req, res) => {
           return db.prepare(
             `SELECT stream_url, stream_url_expires_at AS expires_at FROM homepage_cache
              WHERE url = ? AND stream_url IS NOT NULL
+             ORDER BY stream_url_expires_at DESC
+             LIMIT 1`
+          ).get(url)
+        } catch { return null }
+      })()
+      const persistentRow = (() => {
+        try {
+          return db.prepare(
+            `SELECT stream_url, stream_url_expires_at AS expires_at FROM persistent_row_items
+             WHERE video_url = ? AND stream_url IS NOT NULL
              ORDER BY stream_url_expires_at DESC
              LIMIT 1`
           ).get(url)
@@ -136,7 +147,10 @@ router.get('/api/stream-url', async (req, res) => {
       if (isFresh(homepageRow)) {
         return res.json({ streamUrl: homepageRow.stream_url })
       }
-      if (feedRow?.stream_url || homepageRow?.stream_url) {
+      if (isFresh(persistentRow)) {
+        return res.json({ streamUrl: persistentRow.stream_url })
+      }
+      if (feedRow?.stream_url || homepageRow?.stream_url || persistentRow?.stream_url) {
         // Expired — fall through to re-resolve
         logger.info('Stream URL expired, re-resolving', { url: url.substring(0, 60) })
       }
@@ -149,10 +163,11 @@ router.get('/api/stream-url', async (req, res) => {
 
     logger.info('Resolved stream URL', { format: cdnUrl.includes('.m3u8') ? 'HLS' : 'MP4', url: cdnUrl.substring(0, 80) })
 
-    // Cache the resolved stream URL in both tables (expires in 2 hours).
-    // The UPDATE in either table is a no-op when the URL doesn't exist there;
-    // homepage_cache may have multiple rows for the same URL across categories,
-    // so all matching rows get refreshed.
+    // Cache the resolved stream URL in all three tables (expires in 2 hours).
+    // Each UPDATE is a no-op when the URL doesn't exist in that table;
+    // homepage_cache and persistent_row_items may have multiple rows for the
+    // same URL across categories / pinned rows, so all matching rows get
+    // refreshed.
     try {
       db.prepare(
         `UPDATE feed_cache SET stream_url = ?, expires_at = datetime('now', '+2 hours') WHERE url = ?`
@@ -161,6 +176,11 @@ router.get('/api/stream-url', async (req, res) => {
     try {
       db.prepare(
         `UPDATE homepage_cache SET stream_url = ?, stream_url_expires_at = datetime('now', '+2 hours') WHERE url = ?`
+      ).run(cdnUrl, url)
+    } catch { /* column may not exist on older DBs; ignore */ }
+    try {
+      db.prepare(
+        `UPDATE persistent_row_items SET stream_url = ?, stream_url_expires_at = datetime('now', '+2 hours') WHERE video_url = ?`
       ).run(cdnUrl, url)
     } catch { /* column may not exist on older DBs; ignore */ }
 
