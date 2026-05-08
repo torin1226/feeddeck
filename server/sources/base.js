@@ -80,6 +80,8 @@ export class SourceAdapter {
       tags: raw.tags || [],
       upload_date: toIsoDate(raw.upload_date ?? raw.timestamp ?? raw.created_utc),
       orientation: (raw.height && raw.width && raw.height > raw.width) ? 'vertical' : 'horizontal',
+      width: raw.width ?? null,
+      height: raw.height ?? null,
     }
   }
 }

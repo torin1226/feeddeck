@@ -270,14 +270,14 @@ function startScheduledTrendingRefresh() {
     try {
       const videos = await scraperAdapter.fetchTrending({ site, limit: 20 })
       const insert = db.prepare(`
-        INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, fetched_at, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
+        INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, width, height, fetched_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
       `)
       let added = 0
       for (const v of videos) {
         try {
           const compositeId = `nsfw_trending_${v.id}`
-          const result = insert.run(compositeId, 'nsfw_trending', v.url, v.title, v.thumbnail, v.duration, v.source || site, v.uploader, v.view_count, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []))
+          const result = insert.run(compositeId, 'nsfw_trending', v.url, v.title, v.thumbnail, v.duration, v.source || site, v.uploader, v.view_count, v.like_count ?? null, v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []), v.width ?? null, v.height ?? null)
           if (result.changes > 0) added++
         } catch { /* skip on schema error */ }
       }

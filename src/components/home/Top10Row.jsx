@@ -198,8 +198,15 @@ function Top10Card({ item, onClick, onFocus }) {
       </span>
 
       {/* Card */}
-      <div className="w-[clamp(130px,27.4vh,295px)] rounded-lg overflow-hidden bg-raised shadow-card-hover relative">
-        <div className="relative w-full h-[clamp(185px,39vh,420px)]">
+      <div className="rounded-lg overflow-hidden bg-raised shadow-card-hover relative">
+        <div
+          className="relative h-[clamp(185px,39vh,420px)]"
+          style={{
+            aspectRatio: (item.width && item.height)
+              ? `${item.width} / ${item.height}`
+              : (item.orient === 'v' ? '9 / 16' : '16 / 9'),
+          }}
+        >
           <img
             src={item.thumbnailSm || item.thumbnail}
             alt={item.title}

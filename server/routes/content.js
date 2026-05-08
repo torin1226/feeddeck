@@ -5,7 +5,7 @@ import { db } from '../database.js'
 import { registry, ytdlp as ytdlpAdapter, scraper as scraperAdapter } from '../sources/index.js'
 import { logger } from '../logger.js'
 import { getMode, formatDuration, safeParse } from '../utils.js'
-import { scoreVideos } from '../scoring.js'
+import { scoreVideos, syncSearchToTaste } from '../scoring.js'
 import { resolveTopics, recordDiscoveredCreators } from '../topics.js'
 import { isClickbaitTitle } from '../content-filters.js'
 
@@ -284,6 +284,7 @@ router.post('/api/search/history', express.json(), (req, res) => {
        VALUES (?, ?, ?, ?, 'manual')`
     ).run(query.trim(), normalizeQuery(query), m, parseInt(result_count, 10) || 0)
     res.json({ id: result.lastInsertRowid })
+    syncSearchToTaste(query, m)
   } catch (err) {
     logger.error('Search history insert error', { error: err.message })
     res.status(500).json({ error: 'Failed to record search' })
@@ -295,6 +296,8 @@ router.patch('/api/search/history/:id/click', (req, res) => {
     const id = parseInt(req.params.id, 10)
     if (!Number.isFinite(id)) return res.status(400).json({ error: 'invalid id' })
     db.prepare('UPDATE search_history SET clicked_count = clicked_count + 1 WHERE id = ?').run(id)
+    const row = db.prepare('SELECT query, mode FROM search_history WHERE id = ?').get(id)
+    if (row) syncSearchToTaste(row.query, row.mode, { clickBoost: true })
     res.status(204).end()
   } catch (err) {
     logger.error('Search history click error', { error: err.message })
@@ -563,7 +566,7 @@ function getHomepageStmts() {
     // Primary: fresh AND unviewed. Filtering viewed=0 here is what
     // makes Settings → Shuffle actually hide watched items.
     _homepageVideosStmt = db.prepare(
-      `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, fetched_at, tags, viewed
+      `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, fetched_at, tags, viewed, width, height
        FROM homepage_cache
        WHERE category_key = ? AND viewed = 0 AND expires_at > datetime('now')
        ORDER BY fetched_at DESC
@@ -573,7 +576,7 @@ function getHomepageStmts() {
     // when warm-cache hasn't run yet or every fresh entry was just
     // marked viewed (e.g. immediately after a shuffle).
     _homepageVideosFallbackStmt = db.prepare(
-      `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, fetched_at, tags, viewed
+      `SELECT id, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, fetched_at, tags, viewed, width, height
        FROM homepage_cache
        WHERE category_key = ? AND viewed = 0
        ORDER BY fetched_at DESC
@@ -872,8 +875,8 @@ function getRefillStmts() {
       countUnviewed: db.prepare('SELECT COUNT(*) as n FROM homepage_cache WHERE category_key = ? AND viewed = 0'),
       purgeViewed: db.prepare('DELETE FROM homepage_cache WHERE category_key = ? AND viewed = 1'),
       insert: db.prepare(`
-        INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, fetched_at, expires_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
+        INSERT OR IGNORE INTO homepage_cache (id, category_key, url, title, thumbnail, duration, source, uploader, view_count, like_count, subscriber_count, upload_date, tags, width, height, fetched_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now', '+7 days'))
       `),
       crossCatCount: db.prepare(`
         SELECT COUNT(DISTINCT category_key) as cnt FROM homepage_cache
@@ -1058,7 +1061,8 @@ async function refillCategory(categoryKey, sessionCache = new Map()) {
         v.source || null, v.uploader || null,
         v.view_count ?? null, v.like_count ?? null, v.subscriber_count ?? null,
         v.upload_date ?? null,
-        Array.isArray(v.tags) ? JSON.stringify(v.tags) : (typeof v.tags === 'string' ? v.tags : '[]')
+        Array.isArray(v.tags) ? JSON.stringify(v.tags) : (typeof v.tags === 'string' ? v.tags : '[]'),
+        v.width ?? null, v.height ?? null
       )
       if (result.changes > 0) added++
     } catch (err) {
@@ -1099,7 +1103,8 @@ async function _refillLegacy(cat, stmts) {
         const r = stmts.insert.run(
           compositeId, cat.key, v.url, v.title, v.thumbnail, v.duration,
           v.source, v.uploader, v.view_count, v.like_count ?? null,
-          v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || [])
+          v.subscriber_count ?? null, v.upload_date ?? null, JSON.stringify(v.tags || []),
+          v.width ?? null, v.height ?? null
         )
         if (r.changes > 0) added++
       } catch (err) {

@@ -105,6 +105,8 @@ function _mapApiVideo(v) {
     url: v.url,
     tags: v.tags || [],
     orient: (v.height && v.width && v.height > v.width) ? 'v' : 'h',
+    width: v.width || null,
+    height: v.height || null,
     uploadTs,
     fetchedTs,
   }
@@ -537,6 +539,8 @@ const useHomeStore = create((set, get) => ({
           url: v.url,
           tags: v.tags || [],
           orient: (v.height && v.width && v.height > v.width) ? 'v' : 'h',
+          width: v.width || null,
+          height: v.height || null,
           uploadTs,
           fetchedTs,
         }

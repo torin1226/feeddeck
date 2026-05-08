@@ -643,6 +643,22 @@ export function initDatabase() {
     }
   }
 
+  // Migrate: add width / height to homepage_cache so the client can size
+  // thumbnail frames to match the source video's aspect ratio (Top 10 row,
+  // GalleryRow). yt-dlp already exposes raw.width/raw.height; without these
+  // columns the backend was discarding them at normalize time.
+  try {
+    const cols = new Set(db.prepare("PRAGMA table_info(homepage_cache)").all().map(c => c.name))
+    if (!cols.has('width')) {
+      db.exec("ALTER TABLE homepage_cache ADD COLUMN width INTEGER")
+    }
+    if (!cols.has('height')) {
+      db.exec("ALTER TABLE homepage_cache ADD COLUMN height INTEGER")
+    }
+  } catch (err) {
+    logger.warn('homepage_cache width/height migration failed', { error: err.message })
+  }
+
   // Migrate: add stream_url + stream_url_expires_at to homepage_cache so warm-cache
   // can eagerly pre-resolve homepage stream URLs (matching feed_cache.stream_url).
   // Without this, the leftmost cards on home mount hit cold yt-dlp (~5s).
