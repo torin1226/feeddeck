@@ -625,12 +625,16 @@ export function initDatabase() {
     if (nullCount > 0) {
       const select = db.prepare('SELECT rowid FROM videos WHERE id IS NULL')
       const update = db.prepare('UPDATE videos SET id = ? WHERE rowid = ?')
-      const tx = db.transaction(() => {
+      db.exec('BEGIN')
+      try {
         for (const row of select.all()) {
           update.run(`legacy-${row.rowid}-${Math.random().toString(36).slice(2, 12)}`, row.rowid)
         }
-      })
-      tx()
+        db.exec('COMMIT')
+      } catch (txErr) {
+        db.exec('ROLLBACK')
+        throw txErr
+      }
       logger.info(`Backfilled ${nullCount} null-id rows in videos table`)
     }
   } catch (err) {

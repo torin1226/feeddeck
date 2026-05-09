@@ -25,10 +25,31 @@ const CLICKBAIT_PATTERNS = [
 // the content is algorithmically gamed shorts/reels content.
 const HASHTAG_SPAM = /(#\w+\s*){3,}/
 
+const MUSIC_VIDEO_PATTERN = /\(official\s+(music\s+)?video\)|\[official\s+(music\s+)?video\]/i
+
+const PET_TV_PATTERNS = [
+  /dog\s*tv/i,
+  /doggy\s+daycare\s+tv/i,
+  /dog\s+video.+for\s+dogs/i,
+  /relax\s+my\s+dog/i,
+  /dog\s+sounds?\s+barking/i,
+  /cat\s*tv.*for\s+cats/i,
+]
+
 export function isClickbaitTitle(title) {
   if (!title || typeof title !== 'string') return false
   if (HASHTAG_SPAM.test(title)) return true
   return CLICKBAIT_PATTERNS.some(p => p.test(title))
+}
+
+export function isMusicVideo(title) {
+  if (!title || typeof title !== 'string') return false
+  return MUSIC_VIDEO_PATTERN.test(title)
+}
+
+export function isPetTV(title) {
+  if (!title || typeof title !== 'string') return false
+  return PET_TV_PATTERNS.some(p => p.test(title))
 }
 
 // Returns sets of identifiers that uniquely identify a real YouTube

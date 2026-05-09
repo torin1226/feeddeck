@@ -7,7 +7,7 @@ import { logger } from '../logger.js'
 import { getMode, formatDuration, safeParse } from '../utils.js'
 import { scoreVideos, syncSearchToTaste } from '../scoring.js'
 import { resolveTopics, recordDiscoveredCreators } from '../topics.js'
-import { isClickbaitTitle } from '../content-filters.js'
+import { isClickbaitTitle, isMusicVideo, isPetTV } from '../content-filters.js'
 
 const router = Router()
 
@@ -1036,6 +1036,22 @@ async function refillCategory(categoryKey, sessionCache = new Map()) {
     deduped = deduped.filter(v => !isClickbaitTitle(v.title))
     if (deduped.length < before) {
       logger.info(`  🚫 Filtered ${before - deduped.length} clickbait titles from ${categoryKey}`)
+    }
+
+    // Music videos belong in social_music, not news/tech/cooking/etc.
+    if (categoryKey !== 'social_music') {
+      const b2 = deduped.length
+      deduped = deduped.filter(v => !isMusicVideo(v.title))
+      if (deduped.length < b2) {
+        logger.info(`  🚫 Filtered ${b2 - deduped.length} music videos from ${categoryKey}`)
+      }
+    }
+
+    // Pet TV / dog compilations are never on-topic for any social category
+    const b3 = deduped.length
+    deduped = deduped.filter(v => !isPetTV(v.title))
+    if (deduped.length < b3) {
+      logger.info(`  🚫 Filtered ${b3 - deduped.length} pet TV entries from ${categoryKey}`)
     }
   }
 

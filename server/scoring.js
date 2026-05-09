@@ -468,6 +468,44 @@ export function recordEngagement({ rating, tags = [], mode = 'social' }) {
   invalidateProfileCache()
 }
 
+export function syncSearchToTaste(query, mode, { clickBoost = false } = {}) {
+  const fullWeight = clickBoost ? 0.5 : 1.0
+  const wordWeight = clickBoost ? 0.25 : 0.5
+
+  const normalized = String(query).toLowerCase().trim()
+  if (!normalized) return
+
+  const m = mode === 'nsfw' ? 'nsfw' : 'social'
+
+  try {
+    const upsert = db.prepare(
+      `INSERT INTO tag_preferences (tag, preference, mode, weight, last_seen, updated_at)
+       VALUES (?, 'liked', ?, ?, datetime('now'), datetime('now'))
+       ON CONFLICT(tag) DO UPDATE SET
+         preference = 'liked',
+         mode       = excluded.mode,
+         weight     = COALESCE(tag_preferences.weight, 1.0) + ?,
+         last_seen  = datetime('now'),
+         updated_at = datetime('now')`
+    )
+    upsert.run(normalized, m, fullWeight, fullWeight)
+
+    const words = normalized.split(/\s+/).filter(w => w.length >= 3)
+    if (words.length > 1) {
+      const placeholders = words.map(() => '?').join(',')
+      const existing = db.prepare(
+        `SELECT tag FROM tag_preferences WHERE preference = 'liked' AND tag IN (${placeholders})`
+      ).all(...words)
+      for (const row of existing) {
+        upsert.run(row.tag, m, wordWeight, wordWeight)
+      }
+    }
+  } catch (err) {
+    logger.error('syncSearchToTaste failed', { error: err.message })
+  }
+  invalidateProfileCache()
+}
+
 /**
  * Score breakdown for debug overlays.
  */
