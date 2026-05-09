@@ -84,7 +84,10 @@ export default function FeedFilterSheet({ onClose }) {
       setSearching(true)
       try {
         const mode = isSFW ? 'social' : 'nsfw'
-        const res = await fetch(`/api/search/multi?q=${encodeURIComponent(value.trim())}&limit=20&mode=${mode}`)
+        // Cross-source search fans out via yt-dlp; can take 30–60s.
+        // Explicit 90s signal overrides the 15s global wrapper in main.jsx.
+        const signal = AbortSignal.timeout(90_000)
+        const res = await fetch(`/api/search/multi?q=${encodeURIComponent(value.trim())}&limit=20&mode=${mode}`, { signal })
         const data = await res.json()
         setSearchResults(data.results || [])
       } catch {

@@ -866,7 +866,12 @@ const useHomeStore = create((set, get) => ({
     // non-promise in tests) can't leak past refreshHome's await.
     ;(async () => {
       try {
-        const res = await fetch(`/api/homepage/warm?mode=${mode}`, { method: 'POST' })
+        // Warm-cache runs yt-dlp scrapes across all categories; can take
+        // 30–60s. Explicit 90s signal overrides the 15s global wrapper
+        // in main.jsx (which would otherwise abort the request before the
+        // server returned `stats.added` and the swap-in step never ran).
+        const warmSignal = AbortSignal.timeout(90_000)
+        const res = await fetch(`/api/homepage/warm?mode=${mode}`, { method: 'POST', signal: warmSignal })
         if (!res) return
         let added = 0
         let nextEligibleAt = null
