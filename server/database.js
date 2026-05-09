@@ -1248,6 +1248,39 @@ export function initDatabase() {
     logger.error('recommendation_trail table creation failed:', { error: err.message })
   }
 
+  // Refresh query plans after migrations. Cheap on a warm DB; SQLite-recommended
+  // companion to WAL mode. Errors here are non-fatal — fall through if the
+  // pragma is unsupported by the SQLite build.
+  try {
+    db.exec('PRAGMA optimize')
+  } catch (err) {
+    logger.warn('PRAGMA optimize failed at init', { error: err.message })
+  }
+
   logger.info('Database initialized', { path: DB_PATH })
   return db
+}
+
+// Graceful shutdown: optimize, truncate WAL, close.
+// TRUNCATE checkpoint forces all WAL frames into the main db file and
+// leaves -wal at zero bytes — important on the Beelink box where backups
+// (rsync etc) only see the main file. Best-effort: each step is independent.
+export function closeDatabase(database = db) {
+  if (!database) return
+  try {
+    database.exec('PRAGMA optimize')
+  } catch (err) {
+    logger.warn('Shutdown PRAGMA optimize failed', { error: err.message })
+  }
+  try {
+    database.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get()
+  } catch (err) {
+    logger.warn('Shutdown wal_checkpoint failed', { error: err.message })
+  }
+  try {
+    database.close()
+  } catch (err) {
+    logger.warn('Shutdown db.close failed', { error: err.message })
+  }
+  if (database === db) db = null
 }

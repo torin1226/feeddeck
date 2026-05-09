@@ -4,7 +4,7 @@ import { networkInterfaces } from 'os'
 import { existsSync, statSync, writeFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { initDatabase, db } from './database.js'
+import { initDatabase, db, closeDatabase } from './database.js'
 import { registry, scraper as scraperAdapter, closeAllSources } from './sources/index.js'
 import { logger } from './logger.js'
 
@@ -358,13 +358,15 @@ process.on('unhandledRejection', (reason) => {
   logger.warn('Unhandled rejection', { reason: String(reason) })
 })
 const _intervalIds = []
-process.on('SIGTERM', async () => {
-  logger.info('Shutting down...')
+async function _gracefulShutdown(signal) {
+  logger.info('Shutting down...', { signal })
   for (const id of _intervalIds) clearInterval(id)
   await closeAllSources()
-  db.close()
+  closeDatabase()
   process.exit(0)
-})
+}
+process.on('SIGTERM', () => _gracefulShutdown('SIGTERM'))
+process.on('SIGINT', () => _gracefulShutdown('SIGINT'))
 
 // -----------------------------------------------------------
 // Readiness signal. /api/health/ready (in stream.js) reads this
