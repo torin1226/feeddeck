@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import express from 'express'
+import { randomUUID } from 'node:crypto'
 import { db } from '../database.js'
 import { logger } from '../logger.js'
 import { invalidateProfileCache, scoreVideos, getScoreBreakdown, recordEngagement } from '../scoring.js'
@@ -121,10 +122,13 @@ router.post('/api/ratings', express.json(), (req, res) => {
     // inserted as 'nsfw' regardless of source, so YouTube likes appeared in
     // NSFW library and vice versa.
     if (rating === 'up') {
+      // videos.id is TEXT PRIMARY KEY but SQLite allows NULL there. Skipping
+      // the column lets multiple rows land with id = NULL, which collides
+      // on render (LibraryPage uses video.id as React key).
       db.prepare(
-        `INSERT OR IGNORE INTO videos (url, title, thumbnail, duration, source, tags, mode, favorite, added_at)
-         VALUES (?, ?, ?, 0, ?, ?, ?, 1, datetime('now'))`
-      ).run(videoUrl, req.body.title || '', req.body.thumbnail || '', req.body.source || '', tagsJson, videoMode)
+        `INSERT OR IGNORE INTO videos (id, url, title, thumbnail, duration, source, tags, mode, favorite, added_at)
+         VALUES (?, ?, ?, ?, 0, ?, ?, ?, 1, datetime('now'))`
+      ).run(randomUUID(), videoUrl, req.body.title || '', req.body.thumbnail || '', req.body.source || '', tagsJson, videoMode)
       // If already exists, just mark as favorite (don't change mode -- inferMode is authoritative)
       db.prepare('UPDATE videos SET favorite = 1 WHERE url = ?').run(videoUrl)
     }

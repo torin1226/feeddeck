@@ -615,6 +615,28 @@ export function initDatabase() {
     }
   } catch {}
 
+  // Backfill: id is TEXT PRIMARY KEY but SQLite allows NULL there. Older
+  // INSERTs (pre-2026-05-09) omitted the id column on the rate-thumbs-up and
+  // tiktok-import paths, leaving rows with id = NULL. They render with a
+  // null React key in LibraryPage, producing duplicate-key warnings.
+  // Backfill any null-id rows with a fresh UUID.
+  try {
+    const nullCount = db.prepare('SELECT COUNT(*) AS n FROM videos WHERE id IS NULL').get().n
+    if (nullCount > 0) {
+      const select = db.prepare('SELECT rowid FROM videos WHERE id IS NULL')
+      const update = db.prepare('UPDATE videos SET id = ? WHERE rowid = ?')
+      const tx = db.transaction(() => {
+        for (const row of select.all()) {
+          update.run(`legacy-${row.rowid}-${Math.random().toString(36).slice(2, 12)}`, row.rowid)
+        }
+      })
+      tx()
+      logger.info(`Backfilled ${nullCount} null-id rows in videos table`)
+    }
+  } catch (err) {
+    logger.warn('videos null-id backfill failed', { error: err.message })
+  }
+
   // Migrate: add tags column to feed_cache if missing
   try {
     const cols = db.prepare("PRAGMA table_info(feed_cache)").all()

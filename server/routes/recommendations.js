@@ -2,6 +2,7 @@ import { Router } from 'express'
 import express from 'express'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
+import { randomUUID } from 'node:crypto'
 import { db } from '../database.js'
 import { getCookieArgs } from '../cookies.js'
 import { logger } from '../logger.js'
@@ -313,15 +314,17 @@ router.get('/api/recommendations/seed', async (req, res) => {
     } catch {}
   }
 
-  // Phase 4: Import videos into library (videos table)
+  // Phase 4: Import videos into library (videos table).
+  // id is TEXT PRIMARY KEY but SQLite allows NULL there. Generate one
+  // explicitly so rows render with stable React keys downstream.
   let addedVideos = 0
   const insertVideo = db.prepare(`
-    INSERT OR IGNORE INTO videos (url, title, thumbnail, duration, source, tags, mode, added_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    INSERT OR IGNORE INTO videos (id, url, title, thumbnail, duration, source, tags, mode, added_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `)
   for (const v of importedVideos) {
     try {
-      const result = insertVideo.run(v.url, v.title, v.thumbnail, v.duration, v.source, JSON.stringify(v.tags), inferMode(v.url || v.source))
+      const result = insertVideo.run(randomUUID(), v.url, v.title, v.thumbnail, v.duration, v.source, JSON.stringify(v.tags), inferMode(v.url || v.source))
       if (result.changes > 0) addedVideos++
     } catch {}
   }
