@@ -36,6 +36,9 @@ const MUSIC_MIX_PATTERNS = [
   /\bplaylist\s*(vol|volume)?\s*\.?\s*\d/i,
   /\bcleaning\s+mix\b/i,
   /\bCULTUR\s+FM\b/i,
+  /\b(70|80|90)s\s+(80|90|00)s\b.*\b(playlist|hits|music|oldies)\b/i,
+  /\b(best|greatest)\s+music\s+hits?\b.*\b(70|80|90)s\b/i,
+  /\boldies\s+music\b.*\b(playlist|hits|70|80|90)/i,
 ]
 
 const KIDS_CONTENT_PATTERNS = [
@@ -86,6 +89,12 @@ export function isKidsContent(title, uploader) {
 export function isPetTV(title) {
   if (!title || typeof title !== 'string') return false
   return PET_TV_PATTERNS.some(p => p.test(title))
+}
+
+export function isNonEnglishTitle(title) {
+  if (!title || typeof title !== 'string') return false
+  // eslint-disable-next-line no-misleading-character-class
+  return /[Ѐ-ӿ一-鿿぀-ゟ゠-ヿ가-힯؀-ۿ฀-๿ऀ-ॿ]/.test(title)
 }
 
 // Returns sets of identifiers that uniquely identify a real YouTube
