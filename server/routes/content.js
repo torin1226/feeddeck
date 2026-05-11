@@ -7,7 +7,7 @@ import { logger } from '../logger.js'
 import { getMode, formatDuration, safeParse } from '../utils.js'
 import { scoreVideos, syncSearchToTaste } from '../scoring.js'
 import { resolveTopics, recordDiscoveredCreators } from '../topics.js'
-import { isClickbaitTitle, isMusicVideo, isPetTV } from '../content-filters.js'
+import { isClickbaitTitle, isMusicVideo, isMusicMix, isPetTV, isKidsContent } from '../content-filters.js'
 
 const router = Router()
 
@@ -1045,6 +1045,19 @@ async function refillCategory(categoryKey, sessionCache = new Map()) {
       if (deduped.length < b2) {
         logger.info(`  🚫 Filtered ${b2 - deduped.length} music videos from ${categoryKey}`)
       }
+
+      const b2b = deduped.length
+      deduped = deduped.filter(v => !isMusicMix(v.title))
+      if (deduped.length < b2b) {
+        logger.info(`  🚫 Filtered ${b2b - deduped.length} music mixes from ${categoryKey}`)
+      }
+    }
+
+    // Kids content is never on-topic for any social category
+    const b3k = deduped.length
+    deduped = deduped.filter(v => !isKidsContent(v.title, v.uploader))
+    if (deduped.length < b3k) {
+      logger.info(`  🚫 Filtered ${b3k - deduped.length} kids content from ${categoryKey}`)
     }
 
     // Pet TV / dog compilations are never on-topic for any social category

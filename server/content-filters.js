@@ -27,6 +27,28 @@ const HASHTAG_SPAM = /(#\w+\s*){3,}/
 
 const MUSIC_VIDEO_PATTERN = /\(official\s+(music\s+)?video\)|\[official\s+(music\s+)?video\]/i
 
+const MUSIC_MIX_PATTERNS = [
+  /\b(dj\s+)?(mix|set)\b.*\b(house|r&b|rnb|hip\s*hop|afrobeats?|soul|jazz|chill|vibe|lo-?fi)\b/i,
+  /\b(house|r&b|rnb|hip\s*hop|afrobeats?|soul|jazz|chill|vibe|lo-?fi)\b.*\b(mix|set|playlist)\b/i,
+  /\bgreatest\s+hits\b.*\b(mix|mixtape|compilation)\b/i,
+  /\b(mix|mixtape)\b.*\bgreatest\s+hits\b/i,
+  /\b\d+\s*hours?\s+(of\s+)?(music|r&b|rnb|hip\s*hop|soul|jazz|chill)\b/i,
+  /\bplaylist\s*(vol|volume)?\s*\.?\s*\d/i,
+  /\bcleaning\s+mix\b/i,
+  /\bCULTUR\s+FM\b/i,
+]
+
+const KIDS_CONTENT_PATTERNS = [
+  /\bfor\s+kids\b/i,
+  /\bkids\s+(show|channel|song|video|learn)/i,
+  /\bnursery\s+rhymes?\b/i,
+  /\bcocomelon\b/i,
+  /\bbaby\s+shark\b/i,
+  /\bpaw\s+patrol\b/i,
+  /\bpeppa\s+pig\b/i,
+  /\bchris\s+kids\s+show\b/i,
+]
+
 const PET_TV_PATTERNS = [
   /dog\s*tv/i,
   /doggy\s+daycare\s+tv/i,
@@ -45,6 +67,20 @@ export function isClickbaitTitle(title) {
 export function isMusicVideo(title) {
   if (!title || typeof title !== 'string') return false
   return MUSIC_VIDEO_PATTERN.test(title)
+}
+
+export function isMusicMix(title) {
+  if (!title || typeof title !== 'string') return false
+  return MUSIC_MIX_PATTERNS.some(p => p.test(title))
+}
+
+export function isKidsContent(title, uploader) {
+  if (!title || typeof title !== 'string') return false
+  if (KIDS_CONTENT_PATTERNS.some(p => p.test(title))) return true
+  if (uploader && typeof uploader === 'string') {
+    return KIDS_CONTENT_PATTERNS.some(p => p.test(uploader))
+  }
+  return false
 }
 
 export function isPetTV(title) {
