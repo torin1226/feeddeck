@@ -57,7 +57,7 @@ export default function NextUpDialog({ videoRef, nextVideo, onAdvance }) {
       >
         <div className="text-2xl mb-2">✓</div>
         <p className="text-white text-sm font-medium">You're all caught up</p>
-        <p className="text-white/50 text-xs mt-1">Pull in more videos or try a different mode</p>
+        <p className="text-white/50 text-xs mt-1">Refresh the feed or switch modes for more.</p>
         <style>{`
           @keyframes foryou-slideInRight {
             from { transform: translateX(100%); opacity: 0; }

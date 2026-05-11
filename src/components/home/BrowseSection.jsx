@@ -221,7 +221,7 @@ export default function BrowseSection() {
       {feedTransition && (
         <div className="flex items-center justify-center py-16">
           <div className="text-sm text-text-secondary font-medium animate-pulse">
-            Loading feed...
+            Pulling fresh videos...
           </div>
         </div>
       )}

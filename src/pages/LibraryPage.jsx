@@ -18,7 +18,7 @@ import { modeFromIsSFW, isVideoForMode } from '../utils/mode'
 // ============================================================
 
 const TABS = [
-  { key: 'all', label: 'All' },
+  { key: 'all', label: 'Browse all' },
   { key: 'liked', label: 'Liked' },
   { key: 'favorites', label: 'Favorites' },
   { key: 'history', label: 'Watch History' },

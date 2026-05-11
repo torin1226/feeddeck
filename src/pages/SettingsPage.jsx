@@ -439,7 +439,7 @@ export default function SettingsPage() {
                 </span>
               ))}
               {tagPrefs.length === 0 && (
-                <p className="text-text-muted text-sm">No tag preferences set. Add tags you like or dislike to improve recommendations.</p>
+                <p className="text-text-muted text-sm">Tell us what you like. Add tags to shape your recommendations.</p>
               )}
             </div>
           </div>
@@ -621,7 +621,7 @@ export default function SettingsPage() {
 
           {/* Source list */}
           {loading ? (
-            <div className="text-text-muted text-sm">Loading sources...</div>
+            <div className="text-text-muted text-sm">Loading your sources...</div>
           ) : (
             <div className="space-y-2">
               {sources.map((src) => (
@@ -692,7 +692,7 @@ export default function SettingsPage() {
               ))}
               {sources.length === 0 && (
                 <div className="text-text-muted text-sm text-center py-8">
-                  No sources configured. Add one above.
+                  Add a source above to get started.
                 </div>
               )}
             </div>

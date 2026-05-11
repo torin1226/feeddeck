@@ -368,7 +368,7 @@ export default function FeedPage() {
       <div className="h-dvh w-full bg-black flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 border-2 border-white/20 border-t-white/70 rounded-full animate-spin" />
-          <div className="text-text-muted text-sm animate-pulse">Loading feed...</div>
+          <div className="text-text-muted text-sm animate-pulse">Pulling fresh videos...</div>
         </div>
       </div>
     )
@@ -400,11 +400,11 @@ export default function FeedPage() {
         <div className="text-text-muted text-sm font-medium">
           {noSources
             ? 'Add sources in Settings to start your feed'
-            : 'No videos match your current filters'}
+            : 'Nothing matches those filters right now'}
         </div>
         {!noSources && (
           <div className="text-text-muted/60 text-xs max-w-[260px] text-center">
-            Try adjusting your source or tag filters.
+            Loosen a filter or two and try again.
           </div>
         )}
         <div className="flex gap-2 mt-4">
@@ -543,7 +543,7 @@ export default function FeedPage() {
       {/* Pull-to-refresh indicator */}
       {refreshing && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-toast px-4 py-2 rounded-full bg-black/40 backdrop-blur-lg border border-white/20 text-white text-xs font-medium">
-          Refreshing...
+          Pulling fresh content...
         </div>
       )}
 
