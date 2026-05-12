@@ -110,6 +110,49 @@ export function isNonEnglishTitle(title) {
   return /[Ѐ-ӿ一-鿿぀-ゟ゠-ヿ가-힯؀-ۿ฀-๿ऀ-ॿ]/.test(title)
 }
 
+// Apply the full social content-quality filter chain to an array of videos.
+// Mirrors the per-filter logic in routes/content.js refillCategory so feed
+// refill paths drop the same junk as homepage refill (music mixes, kids
+// content, full-movie clickbait, non-English titles, etc).
+//
+// `context` is a short string used only in log lines ("feed cache social",
+// "warm-cache social_news", etc). `logFn` defaults to noop so callers can
+// opt in to logging without forcing it. The optional `categoryKey` is used
+// by the music filters: items in social_music are allowed through.
+//
+// NSFW mode passes through unchanged. These patterns target social/YouTube
+// contamination shapes and would false-positive on NSFW titles.
+export function filterSocialContent(videos, { mode, context = '', categoryKey = null, logFn = () => {} } = {}) {
+  if (!Array.isArray(videos) || videos.length === 0) return videos
+  if (mode !== 'social') return videos
+
+  let result = videos
+
+  const drop = (predicate, label) => {
+    const before = result.length
+    result = result.filter(v => !predicate(v))
+    const dropped = before - result.length
+    if (dropped > 0) {
+      logFn(`Filtered ${dropped} ${label}${context ? ` from ${context}` : ''}`)
+    }
+  }
+
+  drop(v => isClickbaitTitle(v.title), 'clickbait titles')
+
+  // Music videos and mixes are only allowed in the dedicated music category.
+  if (categoryKey !== 'social_music') {
+    drop(v => isMusicVideo(v.title), 'music videos')
+    drop(v => isMusicMix(v.title), 'music mixes')
+  }
+
+  drop(v => isKidsContent(v.title, v.uploader), 'kids content')
+  drop(v => isPetTV(v.title), 'pet TV entries')
+  drop(v => isNonEnglishTitle(v.title), 'non-English titles')
+  drop(v => isFullMovie(v.title), 'full-movie clickbait')
+
+  return result
+}
+
 // Returns sets of identifiers that uniquely identify a real YouTube
 // subscription. We match on channel_id when available, but
 // subscription_backups today only stores display_name/handle (manual

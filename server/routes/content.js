@@ -7,7 +7,7 @@ import { logger } from '../logger.js'
 import { getMode, formatDuration, safeParse } from '../utils.js'
 import { scoreVideos, syncSearchToTaste } from '../scoring.js'
 import { resolveTopics, recordDiscoveredCreators } from '../topics.js'
-import { isClickbaitTitle, isMusicVideo, isMusicMix, isFullMovie, isPetTV, isKidsContent, isNonEnglishTitle } from '../content-filters.js'
+import { filterSocialContent } from '../content-filters.js'
 
 const router = Router()
 
@@ -1029,56 +1029,15 @@ async function refillCategory(categoryKey, sessionCache = new Map()) {
     }
   }
 
-  // Social categories: drop clickbait farm titles ("Try Not To Laugh — Top 100",
-  // "FUNNY VIDEOS Compilation 2026 #109", #viral.*#trending.*#shorts spam).
-  if (cat.mode === 'social') {
-    const before = deduped.length
-    deduped = deduped.filter(v => !isClickbaitTitle(v.title))
-    if (deduped.length < before) {
-      logger.info(`  🚫 Filtered ${before - deduped.length} clickbait titles from ${categoryKey}`)
-    }
-
-    // Music videos belong in social_music, not news/tech/cooking/etc.
-    if (categoryKey !== 'social_music') {
-      const b2 = deduped.length
-      deduped = deduped.filter(v => !isMusicVideo(v.title))
-      if (deduped.length < b2) {
-        logger.info(`  🚫 Filtered ${b2 - deduped.length} music videos from ${categoryKey}`)
-      }
-
-      const b2b = deduped.length
-      deduped = deduped.filter(v => !isMusicMix(v.title))
-      if (deduped.length < b2b) {
-        logger.info(`  🚫 Filtered ${b2b - deduped.length} music mixes from ${categoryKey}`)
-      }
-    }
-
-    // Kids content is never on-topic for any social category
-    const b3k = deduped.length
-    deduped = deduped.filter(v => !isKidsContent(v.title, v.uploader))
-    if (deduped.length < b3k) {
-      logger.info(`  🚫 Filtered ${b3k - deduped.length} kids content from ${categoryKey}`)
-    }
-
-    // Pet TV / dog compilations are never on-topic for any social category
-    const b3 = deduped.length
-    deduped = deduped.filter(v => !isPetTV(v.title))
-    if (deduped.length < b3) {
-      logger.info(`  🚫 Filtered ${b3 - deduped.length} pet TV entries from ${categoryKey}`)
-    }
-
-    const b4 = deduped.length
-    deduped = deduped.filter(v => !isNonEnglishTitle(v.title))
-    if (deduped.length < b4) {
-      logger.info(`  🚫 Filtered ${b4 - deduped.length} non-English titles from ${categoryKey}`)
-    }
-
-    const b5 = deduped.length
-    deduped = deduped.filter(v => !isFullMovie(v.title))
-    if (deduped.length < b5) {
-      logger.info(`  🚫 Filtered ${b5 - deduped.length} full-movie clickbait from ${categoryKey}`)
-    }
-  }
+  // Social categories: drop clickbait farms, music mixes, kids content,
+  // pet TV, non-English titles, full-movie clickbait. NSFW pass-through.
+  // See filterSocialContent in server/content-filters.js for the full chain.
+  deduped = filterSocialContent(deduped, {
+    mode: cat.mode,
+    context: categoryKey,
+    categoryKey,
+    logFn: msg => logger.info(`  🚫 ${msg}`),
+  })
 
   // Fire-and-forget creator recording — keeps DB writes off the critical path.
   setImmediate(() => recordDiscoveredCreators(categoryKey, deduped, sources))

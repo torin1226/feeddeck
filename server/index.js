@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url'
 import { initDatabase, db, closeDatabase } from './database.js'
 import { registry, scraper as scraperAdapter, closeAllSources } from './sources/index.js'
 import { logger } from './logger.js'
+import { filterSocialContent } from './content-filters.js'
 
 // Route modules
 import streamRoutes from './routes/stream.js'
@@ -90,7 +91,17 @@ async function _refillFeedCacheImpl(mode) {
     try {
       const query = src.query
       // Use registry search with fallback chain (scraper → yt-dlp)
-      const videos = await registry.search(query, { site: src.domain, limit: 20 })
+      const rawVideos = await registry.search(query, { site: src.domain, limit: 20 })
+
+      // Apply the social content-quality filter chain (clickbait, music
+      // mixes, kids content, pet TV, non-English titles, full-movie
+      // clickbait) before insert. Matches routes/content.js and warm-cache
+      // so junk does not enter feed_cache.
+      const videos = filterSocialContent(rawVideos, {
+        mode,
+        context: src.label,
+        logFn: msg => logger.info(`  🚫 ${msg}`),
+      })
 
       // Two INSERT variants: one for videos with a pre-set stream URL (longer cache TTL
       // since the CDN URL is already known-good), one for videos that need yt-dlp resolution.

@@ -446,13 +446,16 @@ for (const mode of modes) {
 
       let videos = await withRetry(src.label, () => registry.search(query, { site: src.domain, limit: 20 }))
 
-      // Drop clickbait-farm titles from social sources before insert.
+      // Drop clickbait farms, music mixes, kids content, pet TV, non-English
+      // titles, full-movie clickbait from social sources before insert.
+      // Matches the homepage refill filter chain in routes/content.js.
       if (mode === 'social') {
-        const { isClickbaitTitle } = await import('../content-filters.js')
-        const before = videos.length
-        videos = videos.filter(v => !isClickbaitTitle(v.title))
-        const dropped = before - videos.length
-        if (dropped > 0) console.log(`    🚫 Dropped ${dropped} clickbait titles`)
+        const { filterSocialContent } = await import('../content-filters.js')
+        videos = filterSocialContent(videos, {
+          mode,
+          context: src.label,
+          logFn: msg => console.log(`    🚫 ${msg}`),
+        })
       }
 
       const insert = db.prepare(`
