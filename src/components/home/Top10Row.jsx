@@ -10,11 +10,19 @@ import { registerPreviewTarget, prefetchStreamUrl } from '../../hooks/useFocusPr
 // ============================================================
 
 export default function Top10Row() {
-  const { top10, setFocusedItem } = useHomeStore()
+  const { top10, setFocusedItem, markExposed } = useHomeStore()
   const navigate = useNavigate()
   const rowRef = useRef(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(false)
+
+  // Top 10 is bounded to 10 items and all are above-the-fold once the
+  // row mounts. Mark them as exposed so /api/feed/next can dedupe.
+  // Mirrors HeroCarousel's pattern; markExposed is a no-op for IDs
+  // already in the set, so re-shuffles are safe.
+  useEffect(() => {
+    if (top10?.length > 0) markExposed(top10)
+  }, [top10, markExposed])
 
   const updateScrollState = useCallback(() => {
     const el = rowRef.current
