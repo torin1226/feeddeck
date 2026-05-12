@@ -7,7 +7,7 @@ import { logger } from '../logger.js'
 import { getMode, formatDuration, safeParse } from '../utils.js'
 import { scoreVideos, syncSearchToTaste } from '../scoring.js'
 import { resolveTopics, recordDiscoveredCreators } from '../topics.js'
-import { isClickbaitTitle, isMusicVideo, isMusicMix, isPetTV, isKidsContent, isNonEnglishTitle } from '../content-filters.js'
+import { isClickbaitTitle, isMusicVideo, isMusicMix, isFullMovie, isPetTV, isKidsContent, isNonEnglishTitle } from '../content-filters.js'
 
 const router = Router()
 
@@ -1071,6 +1071,12 @@ async function refillCategory(categoryKey, sessionCache = new Map()) {
     deduped = deduped.filter(v => !isNonEnglishTitle(v.title))
     if (deduped.length < b4) {
       logger.info(`  🚫 Filtered ${b4 - deduped.length} non-English titles from ${categoryKey}`)
+    }
+
+    const b5 = deduped.length
+    deduped = deduped.filter(v => !isFullMovie(v.title))
+    if (deduped.length < b5) {
+      logger.info(`  🚫 Filtered ${b5 - deduped.length} full-movie clickbait from ${categoryKey}`)
     }
   }
 

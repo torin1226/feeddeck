@@ -52,6 +52,14 @@ const KIDS_CONTENT_PATTERNS = [
   /\bchris\s+kids\s+show\b/i,
 ]
 
+const FULL_MOVIE_PATTERNS = [
+  /\bfull\s+(hd\s+)?movie\b/i,
+  /\bnew\s+action\s+movie\s+20\d{2}\b/i,
+  /\bfull\s+length\s+(film|movie)\b/i,
+  /\bcomplete\s+movie\b/i,
+  /\bhollywood\s+(action\s+)?(movie|film)\s+20\d{2}\b/i,
+]
+
 const PET_TV_PATTERNS = [
   /dog\s*tv/i,
   /doggy\s+daycare\s+tv/i,
@@ -84,6 +92,11 @@ export function isKidsContent(title, uploader) {
     return KIDS_CONTENT_PATTERNS.some(p => p.test(uploader))
   }
   return false
+}
+
+export function isFullMovie(title) {
+  if (!title || typeof title !== 'string') return false
+  return FULL_MOVIE_PATTERNS.some(p => p.test(title))
 }
 
 export function isPetTV(title) {

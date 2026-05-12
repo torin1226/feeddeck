@@ -325,8 +325,9 @@ if (homepageUpdateStmt) {
       try {
         const items = db.prepare(
           `SELECT id, url FROM homepage_cache
-           WHERE category_key = ? AND viewed = 0 AND stream_url IS NULL AND url IS NOT NULL
+           WHERE category_key = ? AND viewed = 0 AND url IS NOT NULL
              AND expires_at > datetime('now')
+             AND (stream_url IS NULL OR stream_url_expires_at IS NULL OR stream_url_expires_at < datetime('now'))
            ORDER BY fetched_at DESC
            LIMIT ?`
         ).all(cat.key, PER_CATEGORY_LIMIT)
@@ -393,7 +394,8 @@ if (homepageUpdateStmt) {
       try {
         items = db.prepare(
           `SELECT video_url FROM persistent_row_items
-           WHERE row_key = ? AND stream_url IS NULL AND video_url IS NOT NULL
+           WHERE row_key = ? AND video_url IS NOT NULL
+             AND (stream_url IS NULL OR stream_url_expires_at IS NULL OR stream_url_expires_at < datetime('now'))
            ORDER BY COALESCE(liked_at, added_at) DESC
            LIMIT ?`
         ).all(row.key, PER_CATEGORY_LIMIT)
