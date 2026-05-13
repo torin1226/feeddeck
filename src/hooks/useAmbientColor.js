@@ -11,7 +11,23 @@ import { useEffect, useState } from 'react'
 // ============================================================
 
 const SAMPLE_SIZE = 24
+// Bound the module-level cache so a long browse session can't grow the
+// map without limit. Same shape as useFocusPreview's URL_CACHE_CAP — FIFO
+// eviction past this size. Hero items churn through many thumbnails over
+// a session and rgb-tuple values are tiny but the keys (image URLs) add
+// up. 200 keeps the working set warm without unbounded growth.
+const CACHE_CAP = 200
 const cache = new Map()
+
+function cacheSet(url, value) {
+  // Re-insert to move to the tail of the Map (Map preserves insertion
+  // order so the oldest entry is always at the head for eviction).
+  if (cache.has(url)) cache.delete(url)
+  cache.set(url, value)
+  while (cache.size > CACHE_CAP) {
+    cache.delete(cache.keys().next().value)
+  }
+}
 
 function sample(img) {
   const canvas = document.createElement('canvas')
@@ -60,12 +76,12 @@ export default function useAmbientColor(url) {
     img.onload = () => {
       if (cancelled) return
       const rgb = sample(img)
-      cache.set(url, rgb)
+      cacheSet(url, rgb)
       setColor(rgb)
     }
     img.onerror = () => {
       if (cancelled) return
-      cache.set(url, null)
+      cacheSet(url, null)
       setColor(null)
     }
     img.src = url
@@ -74,4 +90,23 @@ export default function useAmbientColor(url) {
   }, [url])
 
   return color
+}
+
+// Test helpers — only used by useAmbientColor.test.js to drive the cache
+// directly without orchestrating Image() loads in jsdom.
+export const _CACHE_CAP_FOR_TESTS = CACHE_CAP
+
+export function _cacheSetForTests(url, value) {
+  cacheSet(url, value)
+}
+
+export function _peekCacheForTests() {
+  return {
+    size: cache.size,
+    keys: Array.from(cache.keys()),
+  }
+}
+
+export function _resetCacheForTests() {
+  cache.clear()
 }
