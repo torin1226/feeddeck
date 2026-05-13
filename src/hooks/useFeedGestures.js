@@ -30,6 +30,7 @@ export default function useFeedGestures({
   const touchStart = useRef(null)
   const lastTapTime = useRef(0)
   const longPressTimer = useRef(null)
+  const tapDelayTimer = useRef(null)
   const gestureConsumed = useRef(false)
 
   const callbacksRef = useRef({ onSwipeLeft, onSwipeRight, onSwipeUp, onDoubleTap, onTap, onLongPress })
@@ -110,11 +111,19 @@ export default function useFeedGestures({
       const now = Date.now()
       if (now - lastTapTime.current < DOUBLE_TAP_MS) {
         lastTapTime.current = 0
+        if (tapDelayTimer.current) {
+          clearTimeout(tapDelayTimer.current)
+          tapDelayTimer.current = null
+        }
         callbacksRef.current.onDoubleTap?.(e)
       } else {
         lastTapTime.current = now
-        // Delay single tap to distinguish from double-tap
-        setTimeout(() => {
+        // Delay single tap to distinguish from double-tap. Captured into a
+        // ref so unmount cleanup can cancel it; rapid taps clear the prior
+        // timer before scheduling a new one so the queue never stacks.
+        if (tapDelayTimer.current) clearTimeout(tapDelayTimer.current)
+        tapDelayTimer.current = setTimeout(() => {
+          tapDelayTimer.current = null
           if (Date.now() - lastTapTime.current >= DOUBLE_TAP_MS - 10) {
             callbacksRef.current.onTap?.(e)
           }
@@ -138,6 +147,10 @@ export default function useFeedGestures({
       el.removeEventListener('touchend', handleTouchEnd)
       el.removeEventListener('touchcancel', handleTouchCancel)
       clearTimeout(longPressTimer.current)
+      if (tapDelayTimer.current) {
+        clearTimeout(tapDelayTimer.current)
+        tapDelayTimer.current = null
+      }
     }
   }, [containerRef])
 }
