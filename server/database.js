@@ -737,6 +737,32 @@ export function initDatabase() {
     db.prepare("DELETE FROM homepage_cache WHERE category_key IN ('social_trending', 'social_shorts') AND viewed = 0").run()
   } catch {}
 
+  // Migrate: refresh stale fallback_queries for social_cooking + social_design.
+  // The 2026-05-13 hydration commit (9d7e149) updated the SOCIAL_LAYOUT migration
+  // to fix off-topic results (76%/63% rates), but that migration is gated on
+  // `if (!haveNews)` and did not re-run on existing DBs. The `query` column was
+  // refreshed separately, leaving `fallback_queries` stale (still pointing at
+  // the off-topic strings). The fallback path in routes/content.js fires when
+  // the topic pipeline returns sparse results, so the stale strings reintroduce
+  // the very content the May 13 fix was meant to retire. Idempotent: only
+  // fires when the exact old payload is present.
+  try {
+    db.prepare(
+      `UPDATE categories SET fallback_queries = ?
+       WHERE key = 'social_cooking' AND fallback_queries = ?`
+    ).run(
+      '["ytsearch10:home cooking recipe tutorial"]',
+      '["ytsearch10:cooking recipe short"]'
+    )
+    db.prepare(
+      `UPDATE categories SET fallback_queries = ?
+       WHERE key = 'social_design' AND fallback_queries = ?`
+    ).run(
+      '["ytsearch10:UI design figma tutorial"]',
+      '["ytsearch10:UI UX design tips"]'
+    )
+  } catch {}
+
   // Migrate: add title + thumbnail columns to video_ratings if missing
   try {
     const cols = db.prepare("PRAGMA table_info(video_ratings)").all()
