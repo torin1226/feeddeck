@@ -763,6 +763,31 @@ export function initDatabase() {
     )
   } catch {}
 
+  // Migrate: remove trends24:howto-and-style from topic_sources for cooking,
+  // design, explainers, and trends24:science-and-technology from tech.
+  // These generic topic pipeline sources return trending content unrelated to
+  // the category (biker videos in cooking, Roblox in design, gaming in tech).
+  // Replaced with discovered_creators + boosted_creators for category-specific results.
+  try {
+    const topicFixes = [
+      ['social_cooking',    '["trends24:howto-and-style","liked_tags:cooking"]',
+                            '["liked_tags:cooking","discovered_creators:social_cooking"]'],
+      ['social_design',     '["liked_tags:design,ux","trends24:howto-and-style","boosted_creators:5"]',
+                            '["liked_tags:design,ux","boosted_creators:5","discovered_creators:social_design"]'],
+      ['social_explainers', '["trends24:howto-and-style","liked_tags:tutorial,documentary"]',
+                            '["liked_tags:tutorial,documentary","discovered_creators:social_explainers"]'],
+      ['social_tech',       '["trends24:science-and-technology","liked_tags:tech"]',
+                            '["liked_tags:tech","boosted_creators:3","discovered_creators:social_tech"]'],
+      ['social_ai',         '["liked_tags:ai,vibe coding,claude tutorial,claude routines","trends24:science-and-technology"]',
+                            '["liked_tags:ai,vibe coding,claude tutorial,claude routines","boosted_creators:3","discovered_creators:social_ai"]'],
+    ]
+    for (const [key, oldVal, newVal] of topicFixes) {
+      db.prepare(
+        `UPDATE categories SET topic_sources = ? WHERE key = ? AND topic_sources = ?`
+      ).run(newVal, key, oldVal)
+    }
+  } catch {}
+
   // Migrate: add title + thumbnail columns to video_ratings if missing
   try {
     const cols = db.prepare("PRAGMA table_info(video_ratings)").all()
@@ -1043,13 +1068,13 @@ export function initDatabase() {
         ['social_what_now',       "What's Trending Now",   'topic:trends24:all',
           2, '["trends24:all"]', '[]'],
         ['social_ai',             'AI & Coding',           'topic:liked_tags:ai',
-          3, '["liked_tags:ai,vibe coding,claude tutorial,claude routines","trends24:science-and-technology"]',
+          3, '["liked_tags:ai,vibe coding,claude tutorial,claude routines","boosted_creators:3","discovered_creators:social_ai"]',
           '["ytsearch10:AI coding tutorial 2026"]'],
         ['social_tech',           'Tech & Gadgets',        'ytsearch10:best new tech gadgets',
-          4, '["trends24:science-and-technology","liked_tags:tech"]',
+          4, '["liked_tags:tech","boosted_creators:3","discovered_creators:social_tech"]',
           '["ytsearch10:best new tech gadgets"]'],
         ['social_design',         'Design',                'ytsearch10:UI design figma tutorial',
-          5, '["liked_tags:design,ux","trends24:howto-and-style","boosted_creators:5"]',
+          5, '["liked_tags:design,ux","boosted_creators:5","discovered_creators:social_design"]',
           '["ytsearch10:UI design figma tutorial"]'],
         ['social_late_night',     'Late Night Comedy',     'topic:trends24:comedy',
           6, '["trends24:comedy","liked_tags:comedy,funny","boosted_creators:5"]',
@@ -1067,14 +1092,14 @@ export function initDatabase() {
           10, '["trends24:sports","liked_tags:carolina panthers,unc tar heels"]',
           '["ytsearch10:sports highlights this week"]'],
         ['social_cooking',        'Cooking',               'ytsearch10:home cooking recipe tutorial',
-          11, '["trends24:howto-and-style","liked_tags:cooking"]',
+          11, '["liked_tags:cooking","discovered_creators:social_cooking"]',
           '["ytsearch10:home cooking recipe tutorial"]'],
         ['social_reddit_unexp',   'Reddit Unexpected',     'https://www.reddit.com/r/Unexpected/hot',
           12, '[]', '[]'],
         ['social_reddit_nfl',     'Reddit NextLevel',      'https://www.reddit.com/r/nextfuckinglevel/hot',
           13, '[]', '[]'],
         ['social_explainers',     'Explainers',            'ytsearch10:explained in 5 minutes',
-          14, '["trends24:howto-and-style","liked_tags:tutorial,documentary"]',
+          14, '["liked_tags:tutorial,documentary","discovered_creators:social_explainers"]',
           '["ytsearch10:explained in 5 minutes"]'],
         ['social_film',           'Film & TV',             'topic:trends24:film-and-animation',
           15, '["trends24:film-and-animation","liked_tags:new in theaters,scifi"]',
