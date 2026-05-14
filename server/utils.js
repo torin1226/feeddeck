@@ -46,12 +46,61 @@ export function inferMode(urlOrSource) {
   return 'social'
 }
 
+// ============================================================
+// Mode-leak audit trail
+// Rolling in-memory ring buffer of every getMode(req) call that
+// arrived without a `?mode=` query param. Surfaced via the
+// GET /api/debug/mode-leaks route so client bugs that miss the
+// mode param become grep-able in seconds rather than dark for
+// days. Filed 2026-05-14 (Resilience-lens director) after a
+// client tag-preferences fetch sat shape-broken for 19 days
+// because no contract caught it. See known-issues 07a9e52.
+// ============================================================
+const MODE_LEAK_BUFFER_CAP = 200
+const modeLeakBuffer = []
+
+function recordModeLeak(req) {
+  // Wrapped so a malformed req shape can never break a route. The
+  // function runs on every getMode() miss across 21 route handlers;
+  // a thrown exception here would surface as a 500 to the caller.
+  try {
+    const entry = {
+      ts: new Date().toISOString(),
+      method: req.method || 'GET',
+      path: req.path || '',
+      query: { ...(req.query || {}) },
+      userAgent: typeof req.get === 'function' ? (req.get('user-agent') || null) : null,
+      referer: typeof req.get === 'function' ? (req.get('referer') || null) : null,
+    }
+    modeLeakBuffer.push(entry)
+    while (modeLeakBuffer.length > MODE_LEAK_BUFFER_CAP) {
+      modeLeakBuffer.shift()
+    }
+  } catch (err) {
+    logger.error('[recordModeLeak] failed to record', { error: err.message })
+  }
+}
+
+/** Returns a snapshot copy of the mode-leak ring buffer.
+ *  Newest entries are at the end. */
+export function getModeLeaks() {
+  return modeLeakBuffer.slice()
+}
+
+/** Empties the mode-leak ring buffer.
+ *  Used by tests and by DELETE /api/debug/mode-leaks. */
+export function clearModeLeaks() {
+  modeLeakBuffer.length = 0
+}
+
 /** Read mode from request query, default to 'social' (fail safe).
- *  Logs a warning if mode param is missing on content endpoints. */
+ *  Logs a warning AND records to the mode-leak ring buffer if the
+ *  mode param is missing on content endpoints. */
 export function getMode(req) {
   const mode = req.query.mode
   if (!mode) {
     logger.warn(`Missing mode param on ${req.path} — defaulting to social`, { query: req.query })
+    recordModeLeak(req)
   }
   if (mode === 'nsfw') return 'nsfw'
   return 'social'

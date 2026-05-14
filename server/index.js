@@ -19,6 +19,7 @@ import tiktokRoutes from './routes/tiktok.js'
 import creatorsRoutes from './routes/creators.js'
 import subscriptionBackupRoutes from './routes/subscription-backup.js'
 import ratingsRoutes from './routes/ratings.js'
+import debugRoutes from './routes/debug.js'
 import { modeFirewall } from './firewall.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -55,6 +56,7 @@ app.use(tiktokRoutes)
 app.use(creatorsRoutes)
 app.use(subscriptionBackupRoutes)
 app.use(ratingsRoutes)
+app.use(debugRoutes)
 
 // SPA catch-all: serve index.html for non-API routes (client-side routing)
 if (existsSync(distPath)) {
