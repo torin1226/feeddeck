@@ -48,17 +48,20 @@ export default function FeedPage() {
   const filters = useFeedStore(s => s.filters)
   const hasActiveFilters = (filters.sources?.length > 0) || (filters.tags?.length > 0)
 
-  // Sources count for context-aware empty state
+  // Sources count for context-aware empty state. Mode-scoped so the
+  // "Add sources" vs "Manage Sources" copy reflects the current mode
+  // rather than the union of all modes' sources.
   const [sourcesCount, setSourcesCount] = useState(null)
   useEffect(() => {
-    fetch('/api/sources/list')
+    const mode = isSFW ? 'social' : 'nsfw'
+    fetch(`/api/sources/list?mode=${mode}`)
       .then(r => r.json())
       .then(data => {
         const sources = Array.isArray(data) ? data : (data.sources || [])
         setSourcesCount(sources.length)
       })
       .catch(() => setSourcesCount(0))
-  }, [])
+  }, [isSFW])
 
   // Pull-to-refresh state
   const [refreshing, setRefreshing] = useState(false)

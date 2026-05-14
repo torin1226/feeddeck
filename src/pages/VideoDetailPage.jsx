@@ -5,6 +5,7 @@ import useQueueStore from '../stores/queueStore'
 import useLibraryStore from '../stores/libraryStore'
 import useToastStore from '../stores/toastStore'
 import useRatingsStore from '../stores/ratingsStore'
+import useModeStore from '../stores/modeStore'
 import HomeHeader from '../components/home/HomeHeader'
 import DetailPlayer from '../components/watch/DetailPlayer'
 import DetailMeta from '../components/watch/DetailMeta'
@@ -39,6 +40,7 @@ export default function VideoDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { viewMode, setViewMode } = useViewMode()
+  const isSFW = useModeStore((s) => s.isSFW)
 
   // Locate item across all id-owning stores.
   // Library uses bare UUIDs (Continue Watching deep links land here),
@@ -164,7 +166,8 @@ export default function VideoDetailPage() {
       return
     }
     let cancelled = false
-    fetch('/api/discover?limit=8')
+    const mode = isSFW ? 'social' : 'nsfw'
+    fetch(`/api/discover?limit=8&mode=${mode}`)
       .then((r) => r.ok ? r.json() : { videos: [] })
       .then((data) => {
         if (cancelled) return
@@ -180,7 +183,7 @@ export default function VideoDetailPage() {
       })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [seedRating, item?.url])
+  }, [seedRating, item?.url, isSFW])
 
   const nextItem = useMemo(() => {
     if (queue && queue.length > 0 && queueIndex >= 0 && queueIndex < queue.length - 1) {

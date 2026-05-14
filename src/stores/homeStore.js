@@ -671,15 +671,18 @@ const useHomeStore = create((set, get) => ({
         items: cat.items.filter(isUnclaimed),
       }))
 
-      // Client-side recommendation scoring: boost categories with liked tags + personalize titles
+      // Client-side recommendation scoring: boost categories with liked tags + personalize titles.
+      // Mode-scoped fetch so NSFW tag preferences do not pollute social scoring and vice versa.
+      // Server returns { preferences: [{ tag, preference }] } — derive liked/disliked locally.
       let likedTags = new Set()
       try {
-        const tagRes = await fetch('/api/tags/preferences')
+        const tagRes = await fetch(`/api/tags/preferences?mode=${mode}`)
         if (version !== _fetchVersion) return
         if (tagRes.ok) {
-          const prefs = await tagRes.json()
-          likedTags = new Set((prefs.liked || []).map(t => t.toLowerCase()))
-          const disliked = new Set((prefs.disliked || []).map(t => t.toLowerCase()))
+          const data = await tagRes.json()
+          const prefs = Array.isArray(data?.preferences) ? data.preferences : []
+          likedTags = new Set(prefs.filter(p => p.preference === 'liked').map(p => p.tag.toLowerCase()))
+          const disliked = new Set(prefs.filter(p => p.preference === 'disliked').map(p => p.tag.toLowerCase()))
 
           if (likedTags.size > 0 || disliked.size > 0) {
             categories = categories.map(cat => {
