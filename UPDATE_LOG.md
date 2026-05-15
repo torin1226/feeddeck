@@ -1,5 +1,34 @@
 # FeedDeck Update Log
 
+## 2026-05-15 (Feature) — New `/audio` surface (audio porn page)
+
+### Completed
+- **Shipped new NSFW-only `/audio` route end-to-end** with typography-first card layout, sticky mini-player, evergreen content model, and creator-voice-weighted taste profile. Plan at [`C:\Users\torin\.claude\plans\generic-exploring-lampson.md`](../.claude/plans/generic-exploring-lampson.md). Architecture decision at [`../_memory/decisions/2026-05-15-audio-surface-architecture.md`](../_memory/decisions/2026-05-15-audio-surface-architecture.md).
+- **Schema:** new `audio_cache` table (separate from `feed_cache` because audio is evergreen, taste-ordered, and stream-different); `creators.surface` column scopes audio creators away from the video fetcher.
+- **Sources:** new `SoundgasmAdapter` (regex-extracts `media.soundgasm.net/sounds/{hash}.m4a` from post HTML); new `server/sources/audio-fetcher.js` orchestrator dispatches Reddit + Soundgasm into `audio_cache`. Probed both before writing the adapter: Reddit audio subs are self-posts with soundgasm links in selftext; Soundgasm pages expose the m4a URL directly in HTML.
+- **Scoring:** new `audioScore()` + `recomputeAudioScores()` in [`scoring.js`](server/scoring.js). Reads `taste_profile WHERE surface_key='audio'` + `creator_boosts.surface_boosts.audio` JSON. Creator match weighted 5× over tag overlap per Torin's "creator voice over topic" instruction. Own profile cache.
+- **API:** [`routes/audio.js`](server/routes/audio.js) with `GET /api/audio/feed`, `POST /api/audio/:id/rate`, `POST /api/audio/:id/play`, `POST /api/audio/:id/complete`, `GET /api/audio/stats`. Rate handler reuses existing `video_ratings` table with `surface_type='audio'`.
+- **Scheduler:** 30-min audio fetcher tick in [`server/index.js`](server/index.js) (lower frequency than video feed because audio is evergreen).
+- **PDF backfill:** [`server/scripts/import-audio-pdf.js`](server/scripts/import-audio-pdf.js) uses `pdftotext` (poppler, ships with Git for Windows). Walks `cookies/audio videos to scrape.pdf`, extracts URLs, classifies (Reddit/Soundgasm = usable; bit.ly/Fansly/SubscribeStar = skip), resolves each through the Reddit → soundgasm → m4a chain. 347 URLs in PDF → 131 usable; smoke test (`--limit 15`) inserted 13 cleanly.
+- **Frontend:** new `audioFeedStore` Zustand store (queue + index + position + localRatings), `AudioPage` (max-w-3xl single column, source + creator filter chips), `AudioCard` (Iowan Old Style serif 21.6px headline, creator-initial chip, tag pills, no thumbnail), `AudioPlayer` (sticky bottom — prev/play/next/scrub + thumbs-up/down). AudioPlayer mounted at AppShell so playback persists across route changes (returns null when no track active).
+- **End-to-end browser verified** before MCP preview disconnect: schema migration ran, API returns playable items, cards render with serif typography, click → audio plays (Soundgasm m4a, `readyState: 4`, `duration: 1557s`), thumbs-up loop closes (rated track jumps to `taste_score: 81`, other Cattt tracks lift from 5 → 39 via `creator_boosts.surface_boosts.audio`).
+
+### Decisions Made
+- **Separate `audio_cache` table, not a column on `feed_cache`.** Mixing them would muddy the `(mode, watched, fetched_at DESC)` hot path. See decision note.
+- **`surface_key='audio'` + `mode='nsfw'`, not a new mode.** Audio is always NSFW; surface_key is the right axis. Keeps the existing 2-mode firewall intact.
+- **AudioPlayer at AppShell, not AudioPage.** First implementation cut audio on nav; lifting to AppShell with `Suspense fallback={null}` keeps the `<audio>` element alive.
+- **Reused `video_ratings` with `surface_type='audio'`** rather than building a parallel `audio_ratings` table. Same audit/library plumbing; a future "Liked audio" view is one filtered query.
+- **PDF backfill via `pdftotext` (poppler), not a new npm dep.** One-shot script doesn't justify a permanent dep.
+
+### Files
+New: `server/sources/soundgasm.js`, `server/sources/audio-fetcher.js`, `server/routes/audio.js`, `server/scripts/import-audio-pdf.js`, `src/stores/audioFeedStore.js`, `src/pages/AudioPage.jsx`, `src/components/audio/AudioCard.jsx`, `src/components/audio/AudioPlayer.jsx`.
+Modified: `server/database.js`, `server/scoring.js`, `server/sources/index.js`, `server/index.js`, `src/components/AppShell.jsx`, `src/components/Header.jsx`, `src/components/home/HomeHeader.jsx`, `../BACKLOG.md`.
+
+### Deferred to v2
+XNXX / existing-NSFW-source audio filter; hotaudio.net + gwasi.com; voice-feature embeddings.
+
+---
+
 ## 2026-05-06 PM (Debug) — `/feed` Time-to-First-Video: 30s → 1.6s
 
 ### Completed
