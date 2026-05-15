@@ -9,11 +9,13 @@ import { useRef, useCallback, useEffect } from 'react'
 // - Plays muted, low-res
 // - Waits for canplay before calling play() (prevents AbortError)
 // - Race-condition safe: checks activeAbort identity before applying
+// - HLS support via lazy-loaded hls.js (PornHub serves HLS-only)
 // ============================================================
 
 // Singleton: only one preview active across all cards
 let activeAbort = null
 let activeVideo = null
+let activeHls = null
 
 // Module-level cancel — operates only on singletons, no React state
 function doCancel(timerRef) {
@@ -23,6 +25,11 @@ function doCancel(timerRef) {
   if (activeAbort) {
     activeAbort.abort()
     activeAbort = null
+  }
+
+  if (activeHls) {
+    try { activeHls.destroy() } catch {}
+    activeHls = null
   }
 
   if (activeVideo) {
@@ -75,27 +82,54 @@ export default function useHoverPreview() {
         // activeAbort will have changed — bail out
         if (activeAbort !== abort) return
 
-        // Skip HLS streams — they require hls.js which is too heavy for hover previews
         const cdnUrl = data.streamUrl
-        if (cdnUrl.includes('.m3u8')) return
+        const isHls = cdnUrl.includes('.m3u8')
 
-        // Proxy CDN URL to avoid CORS/ORB blocking
-        videoEl.src = `/api/proxy-stream?url=${encodeURIComponent(cdnUrl)}`
         videoEl.muted = true
         videoEl.playsInline = true
         videoEl.loop = true
         videoEl.preload = 'metadata'
-        videoEl.load()
         activeVideo = videoEl
 
-        // Wait for canplay before attempting play — prevents AbortError
-        videoEl.addEventListener('canplay', () => {
-          // Double-check we're still the active preview
-          if (!abort.signal.aborted && activeAbort === abort) {
-            videoEl.style.opacity = '1'
-            videoEl.play().catch(() => {})
+        if (isHls) {
+          // PornHub (and any other future HLS-only source) needs hls.js.
+          // Lazy-load to avoid the 500kB cost on hovers that don't need it.
+          // Vite optimizes the dep, so this resolves to the prebundled chunk.
+          const { default: Hls } = await import('hls.js')
+          if (abort.signal.aborted || activeAbort !== abort) return
+          if (Hls.isSupported()) {
+            videoEl.removeAttribute('src')
+            activeHls = new Hls({ enableWorker: true, lowLatencyMode: false })
+            activeHls.on(Hls.Events.MANIFEST_PARSED, () => {
+              if (!abort.signal.aborted && activeAbort === abort) {
+                videoEl.style.opacity = '1'
+                videoEl.play().catch(() => {})
+              }
+            })
+            activeHls.loadSource(`/api/hls-proxy?url=${encodeURIComponent(cdnUrl)}`)
+            activeHls.attachMedia(videoEl)
+          } else {
+            // Native HLS (Safari): point at hls-proxy directly
+            videoEl.src = `/api/hls-proxy?url=${encodeURIComponent(cdnUrl)}`
+            videoEl.load()
+            videoEl.addEventListener('canplay', () => {
+              if (!abort.signal.aborted && activeAbort === abort) {
+                videoEl.style.opacity = '1'
+                videoEl.play().catch(() => {})
+              }
+            }, { once: true })
           }
-        }, { once: true })
+        } else {
+          // Proxy CDN URL to avoid CORS/ORB blocking
+          videoEl.src = `/api/proxy-stream?url=${encodeURIComponent(cdnUrl)}`
+          videoEl.load()
+          videoEl.addEventListener('canplay', () => {
+            if (!abort.signal.aborted && activeAbort === abort) {
+              videoEl.style.opacity = '1'
+              videoEl.play().catch(() => {})
+            }
+          }, { once: true })
+        }
 
         // Handle video element errors (bad proxy response, codec issues)
         videoEl.addEventListener('error', () => {

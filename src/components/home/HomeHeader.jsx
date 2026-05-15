@@ -178,10 +178,14 @@ export default function HomeHeader() {
     navigate(`/watch/${encodeURIComponent(id)}`)
   }, [closeSearch, navigate])
 
+  // Audio entry is NSFW-only (the page itself gates SFW with an empty
+  // state, but we hide the nav entry too so SFW users don't see a dead
+  // link).
   const navItems = [
     { label: 'Home', path: '/' },
     { label: 'Feed', path: '/feed' },
     { label: 'Library', path: '/library' },
+    ...(isSFW ? [] : [{ label: 'Audio', path: '/audio' }]),
   ]
 
   return (

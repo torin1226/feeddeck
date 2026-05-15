@@ -462,6 +462,30 @@ export function initDatabase() {
       FOREIGN KEY (row_key) REFERENCES persistent_rows(key) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_persistent_items_row ON persistent_row_items(row_key, liked_at DESC, added_at DESC);
+
+    -- Audio surface (separate from feed_cache because audio is evergreen,
+    -- ordered by taste_score not fetched_at, and stream is an audio file
+    -- not a video). Lifecycle: hold until rated or evicted by a higher-
+    -- taste-match item. See plan: generic-exploring-lampson.md.
+    CREATE TABLE IF NOT EXISTS audio_cache (
+      id TEXT PRIMARY KEY,
+      source_domain TEXT,
+      url TEXT NOT NULL UNIQUE,
+      audio_url TEXT,
+      title TEXT NOT NULL,
+      creator TEXT,
+      creator_handle TEXT,
+      tags TEXT DEFAULT '[]',
+      duration_sec INTEGER,
+      length_label TEXT,
+      fetched_at DATETIME DEFAULT (datetime('now')),
+      played_at DATETIME,
+      watched INTEGER DEFAULT 0,
+      rated INTEGER DEFAULT 0,
+      taste_score REAL DEFAULT 0.0
+    );
+    CREATE INDEX IF NOT EXISTS idx_audio_cache_score ON audio_cache(taste_score DESC, rated, watched);
+    CREATE INDEX IF NOT EXISTS idx_audio_cache_creator ON audio_cache(creator);
   `)
 
   // Seed default categories if empty
@@ -714,6 +738,18 @@ export function initDatabase() {
     }
   } catch (err) {
     logger.warn('persistent_row_items stream_url migration failed', { error: err.message })
+  }
+
+  // Migrate: add surface column to creators so the audio fetcher can tell
+  // which reddit/soundgasm creators belong to the audio surface vs the
+  // existing video feed. Default 'feed' keeps existing rows on the video path.
+  try {
+    const cols = new Set(db.prepare("PRAGMA table_info(creators)").all().map(c => c.name))
+    if (!cols.has('surface')) {
+      db.exec("ALTER TABLE creators ADD COLUMN surface TEXT NOT NULL DEFAULT 'feed'")
+    }
+  } catch (err) {
+    logger.warn('creators surface migration failed', { error: err.message })
   }
 
   // Migrate idx_feed_cache_mode from (mode, watched, expires_at) to

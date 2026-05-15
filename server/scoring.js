@@ -582,3 +582,176 @@ export function getScoreBreakdown(video, surfaceKey = null, opts = {}) {
     belowMinVisible: final < MIN_VISIBLE_SCORE,
   }
 }
+
+// ============================================================
+// Audio surface scoring
+//
+// Different shape from the video feed: audio is evergreen (no recency
+// bonus, no age penalty) and creator voice is weighted ~5x over topic.
+// Reads its own taste signals (surface_key='audio') so it doesn't mix
+// with the video taste profile. See plan: generic-exploring-lampson.md.
+// ============================================================
+
+const AUDIO_POINTS = {
+  creatorMatch: 50,          // direct creator-tag match in taste_profile
+  creatorBoostMultiplier: 50, // creator_boosts.surface_boosts.audio (score 0..2 typically)
+  creatorBoostCap: 100,
+  likedTagPerMatch: 10,      // 5x lower than creator match
+  dislikedTagPerMatch: -25,
+  newCreatorBaseline: 5,     // small floor so unrated creators surface in the mix
+}
+
+const _audioProfileCache = { value: null, time: 0 }
+
+function _loadAudioProfile() {
+  const now = Date.now()
+  if (_audioProfileCache.value && (now - _audioProfileCache.time) < CACHE_TTL_MS) {
+    return _audioProfileCache.value
+  }
+
+  try {
+    // Taste signals scoped to the audio surface. mode='nsfw' because audio
+    // is always nsfw content; surface_key='audio' is what scopes the signal
+    // away from the video feed.
+    const sigs = db.prepare(
+      `SELECT signal_type, signal_value, weight FROM taste_profile
+       WHERE surface_key = 'audio' AND (mode IS NULL OR mode = 'nsfw')`
+    ).all()
+
+    const likedTags = new Map()
+    const dislikedTags = new Map()
+    const creatorTaste = new Map()
+    for (const s of sigs) {
+      const v = (s.signal_value || '').toLowerCase()
+      if (!v) continue
+      if (s.signal_type === 'tag') {
+        if (s.weight > 0) likedTags.set(v, Math.max(likedTags.get(v) || 0, s.weight))
+        else if (s.weight < 0) dislikedTags.set(v, Math.max(dislikedTags.get(v) || 0, Math.abs(s.weight)))
+      } else if (s.signal_type === 'creator') {
+        creatorTaste.set(v, (creatorTaste.get(v) || 0) + s.weight)
+      }
+    }
+
+    // Per-surface creator boosts: surface_boosts JSON column on creator_boosts.
+    // Falls back to the global boost_score if no audio entry exists yet.
+    const boostRows = db.prepare(
+      'SELECT creator, boost_score, surface_boosts FROM creator_boosts'
+    ).all()
+    const creatorBoosts = new Map()
+    for (const r of boostRows) {
+      let surfaceVal = null
+      try {
+        const sb = JSON.parse(r.surface_boosts || '{}')
+        if (typeof sb.audio === 'number') surfaceVal = sb.audio
+      } catch {}
+      const v = surfaceVal !== null ? surfaceVal : (r.boost_score || 0) * 0.5
+      if (r.creator && v !== 0) creatorBoosts.set(r.creator, v)
+    }
+
+    // Blocked NSFW creators apply to audio too.
+    const blockedCreators = new Set(
+      db.prepare(
+        "SELECT creator FROM blocked_creators WHERE action = 'blocked' AND mode = 'nsfw'"
+      ).all().map(r => r.creator)
+    )
+
+    const profile = { likedTags, dislikedTags, creatorTaste, creatorBoosts, blockedCreators }
+    _audioProfileCache.value = profile
+    _audioProfileCache.time = now
+    return profile
+  } catch (err) {
+    logger.error('Failed to load audio taste profile', { error: err.message })
+    return {
+      likedTags: new Map(),
+      dislikedTags: new Map(),
+      creatorTaste: new Map(),
+      creatorBoosts: new Map(),
+      blockedCreators: new Set(),
+    }
+  }
+}
+
+/**
+ * Score a single audio item. Higher creator weight than tag weight, no
+ * recency bonus, no age penalty. Returns 0 for blocked creators.
+ */
+export function audioScore(item, profile = null) {
+  const p = profile || _loadAudioProfile()
+  const creator = (item.creator || '').toLowerCase()
+  if (creator && p.blockedCreators.has(item.creator)) return 0
+  if (item.rated === -1) return 0
+
+  let points = AUDIO_POINTS.newCreatorBaseline
+
+  if (creator && p.creatorTaste.has(creator)) {
+    const w = Math.min(2, Math.max(-2, p.creatorTaste.get(creator)))
+    points += AUDIO_POINTS.creatorMatch * w
+  }
+
+  if (item.creator && p.creatorBoosts.has(item.creator)) {
+    const raw = p.creatorBoosts.get(item.creator) * AUDIO_POINTS.creatorBoostMultiplier
+    points += Math.max(-AUDIO_POINTS.creatorBoostCap, Math.min(AUDIO_POINTS.creatorBoostCap, raw))
+  }
+
+  const tags = _parseTags(item.tags)
+  for (const t of tags) {
+    if (typeof t !== 'string') continue
+    const tl = t.toLowerCase()
+    if (p.likedTags.has(tl)) {
+      points += AUDIO_POINTS.likedTagPerMatch * Math.min(2, p.likedTags.get(tl))
+    } else if (p.dislikedTags.has(tl)) {
+      points += AUDIO_POINTS.dislikedTagPerMatch * Math.min(2, p.dislikedTags.get(tl))
+    }
+  }
+
+  return Math.max(0, points)
+}
+
+/**
+ * Recompute audio_cache.taste_score for the given creator's items, plus a
+ * small batch of unrelated items so cross-creator ordering stays current.
+ * Called after rate events from the audio routes.
+ */
+export function recomputeAudioScores(creator = null) {
+  invalidateAudioProfileCache()
+  const profile = _loadAudioProfile()
+
+  try {
+    let rows
+    if (creator) {
+      rows = db.prepare(
+        `SELECT id, creator, tags, rated FROM audio_cache WHERE creator = ?`
+      ).all(creator)
+      // Also pick a random batch of 200 other items to keep the heap fresh.
+      const others = db.prepare(
+        `SELECT id, creator, tags, rated FROM audio_cache
+         WHERE creator IS NOT ? ORDER BY RANDOM() LIMIT 200`
+      ).all(creator)
+      rows = rows.concat(others)
+    } else {
+      rows = db.prepare(`SELECT id, creator, tags, rated FROM audio_cache`).all()
+    }
+
+    const upd = db.prepare('UPDATE audio_cache SET taste_score = ? WHERE id = ?')
+    db.exec('BEGIN')
+    try {
+      for (const r of rows) {
+        const score = audioScore(r, profile)
+        upd.run(score, r.id)
+      }
+      db.exec('COMMIT')
+    } catch (txErr) {
+      db.exec('ROLLBACK')
+      throw txErr
+    }
+    return rows.length
+  } catch (err) {
+    logger.warn('recomputeAudioScores failed', { error: err.message })
+    return 0
+  }
+}
+
+export function invalidateAudioProfileCache() {
+  _audioProfileCache.value = null
+  _audioProfileCache.time = 0
+}

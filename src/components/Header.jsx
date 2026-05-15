@@ -13,10 +13,15 @@ import useHomeStore from '../stores/homeStore'
 // In Social mode: shows FeedDeck branding.
 // ============================================================
 
+// Nav items shown in all modes. Audio is NSFW-only; rendered separately
+// in the nav so it only appears when isSFW=false.
 const navItems = [
   { label: 'Home', path: '/' },
   { label: 'Feed', path: '/feed' },
   { label: 'Library', path: '/library' },
+]
+const NSFW_NAV_ITEMS = [
+  { label: 'Audio', path: '/audio' },
 ]
 
 export default function Header({ onSearch, onSearchSubmit }) {
@@ -50,7 +55,7 @@ export default function Header({ onSearch, onSearchSubmit }) {
 
           {/* Nav links */}
           <nav className="hidden md:flex gap-5 shrink-0">
-            {navItems.map(item => (
+            {[...navItems, ...(isSFW ? [] : NSFW_NAV_ITEMS)].map(item => (
               <button
                 key={item.path}
                 onClick={() => navigate(item.path)}

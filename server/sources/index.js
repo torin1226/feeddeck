@@ -21,12 +21,14 @@ import { YtDlpAdapter } from './ytdlp.js'
 import { ScraperAdapter } from './scraper.js'
 import { CobaltAdapter } from './cobalt.js'
 import { CreatorAdapter } from './creator.js'
+import { SoundgasmAdapter } from './soundgasm.js'
 
 // Create adapter instances
 const ytdlp = new YtDlpAdapter()
 const scraper = new ScraperAdapter()
 const cobalt = new CobaltAdapter()
 const creator = new CreatorAdapter()
+const soundgasm = new SoundgasmAdapter()
 
 // Register adapters
 // Order matters: first registered with a capability becomes primary for fallback chains
@@ -34,6 +36,10 @@ const creator = new CreatorAdapter()
 // Creator adapter handles Reddit/TikTok/Instagram/Twitter discovery
 // Registered first so it claims these domains before yt-dlp's universal fallback
 registry.register(creator, { primary: true })
+
+// Soundgasm adapter: per-user audio post discovery + media URL resolution.
+// Audio surface only — does not conflict with the video chain.
+registry.register(soundgasm, { primary: true })
 
 // Scraper is primary for NSFW discovery (search, categories, trending)
 registry.register(scraper, { primary: true })
@@ -61,4 +67,4 @@ export async function closeAllSources() {
 }
 
 // Export individual adapters for direct access when needed
-export { registry, ytdlp, scraper, cobalt }
+export { registry, ytdlp, scraper, cobalt, soundgasm }

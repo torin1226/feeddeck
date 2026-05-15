@@ -3,6 +3,14 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  // hls.js is only reached via a dynamic import() in FeedVideo / useVideoEngine
+  // when a `.m3u8` URL is encountered. Vite's optimizer doesn't statically
+  // discover it from those code paths, so we hint it explicitly — otherwise
+  // the dynamic import throws "Failed to resolve module specifier 'hls.js'"
+  // the first time PornHub (HLS-only as of 2026-05-14) is encountered.
+  optimizeDeps: {
+    include: ['hls.js'],
+  },
   server: {
     port: 3000,
     host: '0.0.0.0',

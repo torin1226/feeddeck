@@ -16,6 +16,12 @@ const FeedPage = lazy(() => import('../pages/FeedPage'))
 const SettingsPage = lazy(() => import('../pages/SettingsPage'))
 const VideoDetailPage = lazy(() => import('../pages/VideoDetailPage'))
 const SearchPage = lazy(() => import('../pages/SearchPage'))
+const AudioPage = lazy(() => import('../pages/AudioPage'))
+// AudioPlayer is mounted at the AppShell level so playback persists
+// across route changes (navigating away from /audio doesn't kill the
+// stream). The component returns null when no track is active, so
+// SFW users never see it.
+const AudioPlayer = lazy(() => import('./audio/AudioPlayer'))
 
 // Legacy /video/:id → /watch/:id permanent redirect.
 function RedirectVideoToWatch() {
@@ -66,6 +72,7 @@ export default function AppShell() {
             <Route path="/watch/:id" element={<ErrorBoundary name="Video"><VideoDetailPage /></ErrorBoundary>} />
             <Route path="/video/:id" element={<RedirectVideoToWatch />} />
             <Route path="/search" element={<ErrorBoundary name="Search"><SearchPage /></ErrorBoundary>} />
+            <Route path="/audio" element={<ErrorBoundary name="Audio"><AudioPage /></ErrorBoundary>} />
           </Routes>
         </Suspense>
       </main>
@@ -74,6 +81,12 @@ export default function AppShell() {
       {!isFeed && <FloatingQueue />}
       <GlobalToast />
       <OfflineBanner />
+      {/* Persistent audio player. Mounted at the root so the <audio>
+          element survives route changes; returns null when nothing is
+          loaded so it's invisible on pages other than /audio. */}
+      <Suspense fallback={null}>
+        <AudioPlayer />
+      </Suspense>
     </>
   )
 

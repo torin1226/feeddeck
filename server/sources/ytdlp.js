@@ -212,22 +212,19 @@ export class YtDlpAdapter extends SourceAdapter {
   async getStreamUrl(url, options = {}) {
     if (!this.isAvailable()) throw new Error('yt-dlp not installed')
 
-    // Use caller-specified format (from quality selector) or fall back to default preference
+    // The literal IDs 1080p/720p/480p used to lead this list, but PornHub
+    // lists those as direct-MP4 (protocol=https, ext=mp4) and yt-dlp happily
+    // resolves them to signed URLs that the CDN then returns 404 for —
+    // PH only serves the HLS variants now. Dropping the literal IDs lets
+    // [ext=mp4] match either direct MP4 (when it works) or the HLS-of-mp4
+    // wrapper (when MP4 is dead), and yt-dlp's quality scoring picks the
+    // higher-tbr HLS option in the PH case. Verified across PH/redgifs/
+    // xvideos/xhamster/youporn/redtube/fikfap/YouTube on 2026-05-14.
     const formatStr = options?.format
-      || '1080p/720p/480p/best[height<=1080][protocol=https][ext=mp4][vcodec!*=av01]/best[height<=1080][ext=mp4]/18/best[ext=mp4]/best'
+      || 'best[height<=1080][protocol=https][ext=mp4][vcodec!*=av01]/best[height<=1080][ext=mp4]/18/best[ext=mp4]/best'
     const stdout = await ytdlp(['-g', '-f', formatStr, url], url)
 
-    let cdnUrl = stdout.trim().split('\n')[0]
-
-    // If yt-dlp returned HLS and no explicit format was requested, retry with direct MP4 formats
-    if (cdnUrl.includes('.m3u8') && !options?.format) {
-      try {
-        const mp4Out = await ytdlp(['-g', '-f', '1080p/720p/480p/18', url], url)
-        cdnUrl = mp4Out.trim().split('\n')[0]
-      } catch { /* keep original if format 18 fails */ }
-    }
-
-    return cdnUrl
+    return stdout.trim().split('\n')[0]
   }
 
   async search(query, options = {}) {

@@ -19,7 +19,9 @@ import tiktokRoutes from './routes/tiktok.js'
 import creatorsRoutes from './routes/creators.js'
 import subscriptionBackupRoutes from './routes/subscription-backup.js'
 import ratingsRoutes from './routes/ratings.js'
+import audioRoutes from './routes/audio.js'
 import debugRoutes from './routes/debug.js'
+import { fetchAudioCycle } from './sources/audio-fetcher.js'
 import { modeFirewall } from './firewall.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -56,6 +58,7 @@ app.use(tiktokRoutes)
 app.use(creatorsRoutes)
 app.use(subscriptionBackupRoutes)
 app.use(ratingsRoutes)
+app.use(audioRoutes)
 app.use(debugRoutes)
 
 // SPA catch-all: serve index.html for non-API routes (client-side routing)
@@ -309,6 +312,28 @@ function startScheduledTrendingRefresh() {
   }, TRENDING_INTERVAL)
 }
 
+// Audio surface fetcher tick. Runs less frequently than the video feed
+// because audio is evergreen — no urgency to pull "the latest." 30 min
+// is plenty to keep new uploads flowing in for the active creators.
+function startScheduledAudioFetch() {
+  const AUDIO_INTERVAL = 30 * 60_000
+  let running = false
+  return setInterval(async () => {
+    if (running) return
+    running = true
+    try {
+      const inserted = await fetchAudioCycle(registry)
+      if (inserted > 0) {
+        logger.info(`  🎧 Audio fetch: ${inserted} new items`)
+      }
+    } catch (err) {
+      logger.error('  ❌ Audio fetch tick failed:', { error: err.message })
+    } finally {
+      running = false
+    }
+  }, AUDIO_INTERVAL)
+}
+
 function startStreamUrlTTLMonitor() {
   const TTL_CHECK_INTERVAL = 5 * 60_000
   let tickCount = 0
@@ -466,6 +491,7 @@ app.listen(PORT, '0.0.0.0', () => {
 
   _intervalIds.push(startScheduledFeedRefill())
   _intervalIds.push(startScheduledTrendingRefresh())
+  _intervalIds.push(startScheduledAudioFetch())
   _intervalIds.push(startStreamUrlTTLMonitor())
 
   // First-boot population
