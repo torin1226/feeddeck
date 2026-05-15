@@ -824,6 +824,26 @@ export function initDatabase() {
     }
   } catch {}
 
+  // Migrate: remove boosted_creators from tech, design, and AI topic_sources.
+  // General boosts (Team Coco, ok storytime, NPR Music) leak off-topic content
+  // into categories where they don't belong. Keep boosted_creators only in
+  // late_night and music where the boosted creators are category-relevant.
+  try {
+    const boostFixes = [
+      ['social_tech',   '["liked_tags:tech","boosted_creators:3","discovered_creators:social_tech"]',
+                        '["liked_tags:tech","discovered_creators:social_tech"]'],
+      ['social_design', '["liked_tags:design,ux","boosted_creators:5","discovered_creators:social_design"]',
+                        '["liked_tags:design,ux","discovered_creators:social_design"]'],
+      ['social_ai',     '["liked_tags:ai,vibe coding,claude tutorial,claude routines","boosted_creators:3","discovered_creators:social_ai"]',
+                        '["liked_tags:ai,vibe coding,claude tutorial,claude routines","discovered_creators:social_ai"]'],
+    ]
+    for (const [key, oldVal, newVal] of boostFixes) {
+      db.prepare(
+        `UPDATE categories SET topic_sources = ? WHERE key = ? AND topic_sources = ?`
+      ).run(newVal, key, oldVal)
+    }
+  } catch {}
+
   // Migrate: add title + thumbnail columns to video_ratings if missing
   try {
     const cols = db.prepare("PRAGMA table_info(video_ratings)").all()
@@ -1104,13 +1124,13 @@ export function initDatabase() {
         ['social_what_now',       "What's Trending Now",   'topic:trends24:all',
           2, '["trends24:all"]', '[]'],
         ['social_ai',             'AI & Coding',           'topic:liked_tags:ai',
-          3, '["liked_tags:ai,vibe coding,claude tutorial,claude routines","boosted_creators:3","discovered_creators:social_ai"]',
+          3, '["liked_tags:ai,vibe coding,claude tutorial,claude routines","discovered_creators:social_ai"]',
           '["ytsearch10:AI coding tutorial 2026"]'],
         ['social_tech',           'Tech & Gadgets',        'ytsearch10:best new tech gadgets',
-          4, '["liked_tags:tech","boosted_creators:3","discovered_creators:social_tech"]',
+          4, '["liked_tags:tech","discovered_creators:social_tech"]',
           '["ytsearch10:best new tech gadgets"]'],
         ['social_design',         'Design',                'ytsearch10:UI design figma tutorial',
-          5, '["liked_tags:design,ux","boosted_creators:5","discovered_creators:social_design"]',
+          5, '["liked_tags:design,ux","discovered_creators:social_design"]',
           '["ytsearch10:UI design figma tutorial"]'],
         ['social_late_night',     'Late Night Comedy',     'topic:trends24:comedy',
           6, '["trends24:comedy","liked_tags:comedy,funny","boosted_creators:5"]',
