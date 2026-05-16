@@ -21,6 +21,7 @@ import subscriptionBackupRoutes from './routes/subscription-backup.js'
 import ratingsRoutes from './routes/ratings.js'
 import audioRoutes from './routes/audio.js'
 import debugRoutes from './routes/debug.js'
+import boundaryDebugRoutes from './routes/boundary-debug.js'
 import { fetchAudioCycle } from './sources/audio-fetcher.js'
 import { modeFirewall } from './firewall.js'
 
@@ -60,6 +61,7 @@ app.use(subscriptionBackupRoutes)
 app.use(ratingsRoutes)
 app.use(audioRoutes)
 app.use(debugRoutes)
+app.use(boundaryDebugRoutes)
 
 // SPA catch-all: serve index.html for non-API routes (client-side routing)
 if (existsSync(distPath)) {
