@@ -24,7 +24,10 @@ export default function DebugBoundaryPage() {
         const r = await fetch('/api/debug/boundary-stats')
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         const json = await r.json()
-        if (!cancelled) setBoundaries(json.boundaries || {})
+        if (!cancelled) {
+          setBoundaries(json.boundaries || {})
+          setError(null)
+        }
       } catch (err) {
         if (!cancelled) setError(err.message)
       }

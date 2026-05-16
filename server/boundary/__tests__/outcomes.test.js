@@ -47,11 +47,15 @@ describe('classifyHttp(response, body)', () => {
 })
 
 describe('classifyError(err)', () => {
-  it('returns timeout for AbortError / ETIMEDOUT / ABORT_ERR / ESOCKETTIMEDOUT', () => {
+  it('returns timeout for AbortError / ETIMEDOUT / ABORT_ERR / ESOCKETTIMEDOUT / ENOTFOUND / ECONNREFUSED / ECONNRESET / EAI_AGAIN', () => {
     expect(classifyError({ name: 'AbortError' })).toBe('timeout')
     expect(classifyError({ code: 'ETIMEDOUT' })).toBe('timeout')
     expect(classifyError({ code: 'ABORT_ERR' })).toBe('timeout')
     expect(classifyError({ code: 'ESOCKETTIMEDOUT' })).toBe('timeout')
+    expect(classifyError({ code: 'ENOTFOUND' })).toBe('timeout')
+    expect(classifyError({ code: 'ECONNREFUSED' })).toBe('timeout')
+    expect(classifyError({ code: 'ECONNRESET' })).toBe('timeout')
+    expect(classifyError({ code: 'EAI_AGAIN' })).toBe('timeout')
   })
   it('returns auth_failed when stderr/message mentions cookies/login', () => {
     expect(classifyError({ stderr: 'cookies are no longer valid' })).toBe('auth_failed')

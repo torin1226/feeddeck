@@ -81,6 +81,19 @@ async function wrappedExec(cmd, args, opts = {}) {
   )
 
   if (error) {
+    // Partial-success: child exited non-zero but produced usable stdout
+    // (yt-dlp --ignore-errors pattern). Treat as ok so the snitch tally
+    // reflects user-visible outcome, not transport-layer exit code.
+    if (typeof error.stdout === 'string' && error.stdout.trim().length > 0) {
+      record(name, OUTCOMES.OK, durationMs)
+      return {
+        outcome: OUTCOMES.OK,
+        value: error.stdout,
+        stderr: error.stderr ?? '',
+        durationMs,
+        error, // still surfaced so callers can inspect exit details if needed
+      }
+    }
     const outcome = classifyError(error)
     record(name, outcome, durationMs)
     return { outcome, value: null, stderr: error?.stderr ?? '', durationMs, error }

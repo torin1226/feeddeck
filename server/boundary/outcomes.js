@@ -64,7 +64,11 @@ export function classifyError(err) {
     err.name === 'AbortError' ||
     code === 'ABORT_ERR' ||
     code === 'ETIMEDOUT' ||
-    code === 'ESOCKETTIMEDOUT'
+    code === 'ESOCKETTIMEDOUT' ||
+    code === 'ENOTFOUND' ||
+    code === 'ECONNREFUSED' ||
+    code === 'ECONNRESET' ||
+    code === 'EAI_AGAIN'
   ) {
     return OUTCOMES.TIMEOUT
   }

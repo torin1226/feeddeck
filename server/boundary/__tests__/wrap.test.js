@@ -116,6 +116,22 @@ describe('boundary.exec(cmd, args, opts)', () => {
     expect(r.outcome).not.toBe('ok')
     expect(r.stderr).toBe('partial output then a problem')
   })
+
+  it('promotes partial-success-on-failure to outcome=ok and surfaces stdout', async () => {
+    const fakeExec = vi.fn(async () => {
+      const err = new Error('exit 1')
+      err.stdout = 'partial-but-usable-output'
+      err.stderr = 'WARNING: cookies are no longer valid'
+      throw err
+    })
+    const r = await boundary.exec('yt-dlp', ['x'], {
+      name: 'yt-dlp-stream-url',
+      execImpl: fakeExec,
+    })
+    expect(r.outcome).toBe('ok')
+    expect(r.value).toBe('partial-but-usable-output')
+    expect(r.stderr).toContain('cookies are no longer valid')
+  })
 })
 
 describe('boundary.readCookie(path, opts)', () => {
