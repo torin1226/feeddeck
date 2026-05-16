@@ -10,7 +10,6 @@ import express from 'express'
 import { db } from '../database.js'
 import { logger } from '../logger.js'
 import {
-  audioScore,
   recomputeAudioScores,
   invalidateAudioProfileCache,
 } from '../scoring.js'

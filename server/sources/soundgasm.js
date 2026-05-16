@@ -52,9 +52,11 @@ export class SoundgasmAdapter extends SourceAdapter {
     })
   }
 
-  // search('__creators__', { site: 'soundgasm.net' }) → walk active soundgasm
-  // creators and pull their newest posts. Returns normalized audio items.
-  async search(query, options = {}) {
+  // search('__creators__', { site: 'soundgasm.net' }) walks active soundgasm
+  // creators and pulls their newest posts. The shared adapter contract takes
+  // an options bag for site / limit / category filters; soundgasm only handles
+  // the __creators__ sentinel today so options is unused.
+  async search(query, _options = {}) {
     if (query !== '__creators__') {
       throw new Error('SoundgasmAdapter only handles __creators__ queries')
     }
