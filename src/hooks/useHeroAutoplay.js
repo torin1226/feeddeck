@@ -19,6 +19,7 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
   const [muted, setMuted] = useState(true)
   const [teaserPhase, setTeaserPhase] = useState('idle') // 'idle' | 'playing' | 'rest'
   const teaserTimerRef = useRef(null)
+  const hlsRef = useRef(null)
 
   // Check prefers-reduced-motion
   const [reducedMotion, setReducedMotion] = useState(() => {
@@ -67,9 +68,6 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
         const data = await res.json()
         if (!data.streamUrl || abort.signal.aborted) return
 
-        // Skip HLS for autoplay (too heavy for background preview)
-        if (data.streamUrl.includes('.m3u8')) return
-
         setAutoplayUrl(data.streamUrl)
       } catch (e) {
         if (e.name !== 'AbortError') {
@@ -86,18 +84,16 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
     }
   }, [heroItem?.id, heroItem?.url, theatreMode, reducedMotion])
 
-  // When autoplayUrl changes, load the video
+  // When autoplayUrl changes, load the video. MP4: set vid.src to proxy.
+  // HLS: native on Safari, hls.js everywhere else (lazy-imported).
   useEffect(() => {
     const vid = videoRef.current
     if (!vid || !autoplayUrl) return
 
-    const proxiedUrl = `/api/proxy-stream?url=${encodeURIComponent(autoplayUrl)}`
-    vid.src = proxiedUrl
     vid.muted = true
     vid.playsInline = true
     vid.loop = true
     vid.preload = 'auto'
-    vid.load()
 
     const onCanPlay = () => {
       const delta = performance.now() - (mountTimeRef.current ?? performance.now())
@@ -113,7 +109,6 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
           setTeaserPhase('rest')
         }, 4500)
       }).catch(() => {
-        // Autoplay blocked — fall back to thumbnail
         setAutoplayError(true)
       })
     }
@@ -126,9 +121,56 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
     vid.addEventListener('canplay', onCanPlay, { once: true })
     vid.addEventListener('error', onError, { once: true })
 
+    let cancelled = false
+    const destroyHls = () => {
+      const hls = hlsRef.current
+      if (hls) {
+        try { hls.destroy() } catch { /* ignore */ }
+        hlsRef.current = null
+      }
+    }
+
+    if (autoplayUrl.includes('.m3u8')) {
+      const canPlayNative =
+        typeof vid.canPlayType === 'function' &&
+        vid.canPlayType('application/vnd.apple.mpegurl') !== ''
+      if (canPlayNative) {
+        vid.src = `/api/hls-proxy?url=${encodeURIComponent(autoplayUrl)}`
+        try { vid.load() } catch { /* ignore */ }
+      } else {
+        import('hls.js').then(({ default: Hls }) => {
+          if (cancelled) return
+          if (!Hls.isSupported()) {
+            // No MSE — give up on this URL silently
+            setAutoplayError(true)
+            return
+          }
+          destroyHls()
+          vid.removeAttribute('src')
+          const hls = new Hls({ enableWorker: true, lowLatencyMode: false })
+          hls.on(Hls.Events.ERROR, (_, data) => {
+            if (!data?.fatal) return
+            destroyHls()
+            setAutoplayError(true)
+          })
+          hls.loadSource(`/api/hls-proxy?url=${encodeURIComponent(autoplayUrl)}`)
+          hls.attachMedia(vid)
+          hlsRef.current = hls
+        }).catch(() => {
+          if (cancelled) return
+          setAutoplayError(true)
+        })
+      }
+    } else {
+      vid.src = `/api/proxy-stream?url=${encodeURIComponent(autoplayUrl)}`
+      try { vid.load() } catch { /* ignore */ }
+    }
+
     return () => {
+      cancelled = true
       vid.removeEventListener('canplay', onCanPlay)
       vid.removeEventListener('error', onError)
+      destroyHls()
     }
   }, [autoplayUrl])
 
@@ -189,6 +231,11 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
     return () => {
       if (abortRef.current) abortRef.current.abort()
       clearTimeout(teaserTimerRef.current)
+      const hls = hlsRef.current
+      if (hls) {
+        try { hls.destroy() } catch { /* ignore */ }
+        hlsRef.current = null
+      }
     }
   }, [])
 

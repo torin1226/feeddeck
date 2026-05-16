@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Routes, Route, useLocation, Navigate, useParams } from 'react-router-dom'
 import useKeyboard from '../hooks/useKeyboard'
 import useQueueSync from '../hooks/useQueueSync'
@@ -45,8 +45,29 @@ export default function AppShell() {
   const isFeed = location.pathname === '/feed'
   const mobilePreview = useDeviceStore(s => s.mobilePreview)
   const modeHydrated = useModeStore(s => s._hydrated)
+  const isSFW = useModeStore(s => s.isSFW)
   const paletteOpen = usePaletteStore(s => s.open)
   const closePalette = usePaletteStore(s => s.close)
+
+  // Background-warm NSFW homepage on first SFW load. The app always
+  // boots SFW; firing an NSFW /api/homepage GET in the background
+  // primes the server's in-memory caches and triggers refill if any
+  // category is below threshold. Single-flight per browser session.
+  useEffect(() => {
+    if (!modeHydrated || !isSFW) return
+    if (typeof window === 'undefined') return
+    try {
+      if (sessionStorage.getItem('fd-nsfw-prewarmed') === '1') return
+      sessionStorage.setItem('fd-nsfw-prewarmed', '1')
+    } catch { /* sessionStorage unavailable — fire anyway, worst case is a duplicate warm */ }
+    const ac = new AbortController()
+    const tid = setTimeout(() => {
+      fetch('/api/homepage?mode=nsfw', { signal: ac.signal }).catch(() => {
+        // Swallow errors — this is a fire-and-forget warm
+      })
+    }, 1500)
+    return () => { clearTimeout(tid); ac.abort() }
+  }, [modeHydrated, isSFW])
 
   // Block ALL rendering until mode store has hydrated.
   // This prevents NSFW content from flashing on SFW first load.
