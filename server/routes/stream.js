@@ -6,9 +6,26 @@ import { db } from '../database.js'
 import { getCookieArgs } from '../cookies.js'
 import { registry, ytdlp as ytdlpAdapter } from '../sources/index.js'
 import { logger } from '../logger.js'
+import { boundary } from '../boundary/index.js'
 import { isAllowedCdnUrl, inferMode, safeParse, getRefererForUrl } from '../utils.js'
 
 const execFileAsync = promisify(execFile)
+
+// Map a boundary outcome from `boundary.exec` to the HTTP status this
+// route should return. Explicit branching replaces the prior message-
+// substring catch block — see M7 (reliability snitch wrapper) for the
+// rationale.
+function statusForOutcome(outcome) {
+  switch (outcome) {
+    case 'rate_limited':  return 429
+    case 'timeout':       return 504
+    case 'blocked':       return 403
+    case 'auth_failed':   return 502
+    case 'wrong_shape':   return 502
+    case 'empty':         return 502
+    default:              return 500 // unknown_error and anything new
+  }
+}
 
 const router = Router()
 
@@ -217,31 +234,33 @@ router.get('/api/stream-formats', async (req, res) => {
   const { url } = req.query
   if (!url) return res.status(400).json({ error: 'URL required' })
 
-  try {
-    const { stdout } = await execFileAsync('yt-dlp', [
-      ...getCookieArgs(url), '-j', '--no-warnings', '--no-playlist', url
-    ], { timeout: 30000 })
+  const { outcome, value: stdout } = await boundary.exec(
+    'yt-dlp',
+    [...getCookieArgs(url), '-j', '--no-warnings', '--no-playlist', url],
+    { name: 'yt-dlp-stream-formats', timeoutMs: 30000 }
+  )
 
-    const info = safeParse(stdout)
-    if (!info) return res.status(502).json({ error: 'yt-dlp returned invalid JSON' })
-    const formats = (info.formats || [])
-      .filter(f => f.vcodec !== 'none' && f.ext === 'mp4')
-      .map(f => ({
-        format_id: f.format_id,
-        quality: f.height ? `${f.height}p` : f.format_note || f.format_id,
-        height: f.height || 0,
-        filesize: f.filesize || f.filesize_approx || 0,
-        fps: f.fps || 0,
-      }))
-      .sort((a, b) => a.height - b.height)
-      // Dedupe by height
-      .filter((f, i, arr) => i === 0 || f.height !== arr[i - 1].height)
-
-    res.json({ formats, title: info.title })
-  } catch (err) {
-    logger.error('Stream formats error', { error: err.message })
-    res.status(500).json({ error: 'Could not list formats' })
+  if (outcome !== 'ok') {
+    logger.error('Stream formats error', { outcome, url: String(url).slice(0, 80) })
+    return res.status(statusForOutcome(outcome)).json({ error: 'Could not list formats', outcome })
   }
+
+  const info = safeParse(stdout)
+  if (!info) return res.status(502).json({ error: 'yt-dlp returned invalid JSON' })
+  const formats = (info.formats || [])
+    .filter(f => f.vcodec !== 'none' && f.ext === 'mp4')
+    .map(f => ({
+      format_id: f.format_id,
+      quality: f.height ? `${f.height}p` : f.format_note || f.format_id,
+      height: f.height || 0,
+      filesize: f.filesize || f.filesize_approx || 0,
+      fps: f.fps || 0,
+    }))
+    .sort((a, b) => a.height - b.height)
+    // Dedupe by height
+    .filter((f, i, arr) => i === 0 || f.height !== arr[i - 1].height)
+
+  res.json({ formats, title: info.title })
 })
 
 // -----------------------------------------------------------
