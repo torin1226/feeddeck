@@ -12,8 +12,17 @@
 //        30d, >= 5 impressions) are deprecation candidates. emergentClusters
 //        are tag co-occurrences not yet covered by a row's topic_sources.
 //
+//   3. GET /api/audio/stats
+//        Audio-surface diversity signal. total === 0 means the audio cache has
+//        gone dark (silent killer). A single distinct source_domain or creator
+//        with total > 0 means the surface has collapsed onto one source — the
+//        2026-05-16 symptom that surfaced as "audio shows one creator". Soft
+//        warning (does not fail exit) because the live fetcher is a no-op
+//        until audio creators are seeded; total === 0 is a hard fail.
+//
 // Exit code is non-zero when any category in either mode has fresh_unviewed
-// === 0. That single signal is what the cron / scheduled task watches.
+// === 0, or when the audio surface is empty (total === 0). Single-source
+// collapse on audio is reported as a warning but does not flip exit.
 //
 // Usage:
 //   node server/scripts/row-health-report.mjs
@@ -65,10 +74,35 @@ function classify(categories) {
   return { empty, low, total: categories.length }
 }
 
+// Audio surface classifier. Distinct-non-null counts on bySource / byCreator
+// give the diversity signal; total drives the empty (silent-killer) signal.
+// `collapsed` flips true once content exists but lives in <=1 source OR
+// <=1 creator — the 2026-05-16 mycatwithclaws shape.
+function classifyAudio(stats) {
+  const total = Number.isFinite(stats?.total) ? stats.total : 0
+  const unrated = Number.isFinite(stats?.unrated) ? stats.unrated : 0
+  const sources = Array.isArray(stats?.bySource)
+    ? stats.bySource.filter(s => s && typeof s.source_domain === 'string' && s.source_domain.length > 0)
+    : []
+  const creators = Array.isArray(stats?.byCreator)
+    ? stats.byCreator.filter(c => c && typeof c.creator === 'string' && c.creator.length > 0)
+    : []
+  const empty = total === 0
+  const collapsed = !empty && (sources.length <= 1 || creators.length <= 1)
+  return { total, unrated, sources, creators, empty, collapsed }
+}
+
 function printMarkdown(report) {
-  const { social, nsfw, engagement, generatedAt } = report
+  const { social, nsfw, engagement, audio, audioError, generatedAt } = report
   const totalEmpty = social.empty.length + nsfw.empty.length
   const totalLow = social.low.length + nsfw.low.length
+  const audioBadge = audioError
+    ? ', audio: error'
+    : audio?.empty
+      ? ', audio: empty'
+      : audio?.collapsed
+        ? ', audio: collapsed'
+        : ''
 
   console.log(`# Row Health Report`)
   console.log(`_Generated ${generatedAt}_`)
@@ -76,7 +110,7 @@ function printMarkdown(report) {
   console.log(
     `**Summary:** ${totalEmpty} empty, ${totalLow} low, ` +
       `${engagement.underperformingRows.length} flagged engagement, ` +
-      `${engagement.emergentClusters.length} emergent clusters.`,
+      `${engagement.emergentClusters.length} emergent clusters${audioBadge}.`,
   )
   console.log()
 
@@ -123,6 +157,61 @@ function printMarkdown(report) {
       console.log(`- \`${c.tag_a}\` + \`${c.tag_b}\` — ${c.co_occurrences} co-occurrences`)
     }
   }
+  console.log()
+
+  printAudioSection(audio, audioError)
+}
+
+function printAudioSection(audio, audioError) {
+  console.log(`## audio surface`)
+  if (audioError) {
+    console.log(`Could not fetch /api/audio/stats: ${audioError}`)
+    return
+  }
+  if (!audio) {
+    console.log(`No audio stats available.`)
+    return
+  }
+  console.log(
+    `**Total:** ${audio.total} items (unrated: ${audio.unrated}); ` +
+      `**diversity:** ${audio.sources.length} source(s) / ${audio.creators.length} creator(s).`,
+  )
+  if (audio.empty) {
+    console.log()
+    console.log(`### Empty (total = 0) — silent-killer candidate`)
+    console.log(
+      `Audio cache has zero rated-positive rows. Live fetcher is likely a no-op ` +
+        `(no \`creators\` rows with \`surface = 'audio'\`). See ` +
+        `\`debug_audio_single_source_no_creators.md\` and seed creators via ` +
+        `\`POST /api/creators\` with \`{ surface: 'audio' }\`.`,
+    )
+    return
+  }
+  if (audio.collapsed) {
+    console.log()
+    console.log(`### Diversity collapse — single source/creator`)
+    console.log(
+      `Audio surface has ${audio.total} items but only ${audio.sources.length} ` +
+        `source(s) and ${audio.creators.length} creator(s). Likely cause: live ` +
+        `fetcher is a no-op (no active audio creators); the items in cache came ` +
+        `from a one-shot import. Seed creators via \`POST /api/creators\` with ` +
+        `\`{ surface: 'audio' }\`.`,
+    )
+  }
+  if (audio.sources.length > 0) {
+    console.log()
+    console.log(`### Sources`)
+    for (const s of audio.sources) {
+      console.log(`- \`${s.source_domain}\` — ${s.n}`)
+    }
+  }
+  if (audio.creators.length > 0) {
+    console.log()
+    console.log(`### Top creators`)
+    for (const c of audio.creators) {
+      console.log(`- \`${c.creator}\` — ${c.n}`)
+    }
+  }
 }
 
 async function main() {
@@ -138,6 +227,18 @@ async function main() {
     process.exit(2)
   }
 
+  // Audio is fetched separately so an older server (or a route 500) does not
+  // break the existing three-endpoint contract. The audio block degrades to a
+  // visible "could not fetch" line in the report.
+  let audio = null
+  let audioError = null
+  try {
+    const stats = await getJson('/api/audio/stats')
+    audio = classifyAudio(stats)
+  } catch (err) {
+    audioError = err.message
+  }
+
   const report = {
     generatedAt: new Date().toISOString(),
     social: classify(social.categories || []),
@@ -146,6 +247,8 @@ async function main() {
       underperformingRows: engagement.underperformingRows || [],
       emergentClusters: engagement.emergentClusters || [],
     },
+    audio,
+    audioError,
   }
 
   if (EMITTING_JSON) {
@@ -155,12 +258,13 @@ async function main() {
   }
 
   const totalEmpty = report.social.empty.length + report.nsfw.empty.length
-  if (totalEmpty > 0) {
+  const audioEmpty = audio?.empty === true
+  if (totalEmpty > 0 || audioEmpty) {
     process.exit(1)
   }
 }
 
-export { classify, EMPTY_THRESHOLD, LOW_THRESHOLD }
+export { classify, classifyAudio, EMPTY_THRESHOLD, LOW_THRESHOLD }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   await main()
