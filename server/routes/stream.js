@@ -135,9 +135,14 @@ router.get('/api/stream-url', async (req, res) => {
         } catch { return null }
       })()
 
+      // A null expires_at means we have a stream_url but no record of when
+      // it was minted — could be from an older schema, a partial migration,
+      // or a future code path that forgets to set it. Treat as unknown,
+      // not as "fresh forever". The re-resolve path below will overwrite
+      // it with a proper expiry on the next request.
       const isFresh = (row) => {
         if (!row?.stream_url) return false
-        if (!row.expires_at) return true
+        if (!row.expires_at) return false
         return new Date(row.expires_at + 'Z') > new Date()
       }
 

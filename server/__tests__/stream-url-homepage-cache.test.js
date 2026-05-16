@@ -315,4 +315,53 @@ describe('/api/stream-url + homepage_cache', () => {
     expect(r.body.streamUrl).toBe('https://cdn.example.com/resolved.mp4')
     expect(mockGetStreamUrl).toHaveBeenCalledOnce()
   })
+
+  // ============================================================
+  // Defensive: null expires_at must NOT be treated as fresh-forever.
+  // Even though the live DB has zero null-expiry rows today
+  // (verified 2026-05-16), the prior implementation returned true
+  // for any stream_url with null expiry — a latent foot-gun for
+  // future code paths that forget to set the column.
+  // ============================================================
+
+  it('treats null expires_at in feed_cache as stale and re-resolves via yt-dlp', async () => {
+    const url = 'https://www.pornhub.com/view_video.php?viewkey=ph_null'
+    testDb.prepare(
+      `INSERT INTO feed_cache (id, url, stream_url, expires_at) VALUES (?, ?, ?, NULL)`
+    ).run('fc_null', url, 'https://cdn.example.com/never-expires.mp4')
+
+    const app = await buildApp()
+    const r = await callApp(app, 'GET', '/api/stream-url?url=' + encodeURIComponent(url))
+    expect(r.status).toBe(200)
+    expect(r.body.streamUrl).toBe('https://cdn.example.com/resolved.mp4')
+    expect(mockGetStreamUrl).toHaveBeenCalledOnce()
+  })
+
+  it('treats null stream_url_expires_at in homepage_cache as stale and re-resolves', async () => {
+    const url = 'https://www.youtube.com/watch?v=hp_null'
+    testDb.prepare(
+      `INSERT INTO homepage_cache (id, category_key, url, stream_url, stream_url_expires_at)
+       VALUES (?, ?, ?, ?, NULL)`
+    ).run('hp_null', 'social_trending', url, 'https://cdn.example.com/never-expires.mp4')
+
+    const app = await buildApp()
+    const r = await callApp(app, 'GET', '/api/stream-url?url=' + encodeURIComponent(url))
+    expect(r.status).toBe(200)
+    expect(r.body.streamUrl).toBe('https://cdn.example.com/resolved.mp4')
+    expect(mockGetStreamUrl).toHaveBeenCalledOnce()
+  })
+
+  it('treats null stream_url_expires_at in persistent_row_items as stale and re-resolves', async () => {
+    const url = 'https://www.pornhub.com/view_video.php?viewkey=ph_persistent_null'
+    testDb.prepare(
+      `INSERT INTO persistent_row_items (row_key, video_url, stream_url, stream_url_expires_at)
+       VALUES (?, ?, ?, NULL)`
+    ).run('ph_likes', url, 'https://cdn.example.com/never-expires.mp4')
+
+    const app = await buildApp()
+    const r = await callApp(app, 'GET', '/api/stream-url?url=' + encodeURIComponent(url))
+    expect(r.status).toBe(200)
+    expect(r.body.streamUrl).toBe('https://cdn.example.com/resolved.mp4')
+    expect(mockGetStreamUrl).toHaveBeenCalledOnce()
+  })
 })
