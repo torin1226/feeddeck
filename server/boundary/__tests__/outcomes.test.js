@@ -47,10 +47,11 @@ describe('classifyHttp(response, body)', () => {
 })
 
 describe('classifyError(err)', () => {
-  it('returns timeout for AbortError / ETIMEDOUT / ECONNRESET-after-timeout', () => {
+  it('returns timeout for AbortError / ETIMEDOUT / ABORT_ERR / ESOCKETTIMEDOUT', () => {
     expect(classifyError({ name: 'AbortError' })).toBe('timeout')
     expect(classifyError({ code: 'ETIMEDOUT' })).toBe('timeout')
     expect(classifyError({ code: 'ABORT_ERR' })).toBe('timeout')
+    expect(classifyError({ code: 'ESOCKETTIMEDOUT' })).toBe('timeout')
   })
   it('returns auth_failed when stderr/message mentions cookies/login', () => {
     expect(classifyError({ stderr: 'cookies are no longer valid' })).toBe('auth_failed')
