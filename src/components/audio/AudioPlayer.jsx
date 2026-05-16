@@ -32,6 +32,7 @@ export default function AudioPlayer() {
   const setDuration = useAudioFeedStore(s => s.setDuration)
   const setAudioElement = useAudioFeedStore(s => s.setAudioElement)
   const onEnded = useAudioFeedStore(s => s.onEnded)
+  const onPlaybackError = useAudioFeedStore(s => s.onPlaybackError)
   const rateCurrent = useAudioFeedStore(s => s.rateCurrent)
   const localRatings = useAudioFeedStore(s => s.localRatings)
 
@@ -86,7 +87,10 @@ export default function AudioPlayer() {
         onTimeUpdate={(e) => setPosition(e.target.currentTime)}
         onDurationChange={(e) => setDuration(e.target.duration)}
         onEnded={() => onEnded()}
-        onError={() => onEnded()}  // skip broken tracks rather than stalling
+        // Skip broken tracks without marking watched. Asymmetric to
+        // onEnded so a transient CDN failure doesn't permanently sink a
+        // track from the feed. Mirrors useHeroAutoplay 2026-05-16.
+        onError={() => onPlaybackError()}
       />
       <div
         className="fixed bottom-0 inset-x-0 z-40 border-t border-white/5 bg-zinc-950/95 backdrop-blur-md"

@@ -36,20 +36,48 @@ const useAudioFeedStore = create((set, get) => ({
   // ---------------------------------------------------------
   // Data
   // ---------------------------------------------------------
+  // Monotonic token so rapid filter changes (typed search, chip clicks)
+  // don't race: a slower fetch landing after a newer one is dropped.
+  // Same shape as the eporner polite-fetch race fixed 2026-05-02.
+  _loadFeedToken: 0,
+
   loadFeed: async () => {
-    set({ loading: true, error: null })
+    const token = (get()._loadFeedToken || 0) + 1
+    set({ loading: true, error: null, _loadFeedToken: token })
     try {
-      const { creatorFilter, sourceFilter, query } = get()
+      const { creatorFilter, sourceFilter, query, currentIndex, items: oldItems } = get()
+      // Track which track is playing so we can preserve its position
+      // across a filter-driven items[] swap. Without this, currentIndex
+      // would point at a different track in the new list and the audio
+      // element jumps mid-listen.
+      const playingId = currentIndex >= 0 ? oldItems[currentIndex]?.id : null
+
       const params = new URLSearchParams({ limit: '100' })
       if (creatorFilter) params.set('creator', creatorFilter)
       if (sourceFilter) params.set('source', sourceFilter)
       if (query && query.trim()) params.set('q', query.trim())
       const res = await fetch(`/api/audio/feed?${params}`)
+      if (token !== get()._loadFeedToken) return
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
       const data = await res.json()
-      set({ items: data.items || [], loading: false })
+      if (token !== get()._loadFeedToken) return
+
+      const newItems = data.items || []
+      // If the playing track is still in the filtered list, point at
+      // its new index. If not, set to -1 — the player unmounts and
+      // playback stops cleanly. (A future change could keep a separate
+      // currentItem field so playback continues across filter changes,
+      // but the minimum non-buggy behavior is to stop rather than jump.)
+      let newCurrentIndex = -1
+      if (playingId) {
+        const idx = newItems.findIndex(i => i.id === playingId)
+        if (idx >= 0) newCurrentIndex = idx
+      }
+      set({ items: newItems, currentIndex: newCurrentIndex, loading: false })
     } catch (err) {
-      set({ error: err.message, loading: false })
+      if (token === get()._loadFeedToken) {
+        set({ error: err.message, loading: false })
+      }
     }
   },
 
@@ -142,14 +170,20 @@ const useAudioFeedStore = create((set, get) => ({
     const newLocal = new Map(localRatings)
     newLocal.set(item.id, rating === 'up' ? 1 : -1)
     set({ localRatings: newLocal })
+
     try {
-      await fetch(`/api/audio/${item.id}/rate`, {
+      const res = await fetch(`/api/audio/${item.id}/rate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rating }),
       })
+      // Roll back on HTTP errors too, not just thrown errors. fetch()
+      // resolves for 4xx/5xx — without this check, a 500 from the route
+      // leaves the optimistic UI in place even though the server never
+      // recorded the rating. Same shape as the 2026-05-09 stream wallclock
+      // fix that distinguished "fetch resolved" from "fetch succeeded."
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
     } catch (err) {
-      // Roll back local state on failure
       const rolled = new Map(get().localRatings)
       rolled.delete(item.id)
       set({ localRatings: rolled, error: err.message })
@@ -163,6 +197,8 @@ const useAudioFeedStore = create((set, get) => ({
   // ---------------------------------------------------------
   // Lifecycle (called from AudioPlayer ended/error handlers)
   // ---------------------------------------------------------
+  // Natural end-of-track: mark complete and advance. watched=1 sinks the
+  // track in future feed orderings.
   onEnded: async () => {
     const { items, currentIndex, next } = get()
     const item = items[currentIndex]
@@ -172,6 +208,16 @@ const useAudioFeedStore = create((set, get) => ({
       } catch {}
     }
     next()
+  },
+
+  // Playback error: advance to the next track WITHOUT marking complete.
+  // Same asymmetric shape as the useHeroAutoplay 2026-05-16 fix
+  // (`956c8de`): a track that failed to play (404, stale CDN URL,
+  // network blip) should not be marked watched, because the track may
+  // resolve fine on a future refresh. Marking watched would sink it
+  // permanently from the feed even though nothing is genuinely wrong.
+  onPlaybackError: () => {
+    get().next()
   },
 }))
 
