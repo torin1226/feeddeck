@@ -8,8 +8,34 @@ import { getMode, formatDuration, safeParse } from '../utils.js'
 import { scoreVideos, syncSearchToTaste } from '../scoring.js'
 import { resolveTopics, recordDiscoveredCreators, buildTrends24FallbackQueries } from '../topics.js'
 import { filterSocialContent } from '../content-filters.js'
+import { buildReason } from '../recommendation-reason.js'
 
 const router = Router()
+
+// -----------------------------------------------------------
+// Recommendation reason signal loader
+// -----------------------------------------------------------
+function loadReasonSignals(db, _mode) {
+  const boostedCreators = new Set()
+  const subscriptions = new Set()
+  const likedTags = new Set()
+  try {
+    for (const row of db.prepare('SELECT creator FROM creator_boosts WHERE boost_score > 0').all()) {
+      if (row.creator) boostedCreators.add(String(row.creator).toLowerCase().trim())
+    }
+  } catch { /* table may not exist on older DBs */ }
+  try {
+    for (const row of db.prepare('SELECT handle FROM subscription_backups').all()) {
+      if (row.handle) subscriptions.add(String(row.handle).toLowerCase().trim())
+    }
+  } catch { /* */ }
+  try {
+    for (const row of db.prepare("SELECT signal_value FROM taste_profile WHERE signal_type = 'tag' AND weight > 0").all()) {
+      if (row.signal_value) likedTags.add(String(row.signal_value).toLowerCase().trim())
+    }
+  } catch { /* */ }
+  return { boostedCreators, subscriptions, likedTags }
+}
 
 // -----------------------------------------------------------
 // Playlist CRUD
@@ -610,6 +636,7 @@ router.get('/api/homepage', (req, res) => {
 
   try {
     const stmts = getHomepageStmts()
+    const signals = loadReasonSignals(db, mode)
 
     // Persistent rows (sticky shelves like "My PornHub Likes") lead the response.
     // Empty rows are dropped so we don't render placeholder shelves.
@@ -716,6 +743,15 @@ router.get('/api/homepage', (req, res) => {
             logger.error('Refill error:', { error: err.message })
           )
         }
+      }
+    }
+
+    // Attach recommendation reason to non-persistent category videos.
+    // Persistent rows are user-curated; skip them (reason stays undefined/null).
+    for (const row of result) {
+      if (row.pinned) continue
+      for (const video of row.videos) {
+        video.reason = buildReason(video, signals)
       }
     }
 

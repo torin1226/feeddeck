@@ -4,8 +4,34 @@ import { db } from '../database.js'
 import { logger } from '../logger.js'
 import { formatDuration, inferMode, getMode } from '../utils.js'
 import { scoreVideos, MIN_VISIBLE_SCORE } from '../scoring.js'
+import { buildReason } from '../recommendation-reason.js'
 
 const router = Router()
+
+// -----------------------------------------------------------
+// Recommendation reason signal loader
+// -----------------------------------------------------------
+function loadReasonSignals(db, _mode) {
+  const boostedCreators = new Set()
+  const subscriptions = new Set()
+  const likedTags = new Set()
+  try {
+    for (const row of db.prepare('SELECT creator FROM creator_boosts WHERE boost_score > 0').all()) {
+      if (row.creator) boostedCreators.add(String(row.creator).toLowerCase().trim())
+    }
+  } catch { /* table may not exist on older DBs */ }
+  try {
+    for (const row of db.prepare('SELECT handle FROM subscription_backups').all()) {
+      if (row.handle) subscriptions.add(String(row.handle).toLowerCase().trim())
+    }
+  } catch { /* */ }
+  try {
+    for (const row of db.prepare("SELECT signal_value FROM taste_profile WHERE signal_type = 'tag' AND weight > 0").all()) {
+      if (row.signal_value) likedTags.add(String(row.signal_value).toLowerCase().trim())
+    }
+  } catch { /* */ }
+  return { boostedCreators, subscriptions, likedTags }
+}
 
 let _feedUnwatchedCountStmt
 function getFeedUnwatchedCountStmt() {
@@ -188,6 +214,16 @@ router.get('/api/feed/next', (req, res) => {
       _score: undefined,
       durationFormatted: formatDuration(v.duration),
     }))
+
+    // Attach recommendation reason to each formatted item.
+    // tags was wiped in the map above; re-derive from filtered for buildReason.
+    const signals = loadReasonSignals(db, mode)
+    for (const v of formatted) {
+      const fv = filtered.find(f => f.url === v.url || f.id === v.id)
+      let tagsArr = []
+      try { tagsArr = fv ? JSON.parse(fv.tags || '[]') : [] } catch { /* */ }
+      v.reason = buildReason({ uploader: v.uploader, tags: tagsArr }, signals)
+    }
 
     const unviewedCount = getFeedUnwatchedCountStmt().get(mode)
 
