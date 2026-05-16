@@ -24,6 +24,7 @@ const AudioPage = lazy(() => import('../pages/AudioPage'))
 // stream). The component returns null when no track is active, so
 // SFW users never see it.
 const AudioPlayer = lazy(() => import('./audio/AudioPlayer'))
+const DebugBoundaryPage = lazy(() => import('../pages/DebugBoundaryPage'))
 
 // Legacy /video/:id → /watch/:id permanent redirect.
 function RedirectVideoToWatch() {
@@ -99,6 +100,7 @@ export default function AppShell() {
             <Route path="/video/:id" element={<RedirectVideoToWatch />} />
             <Route path="/search" element={<ErrorBoundary name="Search"><SearchPage /></ErrorBoundary>} />
             <Route path="/audio" element={<ErrorBoundary name="Audio"><AudioPage /></ErrorBoundary>} />
+            <Route path="/debug/boundary-stats" element={<DebugBoundaryPage />} />
           </Routes>
         </Suspense>
       </main>
