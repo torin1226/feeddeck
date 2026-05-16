@@ -5,8 +5,7 @@
 // the adapter interface so it can be swapped or supplemented.
 // ============================================================
 
-import { execFile, execFileSync, spawn } from 'child_process'
-import { promisify } from 'util'
+import { execFileSync, spawn } from 'child_process'
 import { SourceAdapter } from './base.js'
 import { getCookieArgs } from '../cookies.js'
 import { logger } from '../logger.js'
@@ -14,8 +13,6 @@ import { cacheSubscriptionChannels, buildSubscriptionFallbackQueries } from '../
 import { isFromSubscribedYouTubeChannel } from '../content-filters.js'
 import { probeCookieForDomain } from '../cookie-health.js'
 import { boundary } from '../boundary/index.js'
-
-const execFileAsync = promisify(execFile)
 
 // yt-dlp supports 1000+ sites, so we don't restrict by domain.
 // It acts as the universal fallback for extraction.
