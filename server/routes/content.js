@@ -973,6 +973,9 @@ async function refillCategory(categoryKey, sessionCache = new Map()) {
 
   // -------- Fan-out: creator searches --------
   for (const c of (resolved.creators || []).slice(0, 5)) {
+    // Skip creators without a channel_url whose handle can't form a valid YT URL
+    // (spaces, pipes, colons in display names always 404 as channel slugs)
+    if (!c.channel_url && /[\s|:]/.test(c.handle)) continue
     const target = c.channel_url || `https://www.youtube.com/${c.handle}/videos`
     if (sessionCache.has(target)) {
       collected.push(...sessionCache.get(target))
