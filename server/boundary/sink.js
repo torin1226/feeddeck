@@ -22,9 +22,15 @@ function logPath() {
   return join(logDir(), LOG_FILENAME)
 }
 
+// Single-process assumption: tally and lastWriteDate are NOT synchronized.
+// Safe for the current single-Node-process Beelink deploy. If this ever
+// moves to a clustered setup, both need to migrate to a shared store
+// or process-per-shard layout.
 let tally = new Map()
 let lastWriteDate = null
 
+// All date math in this module is UTC to match todayIso(). Rotation
+// boundaries fire on UTC midnight, NOT local midnight.
 function todayIso(date = new Date()) {
   return date.toISOString().slice(0, 10)
 }
@@ -54,6 +60,10 @@ export function record(name, outcome, durationMs, _extras) {
       durationMs,
     }) + '\n'
     appendFileSync(logPath(), entry)
+    // Set-once today: preserves _setLastWriteDateForTest pinning across the
+    // test's own record() call. After the first failure of the day in
+    // production, lastWriteDate == today anyway so subsequent writes are
+    // no-ops on this field.
     if (lastWriteDate == null) lastWriteDate = todayIso()
   } catch (err) {
     // Fail-safe: do not let logging break the request path.
@@ -97,7 +107,8 @@ export function pruneOlderThan(days, forceTodayIso) {
   let dir
   try {
     dir = readdirSync(logDir())
-  } catch {
+  } catch (err) {
+    logger.warn('boundary.sink: pruneOlderThan readdir failed', { err: err.message })
     return
   }
   for (const file of dir) {
@@ -105,7 +116,9 @@ export function pruneOlderThan(days, forceTodayIso) {
     const stamp = file.slice(`${LOG_FILENAME}.`.length)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(stamp)) continue
     if (new Date(stamp) < cutoff) {
-      try { unlinkSync(join(logDir(), file)) } catch {}
+      try { unlinkSync(join(logDir(), file)) } catch (err) {
+        logger.warn('boundary.sink: pruneOlderThan unlink failed', { file, err: err.message })
+      }
     }
   }
 }
