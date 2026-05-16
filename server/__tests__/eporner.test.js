@@ -46,8 +46,13 @@ let originalFetch
 beforeEach(() => {
   vi.resetModules()
   originalFetch = globalThis.fetch
+  // M7 Sprint 2: eporner now reads body via boundary.fetch which
+  // calls `response.text()` (not `.json()`). Mocks must expose the
+  // 2xx status + a text() that yields the raw JSON string.
   globalThis.fetch = vi.fn(async () => ({
+    status: 200,
     ok: true,
+    text: async () => JSON.stringify(FAKE_RESPONSE),
     json: async () => FAKE_RESPONSE,
   }))
 })
@@ -93,7 +98,7 @@ describe('Phase 3 Eporner client', () => {
   })
 
   it('search() returns [] on HTTP error and does not throw', async () => {
-    globalThis.fetch = vi.fn(async () => ({ ok: false, status: 503, json: async () => ({}) }))
+    globalThis.fetch = vi.fn(async () => ({ ok: false, status: 503, text: async () => '', json: async () => ({}) }))
     const ep = await import('../sources/eporner.js')
     const out = await ep.search({})
     expect(out).toEqual([])
@@ -115,14 +120,17 @@ describe('Phase 3 Eporner client', () => {
   })
 
   it('tags string preserves multi-word tags and lowercases', async () => {
+    const fixture = {
+      videos: [
+        { id: 'a', url: 'https://x/a', title: 't', views: 1, rate: 1,
+          keywords: 'ASIAN, Big Tits, Japanese  Big Tits ' },
+      ],
+    }
     globalThis.fetch = vi.fn(async () => ({
+      status: 200,
       ok: true,
-      json: async () => ({
-        videos: [
-          { id: 'a', url: 'https://x/a', title: 't', views: 1, rate: 1,
-            keywords: 'ASIAN, Big Tits, Japanese  Big Tits ' },
-        ],
-      }),
+      text: async () => JSON.stringify(fixture),
+      json: async () => fixture,
     }))
     const ep = await import('../sources/eporner.js')
     const out = await ep.search({})

@@ -21,6 +21,7 @@
 // ============================================================
 
 import { logger } from '../logger.js'
+import { boundary } from '../boundary/index.js'
 
 const BASE = 'https://www.eporner.com/api/v2/video/search/'
 const REQ_DELAY_MS = 1000
@@ -36,14 +37,19 @@ async function _politeFetch(url) {
     const wait = Math.max(0, _lastRequestAt + REQ_DELAY_MS - now)
     if (wait > 0) await new Promise(r => setTimeout(r, wait))
     _lastRequestAt = Date.now()
-    const res = await fetch(url, {
+    // Routed through boundary.fetch (M7 Sprint 2). The polite-fetch
+    // serializer + 1 req/sec rate limit stay here — boundary just wraps
+    // the underlying transport so outcomes show up at /debug/boundary-stats.
+    const { outcome, value: body } = await boundary.fetch(url, {
+      name: 'nsfw-eporner-api',
+      timeoutMs: 15_000,
       headers: {
         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
         'accept': 'application/json',
       },
     })
-    if (!res.ok) throw new Error(`eporner HTTP ${res.status}`)
-    return res.json()
+    if (outcome !== 'ok') throw new Error(`eporner ${outcome}`)
+    return JSON.parse(body)
   })
   // Don't break the chain on this caller's error; the next caller
   // still needs a settled promise to resume from.
