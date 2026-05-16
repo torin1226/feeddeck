@@ -22,6 +22,7 @@ import ratingsRoutes from './routes/ratings.js'
 import audioRoutes from './routes/audio.js'
 import debugRoutes from './routes/debug.js'
 import boundaryDebugRoutes from './routes/boundary-debug.js'
+import { rotateIfStale, pruneOlderThan } from './boundary/sink.js'
 import { fetchAudioCycle } from './sources/audio-fetcher.js'
 import { modeFirewall } from './firewall.js'
 
@@ -442,6 +443,22 @@ if (_readPersistedWarm()) {
   _firstWarmComplete = true
   logger.info('  ✅ Recent warm-cache flag detected — readiness gate satisfied without re-warming')
 }
+
+// ------------------------------------------------------------
+// Boundary failure-log lifecycle (M7)
+// Rotate the active log to .YYYY-MM-DD when the UTC day changes,
+// and prune any rotated file older than 7 days. Runs once at
+// startup and every hour thereafter. Both helpers are fail-safe
+// (warn + return on error) so a broken disk cannot crash the
+// server.
+// ------------------------------------------------------------
+const BOUNDARY_LIFECYCLE_INTERVAL_MS = 60 * 60 * 1000 // 1 hour
+function tickBoundaryLifecycle() {
+  rotateIfStale()
+  pruneOlderThan(7)
+}
+tickBoundaryLifecycle()
+setInterval(tickBoundaryLifecycle, BOUNDARY_LIFECYCLE_INTERVAL_MS)
 
 // -----------------------------------------------------------
 // Start server
