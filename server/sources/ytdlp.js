@@ -13,6 +13,7 @@ import { logger } from '../logger.js'
 import { cacheSubscriptionChannels, buildSubscriptionFallbackQueries } from '../sub-channel-cache.js'
 import { isFromSubscribedYouTubeChannel } from '../content-filters.js'
 import { probeCookieForDomain } from '../cookie-health.js'
+import { boundary } from '../boundary/index.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -89,53 +90,54 @@ async function ytdlp(args, url, options = {}) {
   const skipCookies = _isCookieExpired(domain)
   const cookieArgs = skipCookies ? [] : getCookieArgs(url, options.mode)
   const finalArgs = ['--js-runtimes', 'node', ...cookieArgs, ...args]
-  try {
-    const { stdout, stderr } = await execFileAsync('yt-dlp', finalArgs, {
-      encoding: 'utf8',
-      timeout: options.timeout || YTDLP_TIMEOUT,
-      maxBuffer: options.maxBuffer || MAX_BUFFER,
-      windowsHide: true,
-    })
+  // Primary call — wrapped through boundary.exec for outcome telemetry.
+  const primary = await boundary.exec('yt-dlp', finalArgs, {
+    name: 'yt-dlp-stream-url',
+    timeoutMs: options.timeout || YTDLP_TIMEOUT,
+    maxBuffer: options.maxBuffer || MAX_BUFFER,
+  })
+
+  if (primary.outcome === 'ok' || primary.outcome === 'empty') {
     // Stderr warning on a *successful* run is weak evidence — yt-dlp still
     // returned valid output. Don't poison the skip set on warnings alone;
     // schedule an async verification probe instead.
-    if (stderr?.includes('cookies are no longer valid') && domain) {
+    if (primary.stderr?.includes('cookies are no longer valid') && domain) {
       _verifyAndMarkExpired(domain)
     }
-    return stdout
-  } catch (err) {
-    // With --ignore-errors, yt-dlp may exit non-zero but still produce valid output
-    if (args.includes('--ignore-errors') && err.stdout?.trim()) {
-      // Stderr warning on a partial-success run is also weak — verify async.
-      if (err.stderr?.includes('cookies are no longer valid') && domain) {
-        _verifyAndMarkExpired(domain)
-      }
-      return err.stdout
-    }
-    // If cookies are expired/invalid AND the call hard-failed, mark immediately:
-    // the failure itself is evidence; no probe round-trip needed.
-    const errMsg = err.stderr || err.message || ''
-    if (cookieArgs.length > 0 && errMsg.includes('cookies are no longer valid')) {
-      _markCookieExpired(domain)
-      logger.warn(`yt-dlp: cookies expired for ${domain}, retrying without cookies`)
-      const noCookieArgs = ['--js-runtimes', 'node', ...args]
-      try {
-        const { stdout } = await execFileAsync('yt-dlp', noCookieArgs, {
-          encoding: 'utf8',
-          timeout: options.timeout || YTDLP_TIMEOUT,
-          maxBuffer: options.maxBuffer || MAX_BUFFER,
-          windowsHide: true,
-        })
-        return stdout
-      } catch (retryErr) {
-        if (args.includes('--ignore-errors') && retryErr.stdout?.trim()) {
-          return retryErr.stdout
-        }
-        throw retryErr
-      }
-    }
-    throw err
+    return primary.value
   }
+
+  // Failure path. With --ignore-errors, yt-dlp may exit non-zero but still
+  // produce valid output on err.stdout — preserve that partial-success path.
+  if (args.includes('--ignore-errors') && primary.error?.stdout?.trim()) {
+    // Stderr warning on a partial-success run is also weak — verify async.
+    if (primary.error?.stderr?.includes('cookies are no longer valid') && domain) {
+      _verifyAndMarkExpired(domain)
+    }
+    return primary.error.stdout
+  }
+
+  // Hard failure with the cookies-expired signal: mark immediately (the
+  // failure itself is evidence, no probe round-trip needed) and retry once
+  // without cookies.
+  const errMsg = primary.error?.stderr || primary.error?.message || ''
+  if (cookieArgs.length > 0 && errMsg.includes('cookies are no longer valid')) {
+    _markCookieExpired(domain)
+    logger.warn(`yt-dlp: cookies expired for ${domain}, retrying without cookies`)
+    const noCookieArgs = ['--js-runtimes', 'node', ...args]
+    const retry = await boundary.exec('yt-dlp', noCookieArgs, {
+      name: 'yt-dlp-stream-url',
+      timeoutMs: options.timeout || YTDLP_TIMEOUT,
+      maxBuffer: options.maxBuffer || MAX_BUFFER,
+    })
+    if (retry.outcome === 'ok' || retry.outcome === 'empty') return retry.value
+    if (args.includes('--ignore-errors') && retry.error?.stdout?.trim()) {
+      return retry.error.stdout
+    }
+    throw retry.error || new Error(`yt-dlp retry failed: ${retry.outcome}`)
+  }
+
+  throw primary.error || new Error(`yt-dlp failed: ${primary.outcome}`)
 }
 
 // Extract domain from URL or yt-dlp search string
