@@ -11,6 +11,7 @@
 
 import { SourceAdapter, toIsoDate } from './base.js'
 import { ytdlpExec, YTDLP_TIMEOUT } from './ytdlp.js'
+import { boundary } from '../boundary/index.js'
 import { logger } from '../logger.js'
 import { db } from '../database.js'
 // randomUUID removed — not currently used
@@ -192,19 +193,27 @@ export class CreatorAdapter extends SourceAdapter {
   async _fetchReddit(creator) {
     const url = creator.url || `https://www.reddit.com/r/${creator.handle}/hot.json?limit=15`
 
-    const resp = await fetch(url, {
+    // Routed through boundary.fetch (M7 Sprint 2). The wrapper provides
+    // the 15s timeout via its own AbortController; failures are tagged
+    // and counted at /debug/boundary-stats. We re-throw on non-ok so the
+    // caller's per-creator failure counter still increments.
+    const { outcome, value: body } = await boundary.fetch(url, {
+      name: 'creator-reddit-api',
+      timeoutMs: 15_000,
       headers: {
         'User-Agent': 'FeedDeck/1.0 (content aggregator)',
         'Accept': 'application/json',
       },
-      signal: AbortSignal.timeout(15_000),
     })
 
-    if (!resp.ok) {
-      throw new Error(`Reddit API ${resp.status}: ${resp.statusText}`)
+    if (outcome !== 'ok') {
+      throw new Error(`Reddit API ${outcome}`)
     }
 
-    const data = await resp.json()
+    let data
+    try { data = JSON.parse(body) } catch (err) {
+      throw new Error(`Reddit API ok but body not JSON: ${err.message}`)
+    }
     const posts = data?.data?.children || []
     const videos = []
 
