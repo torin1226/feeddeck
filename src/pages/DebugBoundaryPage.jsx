@@ -45,7 +45,8 @@ export default function DebugBoundaryPage() {
 
   return (
     <div className="min-h-screen bg-surface text-text p-8">
-      <h1 className="text-2xl font-bold mb-4">Boundary stats (last 24h)</h1>
+      <h1 className="text-2xl font-bold mb-4">Boundary stats</h1>
+      <p className="text-text/60 mb-4">Cumulative since server start or last reset. Refreshes every 10 seconds.</p>
       {error && <p className="text-red-500 mb-4">Error: {error}</p>}
       {rows.length === 0 && <p>No boundary calls recorded yet.</p>}
       {rows.length > 0 && (
@@ -72,7 +73,9 @@ export default function DebugBoundaryPage() {
                 {OUTCOME_COLS.map(c => (
                   <td key={c} className="text-right p-2">{row[c] || 0}</td>
                 ))}
-                <td className="p-2 text-text/60">{row.lastFailureAt || '—'}</td>
+                <td className="p-2 text-text/60">
+                  {row.lastFailureAt ? new Date(row.lastFailureAt).toLocaleString() : '—'}
+                </td>
               </tr>
             ))}
           </tbody>

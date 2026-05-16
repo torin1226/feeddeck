@@ -100,7 +100,7 @@ export default function AppShell() {
             <Route path="/video/:id" element={<RedirectVideoToWatch />} />
             <Route path="/search" element={<ErrorBoundary name="Search"><SearchPage /></ErrorBoundary>} />
             <Route path="/audio" element={<ErrorBoundary name="Audio"><AudioPage /></ErrorBoundary>} />
-            <Route path="/debug/boundary-stats" element={<DebugBoundaryPage />} />
+            <Route path="/debug/boundary-stats" element={<ErrorBoundary name="DebugBoundary"><DebugBoundaryPage /></ErrorBoundary>} />
           </Routes>
         </Suspense>
       </main>
