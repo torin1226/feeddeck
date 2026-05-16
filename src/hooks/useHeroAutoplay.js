@@ -71,6 +71,12 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
     const abort = new AbortController()
     abortRef.current = abort
 
+    // Stream-URL resolution failures fall back to the static thumbnail
+    // (autoplayError = true). They do NOT dismiss the hero, because
+    // yt-dlp 5xx / 429 / auth-failed are usually transient upstream
+    // issues — the underlying card is fine and we want it to stay
+    // available for the user to revisit. Only actual <video> playback
+    // errors (post-resolution) call skipBrokenHero.
     async function resolve() {
       try {
         const res = await fetch(
@@ -79,13 +85,13 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
         )
         if (abort.signal.aborted) return
         if (!res.ok) {
-          skipBrokenHero(heroItem)
+          setAutoplayError(true)
           return
         }
         const data = await res.json()
         if (abort.signal.aborted) return
         if (!data.streamUrl) {
-          skipBrokenHero(heroItem)
+          setAutoplayError(true)
           return
         }
 
@@ -93,7 +99,6 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
       } catch (e) {
         if (e.name !== 'AbortError') {
           setAutoplayError(true)
-          skipBrokenHero(heroItem)
         }
       }
     }
@@ -104,9 +109,6 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
       abort.abort()
       abortRef.current = null
     }
-  // skipBrokenHero is a stable useCallback; heroItem.id/url are tracked
-  // explicitly so a heroItem object-identity change doesn't re-trigger.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [heroItem?.id, heroItem?.url, theatreMode, reducedMotion])
 
   // When autoplayUrl changes, load the video. MP4: set vid.src to proxy.
