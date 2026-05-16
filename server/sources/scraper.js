@@ -861,7 +861,7 @@ export class ScraperAdapter extends SourceAdapter {
       }
     }
 
-    logger.info(`Scraper: OG enriched ${enriched.filter(v => v.tags.length > 0).length}/${enriched.length} videos with tags${fallbackCount > 0 ? ` (${fallbackCount} fell back to "Reel by @handle")` : ''}`)
+    logger.info(`Scraper: OG enriched ${enriched.filter(v => v.tags && v.tags.length > 0).length}/${enriched.length} videos with tags${fallbackCount > 0 ? ` (${fallbackCount} fell back to "Reel by @handle")` : ''}`)
     return enriched
   }
 

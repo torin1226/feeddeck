@@ -42,7 +42,9 @@ function makeDb() {
       id TEXT PRIMARY KEY,
       url TEXT,
       stream_url TEXT,
-      expires_at DATETIME
+      expires_at DATETIME,
+      dead INTEGER DEFAULT 0,
+      dead_at DATETIME
     );
     CREATE TABLE homepage_cache (
       id TEXT PRIMARY KEY,
@@ -53,7 +55,9 @@ function makeDb() {
       stream_url_expires_at DATETIME,
       viewed INTEGER DEFAULT 0,
       fetched_at DATETIME DEFAULT (datetime('now')),
-      expires_at DATETIME DEFAULT (datetime('now', '+7 days'))
+      expires_at DATETIME DEFAULT (datetime('now', '+7 days')),
+      dead INTEGER DEFAULT 0,
+      dead_at DATETIME
     );
     CREATE TABLE persistent_row_items (
       row_key TEXT NOT NULL,
@@ -63,6 +67,8 @@ function makeDb() {
       stream_url_expires_at DATETIME,
       added_at DATETIME DEFAULT (datetime('now')),
       liked_at DATETIME,
+      dead INTEGER DEFAULT 0,
+      dead_at DATETIME,
       PRIMARY KEY (row_key, video_url)
     );
   `)
@@ -363,5 +369,72 @@ describe('/api/stream-url + homepage_cache', () => {
     expect(r.status).toBe(200)
     expect(r.body.streamUrl).toBe('https://cdn.example.com/resolved.mp4')
     expect(mockGetStreamUrl).toHaveBeenCalledOnce()
+  })
+
+  // ============================================================
+  // Dead-URL short-circuit (2026-05-16 NSFW skip-spike fix).
+  // The pre-resolve pipeline marks a URL dead when yt-dlp returns
+  // a permanent-failure error (404 / removed). /api/stream-url
+  // must refuse to re-attempt yt-dlp on a dead URL — otherwise every
+  // /api/stream-url hit re-triggers the same dead-video extraction,
+  // wastes a yt-dlp slot, and re-floods the boundary tally.
+  // ============================================================
+
+  it('returns 404 without calling yt-dlp when feed_cache.dead = 1', async () => {
+    const url = 'https://www.xvideos.com/dead-from-feed'
+    testDb.prepare(
+      `INSERT INTO feed_cache (id, url, dead, dead_at) VALUES (?, ?, 1, datetime('now'))`
+    ).run('fc_dead', url)
+
+    const app = await buildApp()
+    const r = await callApp(app, 'GET', '/api/stream-url?url=' + encodeURIComponent(url))
+    expect(r.status).toBe(404)
+    expect(mockGetStreamUrl).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 without calling yt-dlp when homepage_cache.dead = 1', async () => {
+    const url = 'https://www.xvideos.com/dead-from-homepage'
+    testDb.prepare(
+      `INSERT INTO homepage_cache (id, category_key, url, dead, dead_at)
+       VALUES (?, ?, ?, 1, datetime('now'))`
+    ).run('hp_dead', 'nsfw_trending', url)
+
+    const app = await buildApp()
+    const r = await callApp(app, 'GET', '/api/stream-url?url=' + encodeURIComponent(url))
+    expect(r.status).toBe(404)
+    expect(mockGetStreamUrl).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 without calling yt-dlp when persistent_row_items.dead = 1', async () => {
+    const url = 'https://www.pornhub.com/view_video.php?viewkey=ph_dead'
+    testDb.prepare(
+      `INSERT INTO persistent_row_items (row_key, video_url, dead, dead_at)
+       VALUES (?, ?, 1, datetime('now'))`
+    ).run('ph_likes', url)
+
+    const app = await buildApp()
+    const r = await callApp(app, 'GET', '/api/stream-url?url=' + encodeURIComponent(url))
+    expect(r.status).toBe(404)
+    expect(mockGetStreamUrl).not.toHaveBeenCalled()
+  })
+
+  it('a dead URL is dead even if another table has a fresh stream_url for it (defense-in-depth)', async () => {
+    // If the same URL is in feed_cache (dead) AND homepage_cache (fresh
+    // stream_url), the dead flag wins. The fresh stream_url is almost
+    // certainly stale anyway (CDN URLs 403 long before the 2h TTL ends
+    // for content that was deleted upstream).
+    const url = 'https://www.xvideos.com/dead-but-cached'
+    testDb.prepare(
+      `INSERT INTO feed_cache (id, url, dead, dead_at) VALUES (?, ?, 1, datetime('now'))`
+    ).run('fc_dead_x', url)
+    testDb.prepare(
+      `INSERT INTO homepage_cache (id, category_key, url, stream_url, stream_url_expires_at)
+       VALUES (?, ?, ?, ?, datetime('now', '+1 hours'))`
+    ).run('hp_fresh_but_dead', 'nsfw_trending', url, 'https://cdn.example.com/stale-cached.mp4')
+
+    const app = await buildApp()
+    const r = await callApp(app, 'GET', '/api/stream-url?url=' + encodeURIComponent(url))
+    expect(r.status).toBe(404)
+    expect(mockGetStreamUrl).not.toHaveBeenCalled()
   })
 })

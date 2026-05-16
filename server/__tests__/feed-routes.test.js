@@ -46,7 +46,9 @@ function makeDb() {
       like_count INTEGER,
       view_count INTEGER,
       subscriber_count INTEGER,
-      fetched_at DATETIME DEFAULT (datetime('now'))
+      fetched_at DATETIME DEFAULT (datetime('now')),
+      dead INTEGER DEFAULT 0,
+      dead_at DATETIME
     );
     CREATE TABLE sources (
       domain TEXT PRIMARY KEY,
@@ -107,11 +109,11 @@ function makeDb() {
 
 function seedVideos(db, rows) {
   const stmt = db.prepare(
-    `INSERT INTO feed_cache (id, mode, watched, url, title, source_domain, duration)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO feed_cache (id, mode, watched, url, title, source_domain, duration, dead)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   )
   for (const r of rows) {
-    stmt.run(r.id, r.mode ?? 'social', r.watched ?? 0, r.url ?? `https://example.com/${r.id}`, r.title ?? r.id, r.source ?? 'example.com', r.duration ?? 60)
+    stmt.run(r.id, r.mode ?? 'social', r.watched ?? 0, r.url ?? `https://example.com/${r.id}`, r.title ?? r.id, r.source ?? 'example.com', r.duration ?? 60, r.dead ?? 0)
   }
 }
 
@@ -195,6 +197,25 @@ describe('GET /api/feed/next — basic', () => {
     const ids = r.body.videos.map(v => v.id)
     expect(ids).toContain('sf1')
     expect(ids).not.toContain('nx1')
+  })
+
+  // -----------------------------------------------------------
+  // Dead-URL filter (2026-05-16 NSFW skip-spike fix). Once a URL
+  // has been marked dead by the pre-resolve pipeline, the hero
+  // autoplay must never pick it again — otherwise we re-trigger
+  // the skipBrokenHero cascade that surfaced the original problem.
+  // -----------------------------------------------------------
+  it('excludes dead=1 rows from /api/feed/next', async () => {
+    seedVideos(testDb, [
+      { id: 'live', mode: 'social', watched: 0, dead: 0 },
+      { id: 'dead', mode: 'social', watched: 0, dead: 1 },
+    ])
+    const app = await buildApp()
+    const r = await callApp(app, 'GET', '/api/feed/next?mode=social&count=10')
+    expect(r.status).toBe(200)
+    const ids = r.body.videos.map(v => v.id)
+    expect(ids).toContain('live')
+    expect(ids).not.toContain('dead')
   })
 })
 

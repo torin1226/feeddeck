@@ -760,6 +760,11 @@ export function initDatabase() {
   // SQLite has no ALTER INDEX; drop-and-recreate is the safe pattern.
   migrateFeedCacheModeIndex(db)
 
+  // Add `dead` + `dead_at` columns + index so the pre-resolve pipeline
+  // can mark permanently-broken URLs and the feed/stream-url path can
+  // filter them out (2026-05-16 NSFW skip-spike fix).
+  migrateDeadUrlColumns(db)
+
   // Migrate: fix 'Your Subscriptions' label to 'My Subscriptions' to match BrowseSection TARGET_LABELS
   try {
     db.exec("UPDATE categories SET label = 'My Subscriptions' WHERE key = 'social_subscriptions' AND label = 'Your Subscriptions'")
@@ -1427,6 +1432,55 @@ export function migrateFeedCacheModeIndex(database = db) {
     logger.warn('idx_feed_cache_mode migration failed', { error: err.message })
     return false
   }
+}
+
+// Add `dead INTEGER DEFAULT 0` + `dead_at DATETIME` to the three cache
+// tables that hold video URLs. The pre-resolve pipeline marks a URL
+// dead when yt-dlp returns a permanent-failure error (404, 410, removed)
+// so that URL stops being retried every warm tick and stops being picked
+// for hero autoplay. Idempotent.
+//
+// Also creates idx_feed_cache_dead so the dead = 0 filter on the feed
+// selection hot path doesn't force a table scan over 20k+ rows.
+export function migrateDeadUrlColumns(database = db) {
+  if (!database) return false
+  const tables = [
+    { name: 'feed_cache' },
+    { name: 'homepage_cache' },
+    { name: 'persistent_row_items' },
+  ]
+  for (const { name } of tables) {
+    try {
+      const cols = new Set(
+        database.prepare(`PRAGMA table_info(${name})`).all().map(c => c.name)
+      )
+      if (!cols.has('dead')) {
+        database.exec(`ALTER TABLE ${name} ADD COLUMN dead INTEGER DEFAULT 0`)
+      }
+      if (!cols.has('dead_at')) {
+        database.exec(`ALTER TABLE ${name} ADD COLUMN dead_at DATETIME`)
+      }
+    } catch (err) {
+      // Table may not exist on a freshly-cloned dev DB; skip rather
+      // than crash startup.
+      if (logger?.warn) {
+        logger.warn(`dead-column migration skipped for ${name}`, { error: err.message })
+      }
+    }
+  }
+  // Index on (dead, mode) so feed selection queries that add `dead = 0`
+  // to their WHERE clause use the index instead of scanning. Cheap to
+  // create; SQLite skips if the index already exists.
+  try {
+    database.exec(
+      `CREATE INDEX IF NOT EXISTS idx_feed_cache_dead ON feed_cache(dead, mode)`
+    )
+  } catch (err) {
+    if (logger?.warn) {
+      logger.warn('idx_feed_cache_dead create failed', { error: err.message })
+    }
+  }
+  return true
 }
 
 // Graceful shutdown: optimize, truncate WAL, close.

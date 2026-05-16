@@ -23,6 +23,8 @@ import audioRoutes from './routes/audio.js'
 import debugRoutes from './routes/debug.js'
 import boundaryDebugRoutes from './routes/boundary-debug.js'
 import { rotateIfStale, pruneOlderThan } from './boundary/sink.js'
+import { _isCookieExpired, _extractDomain } from './sources/ytdlp.js'
+import { preResolveStreamUrls } from './pre-resolve-stream-urls.js'
 import { fetchAudioCycle } from './sources/audio-fetcher.js'
 import { modeFirewall } from './firewall.js'
 
@@ -154,32 +156,24 @@ async function _refillFeedCacheImpl(mode) {
 
 // -----------------------------------------------------------
 // Pre-resolve stream URLs for a batch of video page URLs.
+//
+// Thin adapter that wires the testable pre-resolve module to live deps:
+//   - registry (real yt-dlp / scraper)
+//   - db (live SQLite)
+//   - _isCookieExpired (yt-dlp TTL'd skip set — see sources/ytdlp.js)
+//   - _extractDomain (URL → 'pornhub.com')
+// The module itself short-circuits dead-cookie domains and marks dead
+// URLs so future warm cycles don't re-attempt them — the 2026-05-16
+// NSFW flood fix.
 // -----------------------------------------------------------
-const STREAM_RESOLVE_CONCURRENCY = 3
 async function _preResolveStreamUrls(videoUrls) {
-  const updateStmt = db.prepare(
-    `UPDATE feed_cache SET stream_url = ?, expires_at = datetime('now', '+2 hours') WHERE url = ?`
-  )
-
-  let resolved = 0, failed = 0
-
-  for (let i = 0; i < videoUrls.length; i += STREAM_RESOLVE_CONCURRENCY) {
-    const batch = videoUrls.slice(i, i + STREAM_RESOLVE_CONCURRENCY)
-    const results = await Promise.allSettled(
-      batch.map(async (url) => {
-        const cdnUrl = await registry.getStreamUrl(url)
-        updateStmt.run(cdnUrl, url)
-        return cdnUrl
-      })
-    )
-
-    for (const r of results) {
-      if (r.status === 'fulfilled') resolved++
-      else failed++
-    }
-  }
-
-  logger.info(`  🔗 Stream URLs resolved: ${resolved} OK, ${failed} failed`)
+  return preResolveStreamUrls(videoUrls, {
+    registry,
+    db,
+    isCookieExpired: _isCookieExpired,
+    extractDomain: _extractDomain,
+    logger,
+  })
 }
 
 // -----------------------------------------------------------
@@ -371,10 +365,14 @@ function startStreamUrlTTLMonitor() {
       // never-resolved URLs so users hit cache instead of waiting for yt-dlp.
       // RANDOM() spreads across all sources proportionally rather than draining
       // one source's entire backlog. 20/tick is enough to stay ahead of browsing.
+      //
+      // dead = 0 filter is critical: without it this loop would re-attempt
+      // the same dead-video URLs every 15 min, flooding yt-dlp + the
+      // boundary tally (the 2026-05-16 NSFW unknown_error pattern).
       if (tickCount % 3 === 0) {
         const unresolved = db.prepare(`
           SELECT url FROM feed_cache
-          WHERE stream_url IS NULL AND watched = 0
+          WHERE stream_url IS NULL AND watched = 0 AND COALESCE(dead, 0) = 0
           ORDER BY RANDOM() LIMIT 20
         `).all()
         if (unresolved.length > 0) {

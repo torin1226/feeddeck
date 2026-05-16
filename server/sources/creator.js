@@ -212,7 +212,7 @@ export class CreatorAdapter extends SourceAdapter {
 
     let data
     try { data = JSON.parse(body) } catch (err) {
-      throw new Error(`Reddit API ok but body not JSON: ${err.message}`)
+      throw new Error(`Reddit API ok but body not JSON: ${err.message}`, { cause: err })
     }
     const posts = data?.data?.children || []
     const videos = []

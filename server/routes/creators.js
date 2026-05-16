@@ -18,6 +18,7 @@ const URL_GENERATORS = {
   tiktok:    (handle) => `https://www.tiktok.com/@${handle.replace(/^@/, '')}`,
   instagram: (handle) => `https://www.instagram.com/${handle.replace(/^@/, '')}/reels/`,
   twitter:   (handle) => `https://x.com/${handle.replace(/^@/, '')}/media`,
+  soundgasm: (handle) => `https://soundgasm.net/u/${handle.replace(/^@/, '')}`,
 }
 
 const VALID_PLATFORMS = Object.keys(URL_GENERATORS)
@@ -34,15 +35,19 @@ router.get('/api/creators', (req, res) => {
   res.json({ creators: rows })
 })
 
-// POST /api/creators  { platform, handle, label? }
+// POST /api/creators  { platform, handle, label?, surface? }
 router.post('/api/creators', (req, res) => {
-  const { platform, handle, label } = req.body || {}
+  const { platform, handle, label, surface } = req.body || {}
 
   if (!platform || !VALID_PLATFORMS.includes(platform)) {
     return res.status(400).json({ error: `Invalid platform. Use: ${VALID_PLATFORMS.join(', ')}` })
   }
   if (!handle || typeof handle !== 'string' || !handle.trim()) {
     return res.status(400).json({ error: 'handle is required' })
+  }
+  const cleanSurface = surface == null ? 'feed' : String(surface)
+  if (!['feed', 'audio'].includes(cleanSurface)) {
+    return res.status(400).json({ error: "surface must be 'feed' or 'audio'" })
   }
 
   const cleanHandle = handle.trim().replace(/^[@/r/]+/, '')
@@ -54,8 +59,8 @@ router.post('/api/creators', (req, res) => {
 
   try {
     const result = db.prepare(
-      'INSERT INTO creators (platform, handle, url, label) VALUES (?, ?, ?, ?)'
-    ).run(platform, cleanHandle, url, label || cleanHandle)
+      'INSERT INTO creators (platform, handle, url, label, surface) VALUES (?, ?, ?, ?, ?)'
+    ).run(platform, cleanHandle, url, label || cleanHandle, cleanSurface)
 
     // Auto-enable the platform source if it was inactive
     db.prepare("UPDATE sources SET active = 1 WHERE domain = ? AND query = '__creators__'")

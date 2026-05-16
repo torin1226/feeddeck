@@ -106,7 +106,7 @@ router.get('/api/feed/next', (req, res) => {
              ) THEN 1 ELSE 0 END AS from_saved_search,
              (SELECT row_key FROM persistent_row_items WHERE video_url = fc.url LIMIT 1) AS _persistent_row
       FROM feed_cache fc
-      WHERE fc.mode = ? AND fc.watched = 0${whereExtra}
+      WHERE fc.mode = ? AND fc.watched = 0 AND COALESCE(fc.dead, 0) = 0${whereExtra}
       ORDER BY fc.fetched_at DESC
       LIMIT ${CANDIDATE_CAP}
     `).all(...params)

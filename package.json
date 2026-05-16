@@ -16,6 +16,8 @@
     "warm": "node server/scripts/warm-cache.js",
     "warm:social": "node server/scripts/warm-cache.js --social",
     "warm:nsfw": "node server/scripts/warm-cache.js --nsfw",
+    "cleanup:dead": "node server/scripts/cleanup-dead-urls.mjs",
+    "cleanup:dead:dry": "node server/scripts/cleanup-dead-urls.mjs --dry",
     "diagnose:ph": "node server/scripts/diagnose-ph-personal.mjs",
     "hydration:health": "node server/scripts/row-health-report.mjs"
   },

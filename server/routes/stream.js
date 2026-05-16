@@ -29,6 +29,26 @@ function statusForOutcome(outcome) {
 
 const router = Router()
 
+// True if `url` is marked dead in ANY of the three URL-bearing cache tables.
+// A URL is dead when the pre-resolve pipeline saw yt-dlp return a permanent
+// failure (404 / 410 / removed). Once dead, the stream-url route refuses
+// to re-attempt resolution. Statements are lazily prepared because the
+// `dead` column was added by a migration — a fresh dev DB doesn't have it
+// until initDatabase() runs, and importing this module happens earlier.
+let _deadFeedStmt, _deadHpStmt, _deadPersistentStmt
+function _isUrlDead(url) {
+  if (!_deadFeedStmt) {
+    _deadFeedStmt = db.prepare(`SELECT 1 FROM feed_cache WHERE url = ? AND dead = 1 LIMIT 1`)
+  }
+  if (!_deadHpStmt) {
+    _deadHpStmt = db.prepare(`SELECT 1 FROM homepage_cache WHERE url = ? AND dead = 1 LIMIT 1`)
+  }
+  if (!_deadPersistentStmt) {
+    _deadPersistentStmt = db.prepare(`SELECT 1 FROM persistent_row_items WHERE video_url = ? AND dead = 1 LIMIT 1`)
+  }
+  return !!(_deadFeedStmt.get(url) || _deadHpStmt.get(url) || _deadPersistentStmt.get(url))
+}
+
 // -----------------------------------------------------------
 // Liveness check — process is alive
 // -----------------------------------------------------------
@@ -118,6 +138,22 @@ router.get('/api/metadata', async (req, res) => {
 router.get('/api/stream-url', async (req, res) => {
   const { url, format } = req.query
   if (!url) return res.status(400).json({ error: 'URL required' })
+
+  // Dead-URL short-circuit (2026-05-16 fix). If any of the three cache
+  // tables has marked this URL dead (yt-dlp returned a permanent-failure
+  // error in a prior pass), refuse to re-attempt resolution. The hero
+  // autoplay treats a 404 here as "skip this candidate", which is the
+  // same behavior as if yt-dlp had failed — but it's free instead of
+  // burning a yt-dlp process and re-flooding the boundary tally.
+  // Defense-in-depth: dead wins even when format= is set (no force-
+  // refresh on dead URLs) and even when another table has a fresh-
+  // looking stream_url (that CDN URL is almost certainly already 403ing).
+  try {
+    const deadInAny = _isUrlDead(url)
+    if (deadInAny) {
+      return res.status(404).json({ error: 'Video unavailable or taken down' })
+    }
+  } catch { /* missing dead column on legacy DBs → fall through */ }
 
   // Check feed_cache, homepage_cache, and persistent_row_items for a cached,
   // non-expired stream URL (skip cache if specific format requested). Each
