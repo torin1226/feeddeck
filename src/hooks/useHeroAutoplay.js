@@ -12,6 +12,7 @@ import useHomeStore from '../stores/homeStore'
 export default function useHeroAutoplay(heroItem, theatreMode) {
   const videoRef = useRef(null)
   const abortRef = useRef(null)
+  const mountTimeRef = useRef(null)
   const [autoplayUrl, setAutoplayUrl] = useState(null)
   const [autoplayReady, setAutoplayReady] = useState(false)
   const [autoplayError, setAutoplayError] = useState(false)
@@ -32,6 +33,13 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
     mql.addEventListener('change', handler)
     return () => mql.removeEventListener('change', handler)
   }, [])
+
+  // Record mount time for cold-start instrumentation
+  useEffect(() => {
+    if (heroItem?.id && mountTimeRef.current === null) {
+      mountTimeRef.current = performance.now()
+    }
+  }, [heroItem?.id])
 
   // Resolve stream URL when heroItem changes
   useEffect(() => {
@@ -92,6 +100,11 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
     vid.load()
 
     const onCanPlay = () => {
+      const delta = performance.now() - (mountTimeRef.current ?? performance.now())
+      if (delta > 600) {
+        console.warn('[hero-autoplay] slow cold-start:', Math.round(delta), 'ms')
+      }
+      mountTimeRef.current = null
       setAutoplayReady(true)
       vid.play().then(() => {
         setTeaserPhase('playing')

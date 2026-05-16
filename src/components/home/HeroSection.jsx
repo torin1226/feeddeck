@@ -38,6 +38,7 @@ export default function HeroSection() {
   const {
     autoplayVideoRef, autoplayReady, autoplayUrl,
     muted: autoplayMuted, toggleMute: toggleAutoplayMute,
+    teaserPhase,
   } = useHeroAutoplay(heroItem, theatreMode)
 
   const recordRating = useRatingsStore(s => s.recordRating)
@@ -381,6 +382,17 @@ export default function HeroSection() {
           theatreMode ? 'bottom-24 opacity-0 pointer-events-none' : (upNextHidden ? 'bottom-[40px]' : 'bottom-[212px]')
         }`}
       >
+        {/* Tonight's Pick callout — fades in when teaser enters rest */}
+        <div
+          className={`mb-3 inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider
+            bg-black/40 border border-white/[0.12] backdrop-blur-md rounded-md px-2.5 py-1
+            text-white/70 transition-opacity duration-500
+            ${teaserPhase === 'rest' && !theatreMode ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+          Tonight's Pick
+        </div>
+
         {/* Title — 30/600/1.15, line-clamp 2, dates stripped */}
         <h1
           className="font-display text-[30px] font-semibold leading-[1.15] text-text-primary overflow-hidden"
