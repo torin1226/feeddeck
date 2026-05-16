@@ -102,6 +102,20 @@ describe('boundary.exec(cmd, args, opts)', () => {
     })
     expect(r.outcome).toBe('rate_limited')
   })
+
+  it('returns stderr on the error path too', async () => {
+    const fakeExec = vi.fn(async () => {
+      const err = new Error('exit 1')
+      err.stderr = 'partial output then a problem'
+      throw err
+    })
+    const r = await boundary.exec('yt-dlp', ['x'], {
+      name: 'yt-dlp-stream-url',
+      execImpl: fakeExec,
+    })
+    expect(r.outcome).not.toBe('ok')
+    expect(r.stderr).toBe('partial output then a problem')
+  })
 })
 
 describe('boundary.readCookie(path, opts)', () => {

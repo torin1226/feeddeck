@@ -9,6 +9,11 @@
 //   boundary.exec     execImpl
 //   boundary.readCookie readImpl
 //   boundary.scrape   (no override needed — caller passes the fn)
+//
+// NOTE: boundary.exec additionally returns `stderr` on BOTH success and
+// error paths — yt-dlp surfaces "cookies are no longer valid" via stderr
+// on partial-success runs as well as failures. Consumers that don't care
+// about stderr can ignore the field.
 // ============================================================
 
 import { execFile } from 'child_process'
@@ -78,7 +83,7 @@ async function wrappedExec(cmd, args, opts = {}) {
   if (error) {
     const outcome = classifyError(error)
     record(name, outcome, durationMs)
-    return { outcome, value: null, durationMs, error }
+    return { outcome, value: null, stderr: error?.stderr ?? '', durationMs, error }
   }
   const stdout = value?.stdout ?? ''
   const outcome = stdout.length === 0 ? OUTCOMES.EMPTY : OUTCOMES.OK
