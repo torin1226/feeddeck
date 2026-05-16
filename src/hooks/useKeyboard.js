@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import useModeStore from '../stores/modeStore'
 import useQueueStore from '../stores/queueStore'
 import useDeviceStore from '../stores/deviceStore'
+import usePaletteStore from '../stores/paletteStore'
 
 // ============================================================
 // useKeyboard Hook
@@ -48,6 +49,21 @@ export default function useKeyboard() {
           if (e.ctrlKey || e.metaKey) {
             e.preventDefault()
             useDeviceStore.getState().toggleMobilePreview()
+          }
+          break
+
+        // ? — open shortcut palette (Shift+/ on most layouts)
+        case '?':
+          e.preventDefault()
+          usePaletteStore.getState().show()
+          break
+
+        // Cmd/Ctrl+K — toggle shortcut palette
+        case 'k':
+        case 'K':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault()
+            usePaletteStore.getState().toggle()
           }
           break
 

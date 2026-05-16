@@ -8,6 +8,8 @@ import ErrorBoundary from './ErrorBoundary'
 import FloatingQueue from './FloatingQueue'
 import GlobalToast from './GlobalToast'
 import OfflineBanner from './OfflineBanner'
+import ShortcutPalette from './ShortcutPalette'
+import usePaletteStore from '../stores/paletteStore'
 
 // Code-split route-level pages for smaller initial bundle
 const HomePage = lazy(() => import('../pages/HomePage'))
@@ -43,6 +45,8 @@ export default function AppShell() {
   const isFeed = location.pathname === '/feed'
   const mobilePreview = useDeviceStore(s => s.mobilePreview)
   const modeHydrated = useModeStore(s => s._hydrated)
+  const paletteOpen = usePaletteStore(s => s.open)
+  const closePalette = usePaletteStore(s => s.close)
 
   // Block ALL rendering until mode store has hydrated.
   // This prevents NSFW content from flashing on SFW first load.
@@ -81,6 +85,7 @@ export default function AppShell() {
       {!isFeed && <FloatingQueue />}
       <GlobalToast />
       <OfflineBanner />
+      <ShortcutPalette open={paletteOpen} onClose={closePalette} />
       {/* Persistent audio player. Mounted at the root so the <audio>
           element survives route changes; returns null when nothing is
           loaded so it's invisible on pages other than /audio. */}
