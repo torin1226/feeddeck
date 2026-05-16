@@ -68,6 +68,27 @@ function readTrendsCache(sourceKey) {
   }
 }
 
+/**
+ * Build dynamic ytsearch10 fallback queries from cached trends24 payloads
+ * for any `trends24:*` source in `sources`. Returns one query per source
+ * whose cache has a fresh top topic (post-isQualityTopic filter, which
+ * `resolveTrends24` already applied before writing the cache). Returns
+ * `[]` if no source qualifies — callers should fall back to whatever
+ * static fallback they had configured before.
+ */
+export function buildTrends24FallbackQueries(sources) {
+  if (!Array.isArray(sources)) return []
+  const queries = []
+  for (const src of sources) {
+    if (typeof src !== 'string' || !src.startsWith('trends24:')) continue
+    const cached = readTrendsCache(src)
+    if (!cached || !Array.isArray(cached.topics) || cached.topics.length === 0) continue
+    const top = cached.topics[0]
+    if (top) queries.push(`ytsearch10:${top}`)
+  }
+  return queries
+}
+
 function writeTrendsCache(sourceKey, payload, ttlMinutes = TRENDS_TTL_MIN_DEFAULT) {
   try {
     db.prepare(

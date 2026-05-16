@@ -6,7 +6,7 @@ import { registry, ytdlp as ytdlpAdapter, scraper as scraperAdapter } from '../s
 import { logger } from '../logger.js'
 import { getMode, formatDuration, safeParse } from '../utils.js'
 import { scoreVideos, syncSearchToTaste } from '../scoring.js'
-import { resolveTopics, recordDiscoveredCreators } from '../topics.js'
+import { resolveTopics, recordDiscoveredCreators, buildTrends24FallbackQueries } from '../topics.js'
 import { filterSocialContent } from '../content-filters.js'
 
 const router = Router()
@@ -977,8 +977,27 @@ async function refillCategory(categoryKey, sessionCache = new Map()) {
     }
   }
 
-  // -------- Legacy fallback ytsearches when collected is sparse --------
-  if (collected.length < 8 && fallbacks.length > 0) {
+  // -------- Dynamic trends24-keyword fallback (preferred over static) --------
+  // Rotates with current trends instead of firing the literal `ytsearch10:`
+  // strings stored in `fallback_queries`. Static fallback only fires when
+  // no `trends24:*` source has a fresh cached keyword.
+  let dynamicTrendsRan = false
+  if (collected.length < 8) {
+    const dynamicQueries = buildTrends24FallbackQueries(sources).slice(0, 3)
+    for (const q of dynamicQueries) {
+      dynamicTrendsRan = true
+      if (sessionCache.has(q)) { collected.push(...sessionCache.get(q)); continue }
+      try {
+        const r = await registry.search(q, { adapter: 'yt-dlp', limit: 5 })
+        const vids = Array.isArray(r) ? r : (r?.videos || [])
+        sessionCache.set(q, vids)
+        collected.push(...vids)
+      } catch { /* swallow */ }
+    }
+  }
+
+  // -------- Legacy static-string fallback ytsearches (only if dynamic didn't run) --------
+  if (collected.length < 8 && !dynamicTrendsRan && fallbacks.length > 0) {
     for (const q of fallbacks.slice(0, 3)) {
       if (sessionCache.has(q)) { collected.push(...sessionCache.get(q)); continue }
       try {
