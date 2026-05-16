@@ -50,9 +50,12 @@ export default function AppShell() {
   const closePalette = usePaletteStore(s => s.close)
 
   // Background-warm NSFW homepage on first SFW load. The app always
-  // boots SFW; firing an NSFW /api/homepage GET in the background
+  // boots SFW; firing the NSFW homepage request in the background
   // primes the server's in-memory caches and triggers refill if any
   // category is below threshold. Single-flight per browser session.
+  // Fires immediately after mode hydration — modern browsers multiplex
+  // requests over HTTP/2 so this doesn't meaningfully slow the SFW load,
+  // and users often flip to NSFW within seconds.
   useEffect(() => {
     if (!modeHydrated || !isSFW) return
     if (typeof window === 'undefined') return
@@ -61,12 +64,10 @@ export default function AppShell() {
       sessionStorage.setItem('fd-nsfw-prewarmed', '1')
     } catch { /* sessionStorage unavailable — fire anyway, worst case is a duplicate warm */ }
     const ac = new AbortController()
-    const tid = setTimeout(() => {
-      fetch('/api/homepage?mode=nsfw', { signal: ac.signal }).catch(() => {
-        // Swallow errors — this is a fire-and-forget warm
-      })
-    }, 1500)
-    return () => { clearTimeout(tid); ac.abort() }
+    fetch('/api/homepage?mode=nsfw', { signal: ac.signal }).catch(() => {
+      // Fire-and-forget — swallow errors
+    })
+    return () => { ac.abort() }
   }, [modeHydrated, isSFW])
 
   // Block ALL rendering until mode store has hydrated.

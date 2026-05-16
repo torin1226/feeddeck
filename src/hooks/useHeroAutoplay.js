@@ -20,6 +20,19 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
   const [teaserPhase, setTeaserPhase] = useState('idle') // 'idle' | 'playing' | 'rest'
   const teaserTimerRef = useRef(null)
   const hlsRef = useRef(null)
+  const swapCountRef = useRef(0)
+  const MAX_HERO_SWAPS = 5
+
+  // Silently swap to the next hero candidate when the current one's stream
+  // can't be resolved or won't play. dismissAndAdvance pulls a replacement
+  // from the carousel/categories so the user never sees a dead hero. Capped
+  // so a string of unresolvable URLs can't churn forever.
+  const skipBrokenHero = useCallback((currentHero) => {
+    if (!currentHero?.url && !currentHero?.id) return
+    if (swapCountRef.current >= MAX_HERO_SWAPS) return
+    swapCountRef.current += 1
+    useHomeStore.getState().dismissAndAdvance(currentHero)
+  }, [])
 
   // Check prefers-reduced-motion
   const [reducedMotion, setReducedMotion] = useState(() => {
@@ -64,14 +77,23 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
           `/api/stream-url?url=${encodeURIComponent(heroItem.url)}`,
           { signal: abort.signal }
         )
-        if (!res.ok || abort.signal.aborted) return
+        if (abort.signal.aborted) return
+        if (!res.ok) {
+          skipBrokenHero(heroItem)
+          return
+        }
         const data = await res.json()
-        if (!data.streamUrl || abort.signal.aborted) return
+        if (abort.signal.aborted) return
+        if (!data.streamUrl) {
+          skipBrokenHero(heroItem)
+          return
+        }
 
         setAutoplayUrl(data.streamUrl)
       } catch (e) {
         if (e.name !== 'AbortError') {
           setAutoplayError(true)
+          skipBrokenHero(heroItem)
         }
       }
     }
@@ -82,6 +104,9 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
       abort.abort()
       abortRef.current = null
     }
+  // skipBrokenHero is a stable useCallback; heroItem.id/url are tracked
+  // explicitly so a heroItem object-identity change doesn't re-trigger.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [heroItem?.id, heroItem?.url, theatreMode, reducedMotion])
 
   // When autoplayUrl changes, load the video. MP4: set vid.src to proxy.
@@ -101,6 +126,10 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
         console.warn('[hero-autoplay] slow cold-start:', Math.round(delta), 'ms')
       }
       mountTimeRef.current = null
+      // A canplay event means this hero is good — reset the swap budget so
+      // a fresh string of failures later in the session can still trigger
+      // replacements.
+      swapCountRef.current = 0
       setAutoplayReady(true)
       vid.play().then(() => {
         setTeaserPhase('playing')
@@ -116,6 +145,7 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
     const onError = () => {
       setAutoplayError(true)
       setAutoplayReady(false)
+      skipBrokenHero(heroItem)
     }
 
     vid.addEventListener('canplay', onCanPlay, { once: true })
@@ -141,8 +171,8 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
         import('hls.js').then(({ default: Hls }) => {
           if (cancelled) return
           if (!Hls.isSupported()) {
-            // No MSE — give up on this URL silently
             setAutoplayError(true)
+            skipBrokenHero(heroItem)
             return
           }
           destroyHls()
@@ -152,6 +182,7 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
             if (!data?.fatal) return
             destroyHls()
             setAutoplayError(true)
+            skipBrokenHero(heroItem)
           })
           hls.loadSource(`/api/hls-proxy?url=${encodeURIComponent(autoplayUrl)}`)
           hls.attachMedia(vid)
@@ -159,6 +190,7 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
         }).catch(() => {
           if (cancelled) return
           setAutoplayError(true)
+          skipBrokenHero(heroItem)
         })
       }
     } else {
@@ -172,6 +204,9 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
       vid.removeEventListener('error', onError)
       destroyHls()
     }
+  // skipBrokenHero stable; heroItem closure matches autoplayUrl by
+  // construction (resolve effect drives both in sequence).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoplayUrl])
 
   // Sync muted state to video element
