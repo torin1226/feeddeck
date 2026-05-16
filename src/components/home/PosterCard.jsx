@@ -6,6 +6,7 @@ import useRatingsStore from '../../stores/ratingsStore'
 import useToastStore from '../../stores/toastStore'
 import { registerPreviewTarget, prefetchStreamUrl } from '../../hooks/useFocusPreview'
 import ThumbsRating from '../ThumbsRating'
+import WhyThisCardTooltip from './WhyThisCardTooltip'
 
 // ============================================================
 // PosterCard
@@ -36,6 +37,8 @@ function distProps(dist) {
 const PosterCard = memo(
   forwardRef(function PosterCard({ item, dist, isFocused, onClick, loading = 'lazy', variant = 'poster', progressPercent, surfaceKey, onRated }, ref) {
     const [showThumbs, setShowThumbs] = useState(false)
+    const [showReason, setShowReason] = useState(false)
+    const reasonTimerRef = useRef(null)
     const navigate = useNavigate()
     const markViewed = useHomeStore((s) => s.markViewed)
     const addToQueue = useQueueStore((s) => s.addToQueue)
@@ -80,6 +83,8 @@ const PosterCard = memo(
 
       return () => cleanups.forEach((fn) => fn())
     }, [item?.id, item?.url])
+
+    useEffect(() => () => clearTimeout(reasonTimerRef.current), [])
 
     const orient = item?.orient || 'h'
     const widths = WIDTH[orient] ?? WIDTH.h
@@ -272,8 +277,18 @@ const PosterCard = memo(
       <div ref={ref} style={containerStyle} className={isFocused ? 'poster-card-focused' : undefined}
         onClick={onClick} role="button" tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.() } }}
-        onMouseEnter={() => isFocused && !isExpanded && setShowThumbs(true)}
-        onMouseLeave={() => setShowThumbs(false)}>
+        onMouseEnter={() => {
+          if (isFocused && !isExpanded) setShowThumbs(true)
+          clearTimeout(reasonTimerRef.current)
+          if (item?.reason) {
+            reasonTimerRef.current = setTimeout(() => setShowReason(true), 600)
+          }
+        }}
+        onMouseLeave={() => {
+          setShowThumbs(false)
+          clearTimeout(reasonTimerRef.current)
+          setShowReason(false)
+        }}>
 
         {/* Thumbnail */}
         {item?.thumbnail ? (
@@ -321,6 +336,9 @@ const PosterCard = memo(
         {orient === 'v' && (
           <div style={shortBadgeStyle}>Short</div>
         )}
+
+        {/* Why this card? — surfaces after 600ms hover */}
+        {showReason && <WhyThisCardTooltip reason={item?.reason} />}
 
         {/* Gradient */}
         <div style={overlayStyle} />
@@ -390,20 +408,20 @@ const PosterCard = memo(
                   <>
                     <button
                       style={{ ...btnBase, backgroundColor: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.18)', padding: '7px 10px' }}
-                      onClick={(e) => { e.stopPropagation(); handleRate('down') }}
-                      aria-label="Not for me"
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17" />
-                      </svg>
-                    </button>
-                    <button
-                      style={{ ...btnBase, backgroundColor: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.18)', padding: '7px 10px' }}
                       onClick={(e) => { e.stopPropagation(); handleRate('up') }}
                       aria-label="Like this"
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3" />
+                      </svg>
+                    </button>
+                    <button
+                      style={{ ...btnBase, backgroundColor: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.85)', border: '1px solid rgba(255,255,255,0.18)', padding: '7px 10px' }}
+                      onClick={(e) => { e.stopPropagation(); handleRate('down') }}
+                      aria-label="Not for me"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zm7-13h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17" />
                       </svg>
                     </button>
                   </>

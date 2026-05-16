@@ -428,6 +428,13 @@ export default function HeroSection() {
           )}
         </div>
 
+        {/* Recommendation reason — small italic line under meta */}
+        {heroItem.reason && (
+          <div className="mt-1.5 text-[11px] text-white/45 italic">
+            {heroItem.reason.label}
+          </div>
+        )}
+
         {/* Action row — Play + Queue + Thumbs Up + Thumbs Down. All 38px tall. */}
         <div className="flex items-center gap-2 mt-[14px]">
           <button
