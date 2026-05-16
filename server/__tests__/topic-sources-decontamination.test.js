@@ -160,3 +160,100 @@ describe('topic_sources decontamination migration', () => {
     expect(getTopicSources(db, 'social_sports')).toBe(sportsSources)
   })
 })
+
+const BOOST_FIXES = [
+  ['social_tech',   '["liked_tags:tech","boosted_creators:3","discovered_creators:social_tech"]',
+                    '["liked_tags:tech","discovered_creators:social_tech"]'],
+  ['social_design', '["liked_tags:design,ux","boosted_creators:5","discovered_creators:social_design"]',
+                    '["liked_tags:design,ux","discovered_creators:social_design"]'],
+  ['social_ai',     '["liked_tags:ai,vibe coding,claude tutorial,claude routines","boosted_creators:3","discovered_creators:social_ai"]',
+                    '["liked_tags:ai,vibe coding,claude tutorial,claude routines","discovered_creators:social_ai"]'],
+]
+
+function applyBoostMigration(database) {
+  for (const [key, oldVal, newVal] of BOOST_FIXES) {
+    database.prepare(
+      `UPDATE categories SET topic_sources = ? WHERE key = ? AND topic_sources = ?`
+    ).run(newVal, key, oldVal)
+  }
+}
+
+describe('boosted_creators removal migration', () => {
+  it('removes boosted_creators:3 from tech', () => {
+    db.prepare(
+      `INSERT INTO categories (key, label, query, topic_sources) VALUES (?, ?, ?, ?)`
+    ).run('social_tech', 'Tech & Gadgets', 'q',
+      '["liked_tags:tech","boosted_creators:3","discovered_creators:social_tech"]')
+
+    applyBoostMigration(db)
+
+    const result = JSON.parse(getTopicSources(db, 'social_tech'))
+    expect(result).toEqual(['liked_tags:tech', 'discovered_creators:social_tech'])
+    expect(result).not.toContain('boosted_creators:3')
+  })
+
+  it('removes boosted_creators:5 from design', () => {
+    db.prepare(
+      `INSERT INTO categories (key, label, query, topic_sources) VALUES (?, ?, ?, ?)`
+    ).run('social_design', 'Design', 'q',
+      '["liked_tags:design,ux","boosted_creators:5","discovered_creators:social_design"]')
+
+    applyBoostMigration(db)
+
+    const result = JSON.parse(getTopicSources(db, 'social_design'))
+    expect(result).toEqual(['liked_tags:design,ux', 'discovered_creators:social_design'])
+    expect(result).not.toContain('boosted_creators:5')
+  })
+
+  it('removes boosted_creators:3 from AI', () => {
+    db.prepare(
+      `INSERT INTO categories (key, label, query, topic_sources) VALUES (?, ?, ?, ?)`
+    ).run('social_ai', 'AI & Coding', 'q',
+      '["liked_tags:ai,vibe coding,claude tutorial,claude routines","boosted_creators:3","discovered_creators:social_ai"]')
+
+    applyBoostMigration(db)
+
+    const result = JSON.parse(getTopicSources(db, 'social_ai'))
+    expect(result).toEqual(['liked_tags:ai,vibe coding,claude tutorial,claude routines', 'discovered_creators:social_ai'])
+  })
+
+  it('preserves boosted_creators in late_night and music (not targeted)', () => {
+    db.prepare(
+      `INSERT INTO categories (key, label, query, topic_sources) VALUES (?, ?, ?, ?), (?, ?, ?, ?)`
+    ).run(
+      'social_late_night', 'Late Night Comedy', 'q', '["trends24:comedy","liked_tags:comedy,funny","boosted_creators:5"]',
+      'social_music', 'Music', 'q', '["trends24:music","boosted_creators:5"]'
+    )
+
+    applyBoostMigration(db)
+
+    expect(getTopicSources(db, 'social_late_night')).toBe('["trends24:comedy","liked_tags:comedy,funny","boosted_creators:5"]')
+    expect(getTopicSources(db, 'social_music')).toBe('["trends24:music","boosted_creators:5"]')
+  })
+
+  it('is idempotent', () => {
+    for (const [key, oldVal] of BOOST_FIXES) {
+      db.prepare(
+        `INSERT INTO categories (key, label, query, topic_sources) VALUES (?, ?, ?, ?)`
+      ).run(key, key, 'q', oldVal)
+    }
+
+    applyBoostMigration(db)
+    const first = BOOST_FIXES.map(([k]) => getTopicSources(db, k))
+
+    applyBoostMigration(db)
+    const second = BOOST_FIXES.map(([k]) => getTopicSources(db, k))
+
+    expect(second).toEqual(first)
+  })
+
+  it('skips already-fixed rows', () => {
+    db.prepare(
+      `INSERT INTO categories (key, label, query, topic_sources) VALUES (?, ?, ?, ?)`
+    ).run('social_tech', 'Tech', 'q', '["liked_tags:tech","discovered_creators:social_tech"]')
+
+    applyBoostMigration(db)
+
+    expect(getTopicSources(db, 'social_tech')).toBe('["liked_tags:tech","discovered_creators:social_tech"]')
+  })
+})
