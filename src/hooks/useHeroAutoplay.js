@@ -16,6 +16,8 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
   const [autoplayReady, setAutoplayReady] = useState(false)
   const [autoplayError, setAutoplayError] = useState(false)
   const [muted, setMuted] = useState(true)
+  const [teaserPhase, setTeaserPhase] = useState('idle') // 'idle' | 'playing' | 'rest'
+  const teaserTimerRef = useRef(null)
 
   // Check prefers-reduced-motion
   const [reducedMotion, setReducedMotion] = useState(() => {
@@ -37,6 +39,9 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
     setAutoplayUrl(null)
     setAutoplayReady(false)
     setAutoplayError(false)
+    setTeaserPhase('idle')
+    clearTimeout(teaserTimerRef.current)
+    teaserTimerRef.current = null
 
     // Don't autoplay if: no hero, no real URL, in theatre mode, or reduced motion
     if (!heroItem?.url || theatreMode || reducedMotion) return
@@ -88,7 +93,13 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
 
     const onCanPlay = () => {
       setAutoplayReady(true)
-      vid.play().catch(() => {
+      vid.play().then(() => {
+        setTeaserPhase('playing')
+        clearTimeout(teaserTimerRef.current)
+        teaserTimerRef.current = setTimeout(() => {
+          setTeaserPhase('rest')
+        }, 4500)
+      }).catch(() => {
         // Autoplay blocked — fall back to thumbnail
         setAutoplayError(true)
       })
@@ -126,15 +137,35 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
 
   // Pause autoplay when theatre mode activates (theatre has its own video)
   // OR when a card preview has claimed the playback singleton.
+  // Also pause when the teaser window expires (teaserPhase === 'rest').
+  // When focus returns from a card preview while in rest, reset the teaser.
+  const prevCardPreviewRef = useRef(false)
   useEffect(() => {
     const vid = videoRef.current
     if (!vid) return
+
+    const wasPreviewActive = prevCardPreviewRef.current
+    prevCardPreviewRef.current = !!cardPreviewActive
+
     if (theatreMode || cardPreviewActive) {
       vid.pause()
+    } else if (teaserPhase === 'rest') {
+      // Focus returned from card preview while in rest — re-arm the teaser
+      if (wasPreviewActive) {
+        vid.currentTime = 0
+        vid.play().catch(() => {})
+        setTeaserPhase('playing')
+        clearTimeout(teaserTimerRef.current)
+        teaserTimerRef.current = setTimeout(() => {
+          setTeaserPhase('rest')
+        }, 4500)
+      } else {
+        vid.pause()
+      }
     } else if (autoplayReady && autoplayUrl && !reducedMotion) {
       vid.play().catch(() => {})
     }
-  }, [theatreMode, cardPreviewActive, autoplayReady, autoplayUrl, reducedMotion])
+  }, [theatreMode, cardPreviewActive, autoplayReady, autoplayUrl, reducedMotion, teaserPhase])
 
   const toggleMute = useCallback(() => {
     setMuted(prev => !prev)
@@ -144,6 +175,7 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
   useEffect(() => {
     return () => {
       if (abortRef.current) abortRef.current.abort()
+      clearTimeout(teaserTimerRef.current)
     }
   }, [])
 
@@ -154,5 +186,6 @@ export default function useHeroAutoplay(heroItem, theatreMode) {
     muted,
     toggleMute,
     reducedMotion,
+    teaserPhase,
   }
 }
