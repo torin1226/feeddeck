@@ -1,5 +1,31 @@
 # FeedDeck Update Log
 
+## 2026-05-17 (Cleanup) — Dead deviceStore Removal
+
+### Completed
+- **Deleted `src/stores/deviceStore.js` (dead code).** Confirmed zero imports across all of `src/` — file was only ever used by AppShell, useKeyboard, and HomeHeader for the mobile phone-frame preview toggle, which was removed in the 2026-05-17 mobile responsiveness work. Lint and build both clean. Commit: `07701d6`.
+- **Stale manifest sweep.** Moved two 4-hour-old manifests (`design-review-a3f2`, `2026-05-17-15-21-2cbc`) to `_memory/sessions/active/_stale/` per Step 0 protocol.
+- **Committed design-review session's orphaned docs** (`UPDATE_LOG.md` + `docs/design-reviews/memory.json`) that were left uncommitted when that session shut down mid-sequence. Commit: `026c3fd`.
+
+### In Progress
+- None
+
+### Decisions Made
+- None (pure cleanup)
+
+### Issues & Blockers
+- `server/sources/twitter-trends.js` has an uncommitted `acceptHtml: true` fix (JS bundles look HTML-shaped to wrong_shape sniffer) — left in place per Torin's instruction.
+
+### Key Files Changed
+- `src/stores/deviceStore.js` — deleted
+
+### Next Session Should
+- Commit HomeHeader.jsx logo-as-mode-toggle changes (noted as pending in design-review session log — verify they exist in working tree first)
+- Check `server/sources/twitter-trends.js` and commit `acceptHtml: true` fix if ready
+- Implement animated chevron scroll cue at hero bottom edge (HeroSection.jsx)
+
+---
+
 ## 2026-05-17 (Design Review) — Home Page Review + Logo-as-Mode-Toggle
 
 ### Completed
