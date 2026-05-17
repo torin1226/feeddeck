@@ -7,6 +7,7 @@ import useToastStore from '../../stores/toastStore'
 import { registerPreviewTarget, prefetchStreamUrl } from '../../hooks/useFocusPreview'
 import ThumbsRating from '../ThumbsRating'
 import WhyThisCardTooltip from './WhyThisCardTooltip'
+import useIsTouch from '../../hooks/useIsTouch'
 
 // ============================================================
 // PosterCard
@@ -52,6 +53,9 @@ const PosterCard = memo(
     const isToastPaused = useRatingsStore((s) => s.isToastPaused)
     const showToast = useToastStore((s) => s.showToast)
     const dismissAndAdvance = useHomeStore((s) => s.dismissAndAdvance)
+    // True when the primary pointer is touch/coarse — disables hover-gating on the
+    // thumbs overlay so it's always visible on the focused card on mobile.
+    const isTouch = useIsTouch()
     // Subscribe to whether THIS card is the current preview focus (i.e. hovered).
     // Zustand only re-renders this specific card when focusedItem.id matches item.id,
     // so the subscription cost across 250+ cards is negligible.
@@ -468,7 +472,9 @@ const PosterCard = memo(
           </div>
         )}
 
-        {/* Thumbs rating overlay — focused landscape cards on hover only (poster uses on-card buttons) */}
+        {/* Thumbs rating overlay — focused landscape cards.
+            Mouse: shown on hover (showThumbs gate).
+            Touch: shown immediately on focus (no hover events available). */}
         {isFocused && !isExpanded && item?.url && (
           <ThumbsRating
             videoUrl={item.url}
@@ -479,7 +485,7 @@ const PosterCard = memo(
             title={item.title || ''}
             thumbnail={item.thumbnail || ''}
             source={item.genre || ''}
-            visible={showThumbs}
+            visible={isTouch ? true : showThumbs}
             onRated={onRated}
             item={item}
           />
