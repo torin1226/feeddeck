@@ -37,7 +37,7 @@ The project supports parallel sessions. Before reading anything else, check who 
 
 ## Step 0b: Write Your Own Manifest
 
-1. Generate `session_id`: `YYYY-MM-DD-HH-MM-<random4>` (current timestamp + 4 random hex characters).
+1. Generate `session_id`: `YYYY-MM-DD-<short-context>-<random4>` (e.g. `2026-05-17-home-polish-a3f2`). The short-context slug is a 1–3 word kebab-case summary of the session's intent. The random4 is 4 hex chars to prevent same-day same-topic collisions.
 2. Copy `../_memory/sessions/active/_TEMPLATE.md` to `../_memory/sessions/active/<session_id>.md`.
 3. Fill in frontmatter: `started_at`, `surface` (code|cowork|director), `intent` (one line — ask Torin if unclear).
 4. Confirm to Torin: "Session manifest created: `<session_id>`"
