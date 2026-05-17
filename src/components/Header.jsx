@@ -6,6 +6,8 @@ import AddVideoModal from './AddVideoModal'
 import useModeStore from '../stores/modeStore'
 import useThemeStore from '../stores/themeStore'
 import useHomeStore from '../stores/homeStore'
+import HamburgerButton from './header/HamburgerButton'
+import MobileNavSheet from './header/MobileNavSheet'
 
 // ============================================================
 // Header
@@ -42,7 +44,10 @@ export default function Header({ onSearch, onSearchSubmit }) {
 
   return (
     <>
-      <header className="sticky top-0 z-modal bg-surface/90 backdrop-blur-md border-b border-surface-border">
+      <header
+        className="sticky top-0 z-modal bg-surface/90 backdrop-blur-md border-b border-surface-border"
+        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+      >
         <div className="flex items-center gap-4 px-4 md:px-6 h-14">
 
           {/* Logo / Brand */}
@@ -73,8 +78,8 @@ export default function Header({ onSearch, onSearchSubmit }) {
             ))}
           </nav>
 
-          {/* Search bar */}
-          <form onSubmit={handleSearch} className="flex-1 max-w-xl">
+          {/* Search bar — hidden on mobile (accessible via search button or sheet) */}
+          <form onSubmit={handleSearch} className="hidden md:block flex-1 max-w-xl">
             <div className="relative">
               <input
                 type="text"
@@ -114,11 +119,11 @@ export default function Header({ onSearch, onSearchSubmit }) {
               </button>
             )}
 
-            {/* Shuffle (rotates first 5 cards in every row except Likes) */}
+            {/* Shuffle — desktop only (in mobile sheet) */}
             <button
               onClick={() => shuffleHome(isSFW ? 'social' : 'nsfw')}
               disabled={shuffling || refreshing}
-              className="w-11 h-11 flex items-center justify-center rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-overlay transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="hidden md:flex w-11 h-11 items-center justify-center rounded-lg text-text-secondary hover:text-text-primary hover:bg-surface-overlay transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title="Shuffle homepage"
               aria-label="Shuffle homepage"
             >
@@ -131,9 +136,10 @@ export default function Header({ onSearch, onSearchSubmit }) {
               </svg>
             </button>
 
+            {/* Theme — desktop only (in mobile sheet) */}
             <button
               onClick={toggleTheme}
-              className="w-11 h-11 flex items-center justify-center rounded-lg text-text-secondary hover:text-text-primary
+              className="hidden md:flex w-11 h-11 items-center justify-center rounded-lg text-text-secondary hover:text-text-primary
                 hover:bg-surface-overlay transition-colors"
               title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -142,12 +148,18 @@ export default function Header({ onSearch, onSearchSubmit }) {
             </button>
 
             <ModeToggle />
+
+            {/* Hamburger — mobile only */}
+            <HamburgerButton />
           </div>
         </div>
       </header>
 
       {/* Add video modal */}
       {showAdd && <AddVideoModal onClose={() => setShowAdd(false)} />}
+
+      {/* Mobile nav sheet */}
+      <MobileNavSheet />
     </>
   )
 }

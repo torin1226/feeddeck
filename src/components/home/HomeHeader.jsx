@@ -3,7 +3,8 @@ import { useLocation, useSearchParams } from 'react-router-dom'
 import useViewTransitionNavigate from '../../hooks/useViewTransitionNavigate'
 import useHomeStore from '../../stores/homeStore'
 import useModeStore from '../../stores/modeStore'
-import useDeviceStore from '../../stores/deviceStore'
+import HamburgerButton from '../header/HamburgerButton'
+import MobileNavSheet from '../header/MobileNavSheet'
 
 // ============================================================
 // HomeHeader
@@ -20,9 +21,6 @@ export default function HomeHeader() {
   const shuffling = useHomeStore(s => s.shuffling)
   const refreshing = useHomeStore(s => s.refreshing)
   const { isSFW, toggleMode } = useModeStore()
-  const mobilePreview = useDeviceStore(s => s.mobilePreview)
-  const toggleMobilePreview = useDeviceStore(s => s.toggleMobilePreview)
-  const isDev = import.meta.env.DEV
 
   // --- Search state ---
   const [searchOpen, setSearchOpen] = useState(false)
@@ -189,16 +187,28 @@ export default function HomeHeader() {
   ]
 
   return (
+    <>
     <header
-      className="fixed top-0 left-0 right-0 z-system h-14 flex items-center justify-between px-10 bg-white/[0.03] backdrop-blur-2xl border-b border-white/[0.06]"
+      className="fixed top-0 left-0 right-0 z-system h-14 flex items-center justify-between px-4 md:px-10 bg-white/[0.03] backdrop-blur-2xl border-b border-white/[0.06]"
+      style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
     >
-      {/* Logo */}
-      <div className="text-lg font-bold tracking-tight font-display">
+      {/* Logo — doubles as mode toggle. Dot indicator appears when not in SFW. */}
+      <button
+        onClick={toggleMode}
+        title={isSFW ? 'Switch to full library' : 'Switch to Social mode'}
+        aria-label={isSFW ? 'Switch to full library' : 'Switch to Social mode'}
+        className="relative text-lg font-bold tracking-tight font-display bg-transparent border-0 cursor-pointer p-0 leading-none flex items-center"
+      >
         &#128225; <em className="not-italic text-accent">Feed</em>Deck
-      </div>
+        <span
+          className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-accent transition-opacity duration-300 ${
+            isSFW ? 'opacity-0' : 'opacity-100'
+          }`}
+        />
+      </button>
 
-      {/* Nav */}
-      <nav className="flex gap-1">
+      {/* Nav — hidden on mobile (accessible via hamburger sheet) */}
+      <nav className="hidden md:flex gap-1">
         {navItems.map((item) => (
           <button
             key={item.path}
@@ -270,7 +280,7 @@ export default function HomeHeader() {
           {/* Search results dropdown */}
           {searchOpen && (results || searching || noResults || searchError) && (
             <div
-              className="absolute right-0 top-full mt-2 w-[400px] max-h-[60vh] overflow-y-auto
+              className="absolute right-0 top-full mt-2 w-[min(400px,calc(100vw-2rem))] max-h-[60vh] overflow-y-auto
                 bg-surface/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl
                 scrollbar-none"
               style={{ scrollbarWidth: 'none' }}
@@ -355,13 +365,13 @@ export default function HomeHeader() {
           )}
         </div>
 
-        <div className="w-px h-5 bg-white/10" aria-hidden="true" />
+        <div className="hidden md:block w-px h-5 bg-white/10" aria-hidden="true" />
 
-        {/* Shuffle (rotates first 5 cards in every row except Likes) */}
+        {/* Shuffle — desktop only (accessible via hamburger sheet on mobile) */}
         <button
           onClick={() => shuffleHome(isSFW ? 'social' : 'nsfw')}
           disabled={shuffling || refreshing}
-          className="p-2 rounded-lg text-text-secondary hover:text-text-primary transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          className="hidden md:block p-2 rounded-lg text-text-secondary hover:text-text-primary transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           title="Shuffle homepage"
           aria-label="Shuffle homepage"
         >
@@ -380,37 +390,18 @@ export default function HomeHeader() {
           title="Settings"
           aria-label="Settings"
         >
-          ⚙
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+          </svg>
         </button>
-        {isDev && (
-          <button
-            onClick={toggleMobilePreview}
-            className={`p-2 rounded-lg transition-colors cursor-pointer ${
-              mobilePreview
-                ? 'bg-accent text-black hover:bg-accent/80'
-                : 'text-text-secondary hover:text-text-primary'
-            }`}
-            title="Toggle mobile preview (Ctrl+M)"
-            aria-label="Toggle mobile preview"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
-              <line x1="12" y1="18" x2="12" y2="18" />
-            </svg>
-          </button>
-        )}
-        <button
-          onClick={toggleMode}
-          title={isSFW ? 'Switch to full library' : 'Switch to Social mode'}
-          className={`px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition-all tracking-wide ${
-            isSFW
-              ? 'bg-amber-500/[0.06] border border-amber-500/25 text-amber-400 hover:bg-amber-500/[0.12]'
-              : 'bg-white/[0.04] border border-white/[0.08] text-text-secondary hover:text-text-primary hover:bg-white/[0.07] hover:border-white/[0.12]'
-          }`}
-        >
-          &#9679; {isSFW ? 'SOCIAL MODE' : 'NSFW MODE'}
-        </button>
+        {/* Hamburger — mobile only */}
+        <HamburgerButton />
       </div>
     </header>
+
+    {/* Mobile nav sheet */}
+    <MobileNavSheet />
+    </>
   )
 }

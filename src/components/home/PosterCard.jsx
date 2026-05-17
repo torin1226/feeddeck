@@ -1,4 +1,4 @@
-import { forwardRef, memo, useEffect, useRef, useState } from 'react'
+import { forwardRef, memo, useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import useHomeStore from '../../stores/homeStore'
 import useQueueStore from '../../stores/queueStore'
@@ -26,6 +26,11 @@ const WIDTH = {
   v: { default: 320, focused: 420 },
 }
 
+// How many positions away from the focused card to mount a <video> preview element.
+// 1 = focused card + its immediate neighbors. Keeps live <video> count well under
+// iOS Safari's ~16 concurrent element cap even when many rows are visible.
+const PREVIEW_MOUNT_DIST = 1
+
 // Distance-based visual weight
 function distProps(dist) {
   const raw = dist >= 3 ? 1 - dist * 0.18 : [1.0, 0.82, 0.64][dist]
@@ -47,42 +52,58 @@ const PosterCard = memo(
     const isToastPaused = useRatingsStore((s) => s.isToastPaused)
     const showToast = useToastStore((s) => s.showToast)
     const dismissAndAdvance = useHomeStore((s) => s.dismissAndAdvance)
-    const previewVideoRef = useRef(null)
+    // Subscribe to whether THIS card is the current preview focus (i.e. hovered).
+    // Zustand only re-renders this specific card when focusedItem.id matches item.id,
+    // so the subscription cost across 250+ cards is negligible.
+    const isFocusedByPreview = useHomeStore((s) => s.focusedItem?.id === item?.id)
 
+    // Callback ref for the conditionally-mounted <video> element.
+    // Using useState (not useRef) so Effect 2 re-runs when the element mounts/unmounts.
+    const [videoEl, setVideoEl] = useState(null)
+    const containerRef = useRef(null)
+    // Combine the forwarded ref with our local containerRef so the IO can observe the card.
+    const setContainerRef = useCallback((node) => {
+      containerRef.current = node
+      if (typeof ref === 'function') ref(node)
+      else if (ref) ref.current = node
+    }, [ref])
+
+    // Effect 1 — viewport-aware stream URL prefetch on the card container.
+    // Decoupled from video mount so the prefetch fires for every card in the
+    // viewport, not just the ones near focus. By the time the user hovers, the
+    // URL is usually already cached and the preview attaches in <300ms.
     useEffect(() => {
       const id = item?.id
-      const el = previewVideoRef.current
-      if (!id || !el) return undefined
-      // Register video target AND kick off a viewport-aware prefetch via
-      // the video's parent (which is the card element itself). Observing
-      // the parent — already laid out by the time this effect fires — is
-      // simpler than threading a separate forwarded-ref combiner and
-      // avoids race conditions where the container ref is briefly null.
-      const cleanups = [registerPreviewTarget(id, el)]
-
       const url = item?.url
-      const container = el.parentElement
-      if (url && container && typeof IntersectionObserver !== 'undefined') {
-        let prefetched = false
-        const io = new IntersectionObserver(
-          (entries) => {
-            for (const entry of entries) {
-              if (entry.isIntersecting && !prefetched) {
-                prefetched = true
-                prefetchStreamUrl(id, url)
-                io.disconnect()
-                break
-              }
+      const container = containerRef.current
+      if (!id || !url || !container || typeof IntersectionObserver === 'undefined') return undefined
+      let prefetched = false
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting && !prefetched) {
+              prefetched = true
+              prefetchStreamUrl(id, url)
+              io.disconnect()
+              break
             }
-          },
-          { rootMargin: '300px 1000px', threshold: 0.01 }
-        )
-        io.observe(container)
-        cleanups.push(() => io.disconnect())
-      }
-
-      return () => cleanups.forEach((fn) => fn())
+          }
+        },
+        { rootMargin: '300px 1000px', threshold: 0.01 }
+      )
+      io.observe(container)
+      return () => io.disconnect()
     }, [item?.id, item?.url])
+
+    // Effect 2 — register the video element with useFocusPreview.
+    // Only runs when videoEl is non-null (i.e. dist <= PREVIEW_MOUNT_DIST).
+    // The returned cleanup removes the entry from videoTargets on unmount so
+    // stale refs never linger in the module-level Map.
+    useEffect(() => {
+      const id = item?.id
+      if (!id || !videoEl) return undefined
+      return registerPreviewTarget(id, videoEl)
+    }, [item?.id, videoEl])
 
     useEffect(() => () => clearTimeout(reasonTimerRef.current), [])
 
@@ -274,7 +295,7 @@ const PosterCard = memo(
     }
 
     return (
-      <div ref={ref} style={containerStyle} className={isFocused ? 'poster-card-focused' : undefined}
+      <div ref={setContainerRef} style={containerStyle} className={isFocused ? 'poster-card-focused' : undefined}
         onClick={onClick} role="button" tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.() } }}
         onMouseEnter={() => {
@@ -304,28 +325,30 @@ const PosterCard = memo(
           <div style={{ ...imgStyle, backgroundColor: 'rgba(255,255,255,0.05)' }} />
         )}
 
-        {/* Hover preview video — opacity flipped to 1 by useFocusPreview when ready.
-            No explicit z-index: source order keeps it above the thumbnail img but
-            below the badges, gradient, text overlay, and progress bar (which all
-            paint after this element in document order). */}
-        <video
-          ref={previewVideoRef}
-          muted
-          playsInline
-          loop
-          preload="none"
-          style={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            objectPosition: 'center',
-            opacity: 0,
-            transition: `opacity 250ms ${EASE_OUT}`,
-            pointerEvents: 'none',
-          }}
-        />
+        {/* Hover preview video — mounted when this card is the preview focus (hovered)
+            OR within PREVIEW_MOUNT_DIST of the scroll-center (for keyboard nav).
+            Keeps live <video> count small; useFocusPreview flips opacity once canplay fires.
+            Source order places it above the thumbnail but below badges/overlays. */}
+        {(dist <= PREVIEW_MOUNT_DIST || isFocusedByPreview) && (
+          <video
+            ref={setVideoEl}
+            muted
+            playsInline
+            loop
+            preload="none"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              objectPosition: 'center',
+              opacity: 0,
+              transition: `opacity 250ms ${EASE_OUT}`,
+              pointerEvents: 'none',
+            }}
+          />
+        )}
 
         {/* Duration badge — top-right */}
         {item?.duration && (

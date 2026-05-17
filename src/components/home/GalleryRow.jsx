@@ -71,6 +71,18 @@ export default function GalleryRow({
   // rows on the page don't fight for `focusedItem` on initial mount —
   // hero claims focus by default.
   const interactedRef = useRef(false)
+  // State mirror of interactedRef — triggers a re-render so dist gates in
+  // PosterCard activate on first interaction. The ref is still used for
+  // synchronous checks in callbacks to avoid stale closure issues.
+  const [hasInteracted, setHasInteracted] = useState(false)
+  // Mark this row as interacted. Declared early so all callbacks below can
+  // reference it without hitting a temporal dead zone.
+  const markInteracted = useCallback(() => {
+    if (interactedRef.current) return
+    interactedRef.current = true
+    setHasInteracted(true)
+  }, [])
+
   // Tracks the input kind for the next focus broadcast triggered by the
   // activeIndex effect. Keyboard arrow nav sets this to 'keyboard'; mouse
   // hover and scroll-based focus changes leave it as the default 'mouse'.
@@ -219,7 +231,7 @@ export default function GalleryRow({
     if (!container) return
 
     const onScroll = () => {
-      interactedRef.current = true
+      markInteracted()
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
       rafRef.current = requestAnimationFrame(updateParallax)
     }
@@ -234,12 +246,12 @@ export default function GalleryRow({
       ro.disconnect()
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
-  }, [updateParallax, items])
+  }, [updateParallax, items, markInteracted])
 
   const handleCardClick = useCallback((index) => {
     const item = items?.[index]
     if (!item || item._isDivider) return
-    interactedRef.current = true
+    markInteracted()
     setFocusedItem(item, rowSurface, {
       inputKind: 'mouse',
       adjacentItems: buildAdjacentItems(index),
@@ -254,7 +266,7 @@ export default function GalleryRow({
         card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
       }
     }
-  }, [items, navigate, setFocusedItem, rowSurface, buildAdjacentItems])
+  }, [items, navigate, setFocusedItem, rowSurface, buildAdjacentItems, markInteracted])
 
   // Scroll by one card width — skips dividers so arrow nav advances to
   // the next non-divider neighbor.
@@ -282,10 +294,12 @@ export default function GalleryRow({
     }
   }, [items, variant])
 
-  // Compute distance from center for each card based on activeIndex
+  // Compute distance from center for each card based on activeIndex.
+  // Returns Infinity before first interaction so PosterCard dist gates suppress
+  // all video mounts on initial load (only isFocusedByPreview gate remains active).
   const getCardDist = useCallback(
-    (index) => Math.abs(index - activeIndex),
-    [activeIndex]
+    (index) => hasInteracted ? Math.abs(index - activeIndex) : Infinity,
+    [hasInteracted, activeIndex]
   )
 
   const handleRowKeyDown = useCallback((e) => {
@@ -296,10 +310,10 @@ export default function GalleryRow({
       // the 200ms mouse window. The flag is consumed and reset
       // inside the broadcast effect.
       pendingInputKindRef.current = 'keyboard'
-      interactedRef.current = true
+      markInteracted()
       scrollByCard(e.key === 'ArrowLeft' ? -1 : 1)
     }
-  }, [scrollByCard])
+  }, [scrollByCard, markInteracted])
 
   // Windowed dots — show DOT_WINDOW dots centered on active card.
   // Dot list is over CARDS only (dividers excluded). Far dots fade.
@@ -379,14 +393,14 @@ export default function GalleryRow({
                 className="flex-none snap-center animate-card-entrance"
                 style={{ animationDelay: `${i * 40}ms` }}
                 onMouseEnter={() => {
-                  interactedRef.current = true
+                  markInteracted()
                   setFocusedItem(item, rowSurface, {
                     inputKind: 'mouse',
                     adjacentItems: buildAdjacentItems(i),
                   })
                 }}
                 onFocus={() => {
-                  interactedRef.current = true
+                  markInteracted()
                   setFocusedItem(item, rowSurface, {
                     inputKind: 'mouse',
                     adjacentItems: buildAdjacentItems(i),

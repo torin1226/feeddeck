@@ -565,8 +565,8 @@ export default function FeedPage() {
         <FeedBottomNav navHidden={navHidden} />
       )}
 
-      {/* Filter sheet */}
-      <FeedFilterSheet open={filterOpen} onOpenChange={setFilterOpen} />
+      {/* Filter sheet — conditionally rendered so it doesn't cover the feed on mount */}
+      {filterOpen && <FeedFilterSheet onClose={() => setFilterOpen(false)} />}
 
       {/* Source control sheet */}
       {sourceSheet && (

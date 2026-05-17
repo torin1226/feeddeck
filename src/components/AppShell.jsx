@@ -2,7 +2,6 @@ import { lazy, Suspense, useEffect } from 'react'
 import { Routes, Route, useLocation, Navigate, useParams } from 'react-router-dom'
 import useKeyboard from '../hooks/useKeyboard'
 import useQueueSync from '../hooks/useQueueSync'
-import useDeviceStore from '../stores/deviceStore'
 import useModeStore from '../stores/modeStore'
 import ErrorBoundary from './ErrorBoundary'
 import FloatingQueue from './FloatingQueue'
@@ -35,8 +34,7 @@ function RedirectVideoToWatch() {
 // ============================================================
 // AppShell
 // Root layout with routing + shared elements (FloatingQueue,
-// global keyboard shortcuts). Supports mobile preview mode
-// (Ctrl+M) that wraps the app in a phone-sized frame.
+// global keyboard shortcuts).
 // ============================================================
 
 export default function AppShell() {
@@ -44,7 +42,6 @@ export default function AppShell() {
   useQueueSync()
   const location = useLocation()
   const isFeed = location.pathname === '/feed'
-  const mobilePreview = useDeviceStore(s => s.mobilePreview)
   const modeHydrated = useModeStore(s => s._hydrated)
   const isSFW = useModeStore(s => s.isSFW)
   const paletteOpen = usePaletteStore(s => s.open)
@@ -119,28 +116,5 @@ export default function AppShell() {
     </>
   )
 
-  return (
-    <>
-      {mobilePreview ? (
-        <div className="h-screen w-screen bg-[#111] flex items-center justify-center">
-          {/* Phone frame */}
-          <div className="relative rounded-[2.5rem] border-[4px] border-[#333] shadow-modal shadow-black/60 overflow-hidden"
-            style={{ width: 390, height: 844 }}>
-            {/* Notch */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[120px] h-[28px] bg-black rounded-b-2xl z-system" />
-            {/* App content — mobile-frame class overrides h-dvh to use frame height */}
-            <div className="mobile-frame w-full h-full overflow-hidden" style={{ position: 'relative' }}>
-              {content}
-            </div>
-          </div>
-          {/* Device label */}
-          <div className="absolute bottom-6 text-white/30 text-xs font-mono">
-            iPhone 14 Pro — 390 x 844 &middot; Ctrl+M to exit
-          </div>
-        </div>
-      ) : (
-        content
-      )}
-    </>
-  )
+  return content
 }

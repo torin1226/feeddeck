@@ -140,46 +140,62 @@ export default function Top10Row() {
   )
 }
 
-// Single Top 10 entry: rank number + thumbnail card + hidden preview video.
-// Extracted so the per-card useRef + registerPreviewTarget can run without
-// useRef inside a map callback.
+// Single Top 10 entry: rank number + thumbnail card + lazy-mounted preview video.
+// Extracted so per-card hooks can run outside a .map() callback.
+// Video only mounts on hover — keeps live <video> count to 1 at a time from this
+// row, and well under iOS Safari's ~16 concurrent element cap even with PosterCards
+// on screen.
 function Top10Card({ item, onClick, onFocus }) {
-  const previewVideoRef = useRef(null)
+  const [videoEl, setVideoEl] = useState(null)
+  const [isHovered, setIsHovered] = useState(false)
+  const containerRef = useRef(null)
 
+  // Effect 1 — viewport-aware prefetch. Fires for every card in the wide root margin
+  // so the stream URL is cached before the user hovers.
   useEffect(() => {
     const id = item?.id
-    const el = previewVideoRef.current
-    if (!id || !el) return undefined
-    // Register video target AND kick off viewport-aware prefetch via the
-    // video's parent (the card itself). See PosterCard for rationale.
-    const cleanups = [registerPreviewTarget(id, el)]
-
     const url = item?.url
-    const container = el.parentElement
-    if (url && container && typeof IntersectionObserver !== 'undefined') {
-      let prefetched = false
-      const io = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            if (entry.isIntersecting && !prefetched) {
-              prefetched = true
-              prefetchStreamUrl(id, url)
-              io.disconnect()
-              break
-            }
+    const container = containerRef.current
+    if (!id || !url || !container || typeof IntersectionObserver === 'undefined') return undefined
+    let prefetched = false
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && !prefetched) {
+            prefetched = true
+            prefetchStreamUrl(id, url)
+            io.disconnect()
+            break
           }
-        },
-        { rootMargin: '300px 1000px', threshold: 0.01 }
-      )
-      io.observe(container)
-      cleanups.push(() => io.disconnect())
-    }
-
-    return () => cleanups.forEach((fn) => fn())
+        }
+      },
+      { rootMargin: '300px 1000px', threshold: 0.01 }
+    )
+    io.observe(container)
+    return () => io.disconnect()
   }, [item?.id, item?.url])
+
+  // Effect 2 — register with useFocusPreview when video element mounts on hover.
+  // useFocusPreview has a 120ms debounce, so the element is registered well before
+  // it tries to attach a src. Cleanup removes the stale ref on unmount.
+  useEffect(() => {
+    const id = item?.id
+    if (!id || !videoEl) return undefined
+    return registerPreviewTarget(id, videoEl)
+  }, [item?.id, videoEl])
+
+  const handleMouseEnter = useCallback(() => {
+    setIsHovered(true)
+    onFocus?.()
+  }, [onFocus])
+
+  const handleMouseLeave = useCallback(() => {
+    setIsHovered(false)
+  }, [])
 
   return (
     <div
+      ref={containerRef}
       role="button"
       tabIndex={0}
       onClick={onClick}
@@ -189,7 +205,8 @@ function Top10Card({ item, onClick, onFocus }) {
           onClick?.()
         }
       }}
-      onMouseEnter={onFocus}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       onFocus={onFocus}
       className="flex-none flex items-end cursor-pointer group/card
         transition-all duration-[220ms] ease-out
@@ -221,16 +238,19 @@ function Top10Card({ item, onClick, onFocus }) {
             loading="lazy"
             className="absolute inset-0 w-full h-full object-cover bg-overlay"
           />
-          {/* Hover preview video — driven by useFocusPreview */}
-          <video
-            ref={previewVideoRef}
-            muted
-            playsInline
-            loop
-            preload="none"
-            className="absolute inset-0 w-full h-full object-cover pointer-events-none transition-opacity duration-[250ms]"
-            style={{ opacity: 0 }}
-          />
+          {/* Hover preview video — only mounted while card is hovered.
+              useFocusPreview flips opacity to 1 once canplay fires. */}
+          {isHovered && (
+            <video
+              ref={setVideoEl}
+              muted
+              playsInline
+              loop
+              preload="none"
+              className="absolute inset-0 w-full h-full object-cover pointer-events-none transition-opacity duration-[250ms]"
+              style={{ opacity: 0 }}
+            />
+          )}
         </div>
         <div className="p-2">
           <div className="text-[11px] font-semibold leading-tight line-clamp-2">

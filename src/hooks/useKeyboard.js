@@ -1,7 +1,6 @@
 import { useEffect } from 'react'
 import useModeStore from '../stores/modeStore'
 import useQueueStore from '../stores/queueStore'
-import useDeviceStore from '../stores/deviceStore'
 import usePaletteStore from '../stores/paletteStore'
 
 // ============================================================
@@ -42,15 +41,6 @@ export default function useKeyboard() {
           // next video loaded via queue store
           break
         }
-
-        // Ctrl+M — toggle mobile preview mode
-        case 'm':
-        case 'M':
-          if (e.ctrlKey || e.metaKey) {
-            e.preventDefault()
-            useDeviceStore.getState().toggleMobilePreview()
-          }
-          break
 
         // ? — open shortcut palette (Shift+/ on most layouts)
         case '?':
