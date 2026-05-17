@@ -15,6 +15,7 @@
 
 import { logger } from '../logger.js'
 import { db } from '../database.js'
+import { boundary } from '../boundary/index.js'
 import { randomUUID } from 'crypto'
 import { recomputeAudioScores } from '../scoring.js'
 
@@ -101,19 +102,27 @@ export async function fetchAudioCycle(registry) {
  * almost exclusively as self-posts with soundgasm URLs in selftext —
  * confirmed by probe before this code was written.
  */
+// Exported under a `_forTest`-suffixed name so the boundary contract test
+// can drive it directly without spinning up the full fetchAudioCycle.
+// Production code keeps using the un-suffixed local reference.
+export { fetchRedditAudioCreator as _fetchRedditAudioCreatorForTest }
 async function fetchRedditAudioCreator(creator, registry) {
   const url = creator.url || `https://www.reddit.com/r/${creator.handle}/hot.json?limit=${REDDIT_POSTS_PER_CREATOR}`
 
-  const resp = await fetch(url, {
+  const { outcome, value: body } = await boundary.fetch(url, {
+    name: 'audio-reddit-api',
+    timeoutMs: 15_000,
     headers: {
       'User-Agent': REDDIT_UA,
       'Accept': 'application/json',
     },
-    signal: AbortSignal.timeout(15_000),
   })
-  if (!resp.ok) throw new Error(`Reddit API ${resp.status}`)
+  if (outcome !== 'ok') throw new Error(`Reddit API ${outcome}`)
 
-  const data = await resp.json()
+  let data
+  try { data = JSON.parse(body) } catch (err) {
+    throw new Error(`Reddit API ok but body not JSON: ${err.message}`)
+  }
   const posts = data?.data?.children || []
   const items = []
 
