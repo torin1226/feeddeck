@@ -61,7 +61,7 @@ class ErrorBoundary extends Component {
       // Chunk load failure — app was updated, auto-reloading
       if (isChunk) {
         return (
-          <div className="h-screen w-full flex flex-col items-center justify-center bg-surface text-text-primary px-6">
+          <div className="h-dvh w-full flex flex-col items-center justify-center bg-surface text-text-primary px-6">
             <div className="max-w-md text-center space-y-4">
               <div className="text-4xl">🔄</div>
               <h2 className="text-xl font-display font-bold">App updated</h2>
@@ -74,7 +74,7 @@ class ErrorBoundary extends Component {
       // Network error — prompt user to check connection
       if (isNetwork) {
         return (
-          <div className="h-screen w-full flex flex-col items-center justify-center bg-surface text-text-primary px-6">
+          <div className="h-dvh w-full flex flex-col items-center justify-center bg-surface text-text-primary px-6">
             <div className="max-w-md text-center space-y-4">
               <div className="text-4xl">📡</div>
               <h2 className="text-xl font-display font-bold">Connection error</h2>
@@ -92,7 +92,7 @@ class ErrorBoundary extends Component {
 
       // Generic error — show error details and recovery options
       return (
-        <div className="h-screen w-full flex flex-col items-center justify-center bg-surface text-text-primary px-6">
+        <div className="h-dvh w-full flex flex-col items-center justify-center bg-surface text-text-primary px-6">
           <div className="max-w-md text-center space-y-4">
             <div className="text-4xl">⚠️</div>
             <h2 className="text-xl font-display font-bold">Something went wrong</h2>

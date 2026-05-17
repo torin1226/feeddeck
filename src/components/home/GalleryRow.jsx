@@ -40,7 +40,14 @@ function getCardWidth(item, variant) {
   const ar = (item?.width && item?.height)
     ? (item.width / item.height)
     : (ASPECT_RATIO[item?.orient || 'h'] ?? ASPECT_RATIO.h)
-  return baseH * ar
+  const naturalWidth = baseH * ar
+  // On narrow viewports, cap landscape card width so ~1.3 cards are visible at once.
+  // Without this, a 16:9 card at max height (360px) computes to 640px — wider than a phone.
+  if (variant === 'landscape') {
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1200
+    return Math.min(naturalWidth, vw * 0.75)
+  }
+  return naturalWidth
 }
 
 export default function GalleryRow({

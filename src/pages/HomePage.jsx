@@ -46,7 +46,7 @@ export default function HomePage() {
   const loading = !heroItem
 
   return (
-    <div className="min-h-screen bg-surface text-text-primary font-sans">
+    <div className="min-h-dvh bg-surface text-text-primary font-sans">
       <HomeHeader />
 
       {/* Server-unreachable banner */}

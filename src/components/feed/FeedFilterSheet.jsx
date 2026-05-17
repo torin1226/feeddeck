@@ -210,7 +210,7 @@ export default function FeedFilterSheet({ onClose }) {
                 placeholder="Search videos..."
                 autoComplete="off"
                 className="w-full h-10 bg-white/[0.07] border border-white/10 rounded-xl
-                  text-white text-sm pl-10 pr-4 outline-none
+                  text-white text-base md:text-sm pl-10 pr-4 outline-none
                   focus:bg-white/[0.11] focus:border-white/[0.22] transition-all
                   placeholder:text-white/30"
               />

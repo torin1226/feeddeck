@@ -70,7 +70,7 @@ export default function AudioPage() {
   // audio porn is gated behind NSFW mode like everything else.
   if (isSFW) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-zinc-200">
+      <div className="min-h-dvh bg-zinc-950 text-zinc-200">
         <HomeHeader />
         <div className="max-w-2xl mx-auto px-6 pt-32 pb-24 text-center">
           <h1
@@ -94,7 +94,7 @@ export default function AudioPage() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-200">
+    <div className="min-h-dvh bg-zinc-950 text-zinc-200">
       <HomeHeader />
       {/* Header */}
       <div className="max-w-3xl mx-auto px-6 pt-20 pb-6">

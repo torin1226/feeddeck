@@ -249,7 +249,7 @@ export default function HomeHeader() {
                   }}
                   placeholder="Search videos..."
                   autoComplete="off"
-                  className="w-full h-[34px] bg-transparent text-text-primary text-sm pl-3.5 pr-8
+                  className="w-full h-[34px] bg-transparent text-text-primary text-base md:text-sm pl-3.5 pr-8
                     outline-none placeholder:text-text-muted font-sans"
                 />
               )}

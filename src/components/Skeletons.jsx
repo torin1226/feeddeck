@@ -56,7 +56,7 @@ export function SkeletonHero() {
   // Mirrors HeroSection: 100vh / min-h 600px, content block at bottom-[230px],
   // tags / title (clamp 28-48px) / meta / desc / action buttons at left-10.
   return (
-    <div className="relative h-screen min-h-[600px] bg-surface">
+    <div className="relative h-dvh min-h-[600px] bg-surface">
       <div className={`absolute inset-0 ${shimmer} rounded-none`} />
       <div className="absolute left-10 bottom-[230px] max-w-[520px] z-content">
         <div className="flex gap-1.5 mb-3">

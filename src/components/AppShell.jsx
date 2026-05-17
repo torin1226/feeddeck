@@ -72,7 +72,7 @@ export default function AppShell() {
   // This prevents NSFW content from flashing on SFW first load.
   if (!modeHydrated) {
     return (
-      <div className="h-screen w-full bg-surface" />
+      <div className="h-dvh w-full bg-surface" />
     )
   }
 
@@ -84,7 +84,7 @@ export default function AppShell() {
       <main id="main-content" role="main">
         <h1 className="absolute w-px h-px overflow-hidden" style={{ clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0 }}>FeedDeck</h1>
         <Suspense fallback={
-          <div className="h-screen w-full flex items-center justify-center bg-surface">
+          <div className="h-dvh w-full flex items-center justify-center bg-surface">
             <div className="w-8 h-8 border-2 border-text-muted border-t-text-primary rounded-full animate-spin" />
           </div>
         }>

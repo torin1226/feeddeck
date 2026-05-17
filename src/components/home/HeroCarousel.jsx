@@ -103,7 +103,7 @@ export default function HeroCarousel() {
   return (
     <div className="[&_*]:pointer-events-auto">
       {/* Search row */}
-      <div className="px-10 mb-3">
+      <div className="px-4 md:px-10 mb-3">
         <div className="relative max-w-[360px]">
           <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted text-sm pointer-events-none">
             &#8981;

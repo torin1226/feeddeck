@@ -354,7 +354,7 @@ export default function VideoDetailPage() {
 
   if (!item) {
     return (
-      <div className="min-h-screen bg-surface text-text-primary font-sans">
+      <div className="min-h-dvh bg-surface text-text-primary font-sans">
         <HomeHeader />
         <div className="flex flex-col items-center justify-center pt-32 gap-4">
           <p className="text-text-muted text-lg">Video not found</p>
@@ -374,7 +374,7 @@ export default function VideoDetailPage() {
     : 'max-w-[1600px] mx-auto px-8'
 
   return (
-    <div className="min-h-screen bg-surface text-text-primary font-sans">
+    <div className="min-h-dvh bg-surface text-text-primary font-sans">
       {!isFullscreen && <HomeHeader />}
 
       {!isFullscreen && (

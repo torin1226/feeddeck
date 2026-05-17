@@ -75,7 +75,7 @@ export default function GlobalToast() {
       style={{
         opacity: visible ? 1 : 0,
         transform: `translateX(-50%) translateY(${visible ? 0 : (toast.position === 'bottom' ? 10 : -10)}px)`,
-        maxWidth: isAction ? '420px' : '320px',
+        maxWidth: `min(${isAction ? '420px' : '320px'}, calc(100vw - 2rem))`,
       }}
     >
       <div className="flex items-center gap-3">

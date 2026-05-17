@@ -237,9 +237,9 @@ export default function HeroSection() {
   return (
     <div
       className={`relative overflow-hidden transition-[height] duration-500 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] ${
-        theatreMode ? 'h-screen min-h-screen' : ''
+        theatreMode ? 'h-screen min-h-screen' : 'h-dvh min-h-[600px]'
       }`}
-      style={theatreMode ? {} : { height: '100vh', minHeight: '600px' }}
+      style={theatreMode ? {} : undefined}
     >
       {/* Full-bleed background — single object-cover thumbnail, darkened.
           Autoplay video replaces it when ready. */}
@@ -378,7 +378,7 @@ export default function HeroSection() {
 
       {/* Hero content — bottom-left, sits above the Up Next carousel (or above progress bar when hidden) */}
       <div
-        className={`absolute left-12 max-w-[550px] z-10 transition-all duration-500 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] ${
+        className={`absolute left-4 md:left-12 max-w-[calc(100%-2rem)] md:max-w-[550px] z-10 transition-all duration-500 ease-[cubic-bezier(0.25,0.46,0.45,0.94)] ${
           theatreMode ? 'bottom-24 opacity-0 pointer-events-none' : (upNextHidden ? 'bottom-[40px]' : 'bottom-[212px]')
         }`}
       >

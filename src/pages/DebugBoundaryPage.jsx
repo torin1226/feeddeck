@@ -47,7 +47,7 @@ export default function DebugBoundaryPage() {
     .sort((a, b) => b.failures - a.failures)
 
   return (
-    <div className="min-h-screen bg-surface text-text p-8">
+    <div className="min-h-dvh bg-surface text-text p-8">
       <h1 className="text-2xl font-bold mb-4">Boundary stats</h1>
       <p className="text-text/60 mb-4">Cumulative since server start or last reset. Refreshes every 10 seconds.</p>
       {error && <p className="text-red-500 mb-4">Error: {error}</p>}
