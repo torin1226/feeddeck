@@ -346,9 +346,8 @@ const useHomeStore = create((set, get) => ({
   },
 
   // Append the next unloaded category to the carousel pool (5c.2b).
-  // Called when the user nears the end of the current pool, or when
-  // they click the peek-row. Returns the appended category's index, or
-  // null if there's nothing left to load.
+  // Called when the user nears the end of the current pool. Returns the
+  // appended category's index, or null if there's nothing left to load.
   loadNextCategory: () => {
     const { categories, loadedCategoryIndices } = get()
     const loaded = new Set(loadedCategoryIndices)
@@ -359,16 +358,6 @@ const useHomeStore = create((set, get) => ({
       }
     }
     return null
-  },
-
-  // Hydrate a specific category by index (used by peek-row click).
-  // Returns true if it was newly loaded, false if already in pool.
-  loadCategoryAt: (index) => {
-    const { categories, loadedCategoryIndices } = get()
-    if (index < 0 || index >= categories.length) return false
-    if (loadedCategoryIndices.includes(index)) return false
-    set({ loadedCategoryIndices: [...loadedCategoryIndices, index] })
-    return true
   },
 
   // Optimistically remove an item the user thumbs-downed and slide a

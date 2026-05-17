@@ -79,7 +79,7 @@ export function SkeletonHero() {
 
 export function SkeletonGalleryShelf() {
   // Mirrors GalleryShelf: GalleryRow (left-aligned header + "See all" pill,
-  // 50vh focus-scaled cards, windowed progress dots) + PosterPeekRow below.
+  // 50vh focus-scaled cards, windowed progress dots).
   // Card widths track PosterCard.WIDTH (h: 420 default / 600 focused, v: 320 default).
   return (
     <div>
@@ -122,19 +122,6 @@ export function SkeletonGalleryShelf() {
         ))}
       </div>
 
-      {/* Peek-row placeholder — matches PosterPeekRow (16px/48px/20px padding, 72px thumb track) */}
-      <div style={{ padding: '16px 48px 20px' }}>
-        <div className={`${shimmer} h-2.5 w-32 mb-2.5`} />
-        <div className="flex gap-3" style={{ height: '72px' }}>
-          {Array.from({ length: 8 }, (_, i) => (
-            <div
-              key={i}
-              className="rounded-[10px] bg-surface-raised animate-shimmer flex-shrink-0"
-              style={{ width: '96px', height: '72px', opacity: 0.3 }}
-            />
-          ))}
-        </div>
-      </div>
     </div>
   )
 }

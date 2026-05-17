@@ -50,7 +50,6 @@ export default function GalleryRow({
   isLast,
   onReachEnd,
   onApproachEnd,
-  jumpRef,
   variant = 'poster',
   surfaceKey,
   surface,
@@ -282,25 +281,6 @@ export default function GalleryRow({
       card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
     }
   }, [items, variant])
-
-  // Imperative jump-to-id handle for parent-driven navigation
-  // (peek-row hydrates a category and jumps to its first item).
-  useEffect(() => {
-    if (!jumpRef) return
-    jumpRef.current = (id) => {
-      const idx = items.findIndex((it) => it?.id === id)
-      if (idx === -1) return false
-      const card = cardsRef.current[idx]
-      if (card) {
-        card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
-        return true
-      }
-      return false
-    }
-    return () => {
-      if (jumpRef) jumpRef.current = null
-    }
-  }, [items, jumpRef])
 
   // Compute distance from center for each card based on activeIndex
   const getCardDist = useCallback(

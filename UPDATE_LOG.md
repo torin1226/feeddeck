@@ -1,5 +1,25 @@
 # FeedDeck Update Log
 
+## 2026-05-16 (Removal — PERMANENT) — Killed PosterPeekRow ("Picked for You" peek strip)
+
+### Why
+Torin called it out on the homepage: "get rid of this peaking row that shows below some of the gallery tabs, it looks like a bug. I know it's not a bug, but it looks like one ... I want it gone." Followed up with: "saying that I never want to see it again."
+
+### Do NOT bring this back
+The thin 72px low-opacity thumbnail strip with the tiny uppercase category label that used to render under the `GalleryShelf` progress dots is **permanently removed**. Do not recreate `PosterPeekRow`, do not propose a redesigned "next category preview" affordance below the gallery, and treat any reference to it in older specs/plans as stale. Full rationale + guardrails: [`../_memory/decisions/2026-05-16-kill-poster-peek-row.md`](../_memory/decisions/2026-05-16-kill-poster-peek-row.md). Guard entry in [`../_memory/errors/feeddeck-known-issues.md`](../_memory/errors/feeddeck-known-issues.md).
+
+### Removed
+- **`src/components/home/PosterPeekRow.jsx`** — deleted outright.
+- **`src/components/home/GalleryShelf.jsx`** — dropped the `PosterPeekRow` import, the `peekCategory` memo, the `loadCategoryAt` selector, `galleryJumpRef`, `handlePeekActivate`, and the conditional `<PosterPeekRow>` render. GalleryShelf now renders only the `<GalleryRow>` over the flat pool.
+- **`src/components/home/GalleryRow.jsx`** — removed the `jumpRef` prop and the imperative jump-to-id `useEffect` (only the peek-row's click-to-jump consumed it).
+- **`src/components/Skeletons.jsx`** — removed the peek-row shimmer placeholder block from `SkeletonGalleryShelf` + updated the comment to drop the `PosterPeekRow` mention.
+- **`src/stores/homeStore.js`** — removed the `loadCategoryAt(index)` action; updated the `loadNextCategory` comment to drop the "or when they click the peek-row" clause. Auto-hydration on approach-end is the only remaining hydration path.
+
+### Historical references left intact
+April-era docs (`docs/superpowers/specs/2026-04-12-poster-shelf-design.md`, `docs/superpowers/plans/2026-04-12-poster-shelf.md`, `public/feeddeck-poster-shelf-comparison.html`, and earlier entries in this log) still describe the peek row. That's history — not a TODO. Don't "clean it up."
+
+---
+
 ## 2026-05-15 (Feature) — New `/audio` surface (audio porn page)
 
 ### Completed
