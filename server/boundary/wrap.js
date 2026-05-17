@@ -56,14 +56,24 @@ async function wrappedFetch(url, opts = {}) {
   if (error) {
     const outcome = classifyError(error)
     record(name, outcome, durationMs)
-    return { outcome, value: null, durationMs, error }
+    return { outcome, value: null, status: null, finalUrl: null, durationMs, error }
   }
 
   let body = null
   try { body = await response.text() } catch {}
   const outcome = classifyHttp(response, body)
   record(name, outcome, durationMs)
-  return { outcome, value: body, durationMs }
+  // `status` and `finalUrl` are exposed for callers that need response
+  // metadata (e.g., cookie-health Instagram probe detects login-redirect
+  // via the post-redirect URL). Existing callers that only destructure
+  // outcome/value/durationMs are unaffected.
+  return {
+    outcome,
+    value: body,
+    status: response?.status ?? null,
+    finalUrl: response?.url ?? null,
+    durationMs,
+  }
 }
 
 async function wrappedExec(cmd, args, opts = {}) {

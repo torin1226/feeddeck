@@ -52,6 +52,30 @@ describe('boundary.fetch(url, opts)', () => {
     expect(r.value).toBeNull()
   })
 
+  it('exposes status and finalUrl on the success return shape', async () => {
+    const fakeFetch = vi.fn(async () => ({
+      status: 302,
+      url: 'https://example.test/redirected',
+      text: async () => 'body',
+    }))
+    const r = await boundary.fetch('https://example.test/x', {
+      name: 'test-fetch',
+      fetchImpl: fakeFetch,
+    })
+    expect(r.status).toBe(302)
+    expect(r.finalUrl).toBe('https://example.test/redirected')
+  })
+
+  it('exposes status=null and finalUrl=null on the error return shape', async () => {
+    const fakeFetch = vi.fn(async () => { throw new Error('boom') })
+    const r = await boundary.fetch('https://example.test/x', {
+      name: 'test-fetch',
+      fetchImpl: fakeFetch,
+    })
+    expect(r.status).toBeNull()
+    expect(r.finalUrl).toBeNull()
+  })
+
   it('passes the AbortSignal it created to the underlying fetch', async () => {
     const fakeFetch = vi.fn(async (_url, opts) => {
       expect(opts.signal).toBeInstanceOf(AbortSignal)
