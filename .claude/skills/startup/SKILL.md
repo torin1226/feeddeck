@@ -9,7 +9,41 @@ Run this checklist at the start of every work session. Complete each step in ord
 
 **This skill works in both Claude Code and Cowork.** Steps marked [Code only] should be skipped in Cowork sessions.
 
-## Step 0: Load Memory Vault (ALWAYS DO THIS FIRST)
+## Step 0a: Session Awareness Check (ALWAYS DO THIS FIRST — even before memory vault)
+
+The project supports parallel sessions. Before reading anything else, check who else is running.
+
+1. **Sweep stale manifests.** List `../_memory/sessions/active/` (ignore `_TEMPLATE.md`, `README.md`, `_stale/`). For each remaining file:
+   - Parse `session_id` and `started_at` from frontmatter
+   - If `started_at` is older than 2 hours AND there is no git activity matching that `session_id` since that time → move the file to `../_memory/sessions/active/_stale/` (cleanup actor; do not delete)
+
+2. **Read every live manifest.** For each manifest still in `active/`:
+   - Note session_id, surface, intent, Claimed Tasks, Claimed Resources, Active Decisions, Current Focus
+
+3. **Surface to Torin** in a compact summary (skip if no live manifests):
+   > **Active sessions detected:** N
+   > - `<session_id>` (surface, started Xh ago, intent: "...")
+   >   - Claimed tasks: ...
+   >   - Claimed resources: ...
+   >   - Recent decisions: ...
+   >   - Current focus: <file> (mid-edit | safe-to-touch)
+
+4. **Conflict resolution.** If Torin's intent for THIS session overlaps with another session's claims (same task, same resource, same file under Current Focus):
+   - Do NOT proceed silently. Present the conflict and ask Torin to pick:
+     - **(a) Abort startup** — close this session
+     - **(b) Pick different work** — proceed but avoid the claimed tasks/resources/files
+     - **(c) Coordinate first** — pause; Torin will tell the other session to commit or stash, then resume
+   - If no overlap → continue to Step 0b.
+
+## Step 0b: Write Your Own Manifest
+
+1. Generate `session_id`: `YYYY-MM-DD-HH-MM-<random4>` (current timestamp + 4 random hex characters).
+2. Copy `../_memory/sessions/active/_TEMPLATE.md` to `../_memory/sessions/active/<session_id>.md`.
+3. Fill in frontmatter: `started_at`, `surface` (code|cowork|director), `intent` (one line — ask Torin if unclear).
+4. Confirm to Torin: "Session manifest created: `<session_id>`"
+5. Remember: this manifest is YOURS to update throughout the session — the backlog skill writes Claimed Tasks for you, but you must append Claimed Resources, Active Decisions, and update Current Focus as work happens.
+
+## Step 0c: Load Memory Vault
 
 The project uses a persistent Obsidian memory vault. Read these files in order before doing anything else:
 
@@ -30,7 +64,7 @@ Do NOT skip these reads. They contain context that doesn't fit in CLAUDE.md and 
 Read the update log and latest memory session log to understand what happened last time.
 
 ```
-Read: ../BACKLOG.md (vault root — check the Completed (Recent) section for recent entries)
+Read: BACKLOG.md (check the Completed section for recent entries)
 Read: UPDATE_LOG.md (read the most recent entry)
 ```
 
@@ -61,19 +95,21 @@ If errors are found:
 
 ## Step 3: Start Services [Code only]
 
-Launch the dev server and any other services needed to access the app:
+**Before starting any service, check active manifests for resource claims.** Re-list `../_memory/sessions/active/` and grep for `dev-server` under Claimed Resources in any other session's manifest.
 
-```bash
-# Start the dev server (Vite + Express backend)
-cd feeddeck && npm run dev &
-
-# Wait for server to be ready, then report the URLs
-# Local: http://localhost:3000
-# Network: http://<local-ip>:3000 (for mobile testing)
-```
+- **If `dev-server` is claimed by another live session:** do NOT run `npm run dev` (would conflict on port). Run a reachability check instead:
+  ```bash
+  curl -s http://localhost:3000/api/health
+  ```
+  - If reachable → "Dev server already running (claimed by session `<id>`). Using existing server."
+  - If unreachable → flag to Torin: "Manifest claims dev-server but it's not responding. Stale claim? Should I start a new server?"
+- **If `dev-server` is NOT claimed:** launch normally and append `- dev-server: port 3000` to YOUR manifest's Claimed Resources before running:
+  ```bash
+  cd feeddeck && npm run dev &
+  ```
 
 Confirm to the user:
-- Dev server is running
+- Dev server is running (either yours or the existing one)
 - Local URL is accessible
 - Network URL for mobile testing (if relevant)
 
@@ -96,12 +132,12 @@ Report any issues found.
 
 If Steps 2 or 4 found errors:
 1. Fix them now (for anything that takes < 5 minutes)
-2. For bigger issues, add them to the Discovered Tasks section of `../BACKLOG.md` (vault root)
+2. For bigger issues, add them to the Discovered Tasks section of BACKLOG.md
 3. Tell the user what was fixed and what was deferred
 
 ## Step 6: Review Backlog
 
-Read `../BACKLOG.md` (vault root) and give the user a status report:
+Read BACKLOG.md and give the user a status report:
 
 1. Any tasks marked `[~]` (in-progress) from last session
 2. Any tasks marked `[!]` (blocked) and why

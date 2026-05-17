@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FeedDeck Home — Proposed Changes (2026-05-17)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --surface: #0a0a0c;
+    --surface-raised: #111114;
+    --surface-overlay: #18181c;
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --text-primary: rgba(255,255,255,0.92);
+    --text-secondary: rgba(255,255,255,0.55);
+    --text-muted: rgba(255,255,255,0.35);
+    --display: 'Space Grotesk', system-ui, sans-serif;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--surface);
+    color: var(--text-primary);
+    font-family: var(--sans);
+    padding: 40px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  /* ---- LAYOUT HELPERS ---- */
+  .section { margin-bottom: 64px; }
+  .section-title {
+    font-family: var(--display);
+    font-size: 13px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--text-muted);
+    margin-bottom: 24px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .badge {
+    width: 22px; height: 22px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0;
+  }
+  .b1 { background: #3b82f6; }
+  .b2 { background: #8b5cf6; }
+  .b3 { background: #10b981; }
+
+  .compare-row {
+    display: grid; grid-template-columns: 1fr 80px 1fr; gap: 0;
+    align-items: start;
+  }
+  .compare-col { padding: 24px; }
+  .compare-col.current { background: rgba(255,255,255,0.02); border-radius: 12px 0 0 12px; border: 1px solid rgba(255,255,255,0.06); }
+  .compare-col.proposed { background: rgba(59,130,246,0.04); border-radius: 0 12px 12px 0; border: 1px solid rgba(59,130,246,0.15); border-left: none; }
+  .compare-arrow { display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 20px; padding-top: 40px; }
+  .col-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); font-weight: 600; margin-bottom: 16px; }
+  .col-label.bad { color: rgba(239,68,68,0.6); }
+  .col-label.good { color: rgba(52,211,153,0.7); }
+  .col-note { font-size: 12px; color: var(--text-muted); margin-top: 12px; line-height: 1.5; }
+  .col-note.bad { color: rgba(239,68,68,0.5); }
+  .col-note.good { color: rgba(52,211,153,0.55); }
+
+  /* ---- CHANGE 1: MODE PILL ---- */
+  /* Current — amber CTA weight */
+  .pill-current {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border-radius: 9999px;
+    font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
+    background: rgba(245,158,11,0.06);
+    border: 1px solid rgba(245,158,11,0.25);
+    color: #f59e0b;
+    font-family: var(--sans);
+    cursor: pointer;
+  }
+  /* Proposed — quiet status dot */
+  .pill-proposed {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 5px 12px; border-radius: 9999px;
+    font-size: 12px; font-weight: 500;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--text-muted);
+    font-family: var(--sans);
+    cursor: pointer;
+    transition: background 150ms, color 150ms;
+  }
+  .pill-proposed:hover {
+    background: rgba(255,255,255,0.07);
+    color: var(--text-secondary);
+  }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+
+  /* ---- CHANGE 1: SETTINGS ICON ---- */
+  .icon-btn {
+    width: 32px; height: 32px; border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: none; border: none; cursor: pointer;
+    color: var(--text-secondary);
+    transition: color 150ms;
+    font-size: 16px;
+  }
+  .icon-btn:hover { color: var(--text-primary); }
+  .icon-btn svg { stroke: currentColor; }
+
+  /* ---- HEADER MOCK (for context around pill) ---- */
+  .header-mock {
+    height: 56px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px;
+    background: rgba(255,255,255,0.03);
+    backdrop-filter: blur(24px);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+  }
+  .header-mock-left { font-family: var(--display); font-size: 16px; font-weight: 700; }
+  .header-mock-left em { color: var(--accent); font-style: normal; }
+  .header-mock-nav { display: flex; gap: 4px; }
+  .nav-btn {
+    font-size: 13px; font-weight: 500; padding: 5px 12px;
+    border-radius: 9999px; border: 1px solid transparent;
+    background: none; color: var(--text-secondary); font-family: var(--sans);
+    cursor: pointer;
+  }
+  .nav-btn.active { color: var(--accent); background: rgba(59,130,246,0.10); border-color: rgba(59,130,246,0.20); }
+  .header-mock-right { display: flex; align-items: center; gap: 12px; }
+  .header-divider { width: 1px; height: 18px; background: rgba(255,255,255,0.10); }
+
+  /* ---- CHANGE 2: SCROLL CUE ---- */
+  .hero-mock {
+    position: relative;
+    height: 280px;
+    background: linear-gradient(135deg, #1a1020 0%, #0d1520 50%, #0a0a0c 100%);
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .hero-mock-scrim {
+    position: absolute; inset-x: 0; bottom: 0; height: 65%;
+    background: linear-gradient(to top, #0a0a0c 0%, rgba(10,10,12,0.8) 35%, transparent 100%);
+  }
+  .hero-mock-content {
+    position: absolute; bottom: 60px; left: 24px;
+  }
+  .hero-mock-title {
+    font-family: var(--display); font-size: 22px; font-weight: 600;
+    letter-spacing: -0.5px; text-shadow: 0 2px 12px rgba(0,0,0,0.5);
+    margin-bottom: 12px;
+  }
+  .hero-mock-actions { display: flex; gap: 8px; align-items: center; }
+  .play-btn-mock {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 34px; padding: 0 18px; border-radius: 8px;
+    background: #fff; color: #0a0a0c; font-size: 12px; font-weight: 600;
+    border: none; cursor: pointer; font-family: var(--sans);
+  }
+  .glass-btn-mock {
+    width: 34px; height: 34px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.10);
+    color: rgba(255,255,255,0.6); cursor: pointer; flex-shrink: 0;
+  }
+  .up-next-mock {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 8px 16px 10px;
+    background: linear-gradient(to top, #0a0a0c 0%, transparent 100%);
+  }
+  .up-next-label-mock { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 6px; }
+  .up-next-thumbs { display: flex; gap: 6px; }
+  .up-next-thumb { width: 90px; height: 51px; border-radius: 5px; background: rgba(255,255,255,0.06); flex-shrink: 0; }
+
+  /* Scroll cue — CURRENT: nothing */
+  .hero-no-cue::after {
+    content: '';
+    position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+    background: rgba(255,255,255,0.06);
+  }
+  /* Scroll cue — PROPOSED: breathing chevron */
+  @keyframes cue-bounce {
+    0%, 100% { transform: translateY(0); opacity: 0.4; }
+    50% { transform: translateY(5px); opacity: 0.9; }
+  }
+  .scroll-cue-chevron {
+    position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+    animation: cue-bounce 2s ease-in-out infinite;
+    color: rgba(255,255,255,0.45); z-index: 10;
+  }
+
+  /* ---- CHANGE 3: ROW ORDER ---- */
+  .row-mock {
+    padding: 16px 20px 20px;
+    background: var(--surface-raised);
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.06);
+    margin-bottom: 8px;
+  }
+  .row-mock-header {
+    font-family: var(--display); font-size: 16px; font-weight: 700;
+    letter-spacing: -0.3px; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .row-number {
+    width: 22px; height: 22px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; flex-shrink: 0;
+    background: rgba(255,255,255,0.06); color: var(--text-muted);
+  }
+  .row-number.first { background: rgba(16,185,129,0.15); color: rgba(52,211,153,0.8); }
+  .row-cards { display: flex; gap: 10px; }
+  .row-card { width: 140px; flex-shrink: 0; }
+  .row-card-thumb {
+    width: 140px; height: 79px; border-radius: 7px;
+    background: rgba(255,255,255,0.05); position: relative; overflow: hidden;
+  }
+  .row-card-progress {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 3px;
+    background: rgba(255,255,255,0.10);
+  }
+  .row-card-progress-fill { height: 100%; background: var(--accent); }
+  .row-card-label { font-size: 11px; margin-top: 5px; color: var(--text-secondary); line-height: 1.3; }
+  .row-card-meta { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+
+  .arrow-down {
+    text-align: center; padding: 4px 0; color: var(--text-muted); font-size: 14px;
+  }
+
+  /* ---- MISC ---- */
+  .tag {
+    display: inline-block; font-size: 10px; font-weight: 600;
+    padding: 2px 7px; border-radius: 4px; letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .tag.removed { background: rgba(239,68,68,0.10); color: rgba(239,68,68,0.7); border: 1px solid rgba(239,68,68,0.15); }
+  .tag.added { background: rgba(52,211,153,0.10); color: rgba(52,211,153,0.7); border: 1px solid rgba(52,211,153,0.15); }
+  .tag.changed { background: rgba(59,130,246,0.10); color: rgba(96,165,250,0.8); border: 1px solid rgba(59,130,246,0.15); }
+</style>
+</head>
+<body>
+
+<div style="margin-bottom:48px;">
+  <h1 style="font-family:var(--display);font-size:28px;font-weight:700;letter-spacing:-0.5px;margin-bottom:6px;">Home Page — Proposed Changes</h1>
+  <p style="color:var(--text-muted);font-size:13px;">2026-05-17 daily design review · 3 changes · all surgical</p>
+</div>
+
+<!-- ======================================================
+     CHANGE 1: MODE PILL
+     ====================================================== -->
+<div class="section">
+  <div class="section-title">
+    <span class="badge b1">1</span>
+    Mode toggle → quiet status indicator
+  </div>
+
+  <!-- Side-by-side pill comparison -->
+  <div class="compare-row" style="margin-bottom:32px;">
+    <div class="compare-col current">
+      <div class="col-label bad">Current — CTA weight</div>
+      <button class="pill-current">● SOCIAL MODE</button>
+      <p class="col-note bad">
+        Amber (#f59e0b) is the highest-contrast element in the header. Reads as "something needs attention." Competes with the logo and nav on every pageload.
+      </p>
+    </div>
+    <div class="compare-arrow">→</div>
+    <div class="compare-col proposed">
+      <div class="col-label good">Proposed — status dot</div>
+      <button class="pill-proposed">
+        <span class="status-dot"></span>
+        Social
+      </button>
+      <p class="col-note good">
+        Same glass treatment as the non-active nav items. Matches header chrome weight. Hover reveals it's interactive without demanding attention at rest.
+      </p>
+    </div>
+  </div>
+
+  <!-- In-context header mock -->
+  <p style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text-muted);font-weight:600;margin-bottom:12px;">In context — proposed header</p>
+  <div class="header-mock">
+    <div class="header-mock-left">📡 <em>Feed</em>Deck</div>
+    <nav class="header-mock-nav">
+      <button class="nav-btn active">Home</button>
+      <button class="nav-btn">Feed</button>
+      <button class="nav-btn">Library</button>
+    </nav>
+    <div class="header-mock-right">
+      <!-- Search -->
+      <button class="icon-btn" title="Search">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke-width="1.5"><circle cx="6.5" cy="6.5" r="5"/><line x1="10.5" y1="10.5" x2="14.5" y2="14.5" stroke-linecap="round"/></svg>
+      </button>
+      <div class="header-divider"></div>
+      <!-- Shuffle -->
+      <button class="icon-btn" title="Shuffle">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+      </button>
+      <!-- Settings — SVG (change from emoji) -->
+      <button class="icon-btn" title="Settings">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      </button>
+      <!-- Quiet mode pill -->
+      <button class="pill-proposed">
+        <span class="status-dot"></span>
+        Social
+      </button>
+    </div>
+  </div>
+  <p style="font-size:11px;color:var(--text-muted);margin-top:8px;">Note: Settings ⚙ emoji → SVG icon (bonus consistency fix, same change)</p>
+</div>
+
+
+<!-- ======================================================
+     CHANGE 2: SCROLL CUE
+     ====================================================== -->
+<div class="section">
+  <div class="section-title">
+    <span class="badge b2">2</span>
+    Scroll cue at hero bottom edge
+  </div>
+
+  <div class="compare-row">
+    <div class="compare-col current" style="padding-bottom:16px;">
+      <div class="col-label bad">Current — hard cutoff at 100vh</div>
+      <div class="hero-mock hero-no-cue">
+        <div class="hero-mock-scrim"></div>
+        <div style="position:absolute;inset:0;background:linear-gradient(135deg,#1a1020,#0d1520);"></div>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:0.3;">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="rgba(255,255,255,0.3)"><path d="M8 5v14l11-7z"/></svg>
+        </div>
+        <div class="hero-mock-content">
+          <div class="hero-mock-title">Tonight's Pick</div>
+          <div class="hero-mock-actions">
+            <button class="play-btn-mock"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>Play</button>
+            <div class="glass-btn-mock"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>
+          </div>
+        </div>
+        <div class="up-next-mock">
+          <div class="up-next-label-mock">Up Next</div>
+          <div class="up-next-thumbs">
+            <div class="up-next-thumb"></div>
+            <div class="up-next-thumb"></div>
+            <div class="up-next-thumb"></div>
+          </div>
+        </div>
+        <!-- NO cue -->
+      </div>
+      <p class="col-note bad" style="margin-top:12px;">
+        Hero ends. No signal that 20 curated rows exist below. Users who don't scroll instinctively never discover the grid.
+      </p>
+    </div>
+
+    <div class="compare-arrow">→</div>
+
+    <div class="compare-col proposed" style="padding-bottom:16px;">
+      <div class="col-label good">Proposed — breathing chevron</div>
+      <div class="hero-mock" style="border-color:rgba(139,92,246,0.2);">
+        <div class="hero-mock-scrim"></div>
+        <div style="position:absolute;inset:0;background:linear-gradient(135deg,#1a1020,#0d1520);"></div>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:0.3;">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="rgba(255,255,255,0.3)"><path d="M8 5v14l11-7z"/></svg>
+        </div>
+        <div class="hero-mock-content">
+          <div class="hero-mock-title">Tonight's Pick</div>
+          <div class="hero-mock-actions">
+            <button class="play-btn-mock"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>Play</button>
+            <div class="glass-btn-mock"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></div>
+          </div>
+        </div>
+        <div class="up-next-mock">
+          <div class="up-next-label-mock">Up Next</div>
+          <div class="up-next-thumbs">
+            <div class="up-next-thumb"></div>
+            <div class="up-next-thumb"></div>
+            <div class="up-next-thumb"></div>
+          </div>
+        </div>
+        <!-- SCROLL CUE -->
+        <div class="scroll-cue-chevron">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+      </div>
+      <p class="col-note good" style="margin-top:12px;">
+        Breathing chevron (40% opacity, animates down then back). Disappears after first scroll. ~20 lines, no dependencies.
+      </p>
+    </div>
+  </div>
+</div>
+
+
+<!-- ======================================================
+     CHANGE 3: ROW ORDER
+     ====================================================== -->
+<div class="section">
+  <div class="section-title">
+    <span class="badge b3">3</span>
+    Continue Watching → row #1 when content exists
+  </div>
+
+  <div class="compare-row">
+    <div class="compare-col current">
+      <div class="col-label bad">Current — editorial order</div>
+
+      <div class="row-mock">
+        <div class="row-mock-header">
+          <span class="row-number">1</span>
+          Long Watches
+        </div>
+        <div class="row-cards">
+          <div class="row-card">
+            <div class="row-card-thumb" style="background:linear-gradient(135deg,#1e293b,#0f172a);"></div>
+            <div class="row-card-label">The Full History of the Internet</div>
+            <div class="row-card-meta">Wendover · 41:20</div>
+          </div>
+          <div class="row-card">
+            <div class="row-card-thumb" style="background:linear-gradient(135deg,#1a2010,#0f1408);"></div>
+            <div class="row-card-label">Inside the World's Most Dangerous Prison</div>
+            <div class="row-card-meta">Vice · 55:12</div>
+          </div>
+        </div>
+      </div>
+      <div class="arrow-down">↓</div>
+      <div class="row-mock" style="opacity:0.55;">
+        <div class="row-mock-header">
+          <span class="row-number">2</span>
+          Continue Watching
+        </div>
+        <div class="row-cards">
+          <div class="row-card">
+            <div class="row-card-thumb" style="background:linear-gradient(135deg,#0f1a2a,#0a1018);">
+              <div class="row-card-progress"><div class="row-card-progress-fill" style="width:42%;"></div></div>
+            </div>
+            <div class="row-card-label">The Last Algorithm (Part 3)</div>
+            <div class="row-card-meta">Kurzgesagt · 14:22 in</div>
+          </div>
+        </div>
+      </div>
+      <p class="col-note bad" style="margin-top:10px;">
+        High-intent resume content is buried ~600px below the first visible row. Has to scroll past a full editorial row to reach it.
+      </p>
+    </div>
+
+    <div class="compare-arrow">→</div>
+
+    <div class="compare-col proposed">
+      <div class="col-label good">Proposed — behavior-driven order</div>
+
+      <div class="row-mock" style="border-color:rgba(16,185,129,0.2);background:rgba(16,185,129,0.03);">
+        <div class="row-mock-header">
+          <span class="row-number first">1</span>
+          Continue Watching
+          <span class="tag added" style="margin-left:auto;">promoted</span>
+        </div>
+        <div class="row-cards">
+          <div class="row-card">
+            <div class="row-card-thumb" style="background:linear-gradient(135deg,#0f1a2a,#0a1018);">
+              <div class="row-card-progress"><div class="row-card-progress-fill" style="width:42%;"></div></div>
+            </div>
+            <div class="row-card-label">The Last Algorithm (Part 3)</div>
+            <div class="row-card-meta">Kurzgesagt · 14:22 in</div>
+          </div>
+          <div class="row-card">
+            <div class="row-card-thumb" style="background:linear-gradient(135deg,#1a1520,#100e18);">
+              <div class="row-card-progress"><div class="row-card-progress-fill" style="width:67%;"></div></div>
+            </div>
+            <div class="row-card-label">The Collapse of the Soviet Union</div>
+            <div class="row-card-meta">History · 31:04 in</div>
+          </div>
+        </div>
+      </div>
+      <div class="arrow-down">↓</div>
+      <div class="row-mock" style="opacity:0.7;">
+        <div class="row-mock-header">
+          <span class="row-number">2</span>
+          Long Watches
+          <span class="tag changed" style="margin-left:auto;">demoted</span>
+        </div>
+        <div class="row-cards">
+          <div class="row-card">
+            <div class="row-card-thumb" style="background:linear-gradient(135deg,#1e293b,#0f172a);"></div>
+            <div class="row-card-label">The Full History of the Internet</div>
+            <div class="row-card-meta">Wendover · 41:20</div>
+          </div>
+        </div>
+      </div>
+
+      <p style="font-size:11px;color:rgba(52,211,153,0.55);margin-top:12px;line-height:1.6;background:rgba(16,185,129,0.05);border:1px solid rgba(16,185,129,0.10);padding:10px 12px;border-radius:6px;">
+        When Continue Watching is empty → fall back to Long Watches at #1. Same order as today. Change is data-driven: sort in homeStore.js, ~8 lines.
+      </p>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

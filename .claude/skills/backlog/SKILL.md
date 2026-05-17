@@ -47,10 +47,17 @@ The main backlog has this layout (top to bottom):
 ## Protocol: Starting a Work Session
 
 1. Read `../BACKLOG.md` (vault root) first. Always. The Progress Summary table gives you instant context.
-2. Look for any `[~]` tasks (in-progress). If found, resume that work.
-3. If no in-progress tasks, pick the next `[ ]` task using the priority rules below.
-4. Mark the task `[~]` before writing any code.
-5. Save the file.
+2. **Check active manifests** at `../_memory/sessions/active/*.md` (excluding your own). If any other session has the candidate task listed under "Claimed Tasks", skip it and pick a different one — do not double-claim.
+3. Look for any `[~]` tasks (in-progress). If found AND no other manifest claims it, resume that work.
+4. If no in-progress tasks, pick the next `[ ]` task using the priority rules below.
+5. **Claim atomically — two writes coupled as one step:**
+   - Mark the task `[~]` in `../BACKLOG.md`
+   - Append a line to your own session's manifest under "Claimed Tasks":
+     `- [~] <task name> (claimed HH:MM)`
+   - Save both files.
+6. Now you can start writing code.
+
+**Why both writes:** Two sources of truth = drift. If you only flip `[~]` in BACKLOG.md, another session's startup awareness check won't see your claim until it reads BACKLOG. If you only write the manifest, a session that reads BACKLOG first will think the task is free. Couple them — this is the F2 lesson applied at the claim level (see [[../../../_memory/decisions/2026-05-16-f3-active-session-manifest|F3 decision]]).
 
 **Priority rules for picking tasks:**
 - Lower milestone number before higher (M3 before M4 before M5). M5a (Playback) is P0 — treat as highest priority if it has unblocked items.
@@ -64,11 +71,13 @@ The main backlog has this layout (top to bottom):
 ## Protocol: Completing a Task
 
 1. Verify the work is done (code written, tested if possible, no obvious issues).
-2. Change the task from `[~]` to `[x]`, appending today's date: `(2026-04-25)`.
-3. Move the completed task line to the `## Completed (Recent)` section at the bottom, prepending today's date.
-4. If the Recent section exceeds 10 items, move the oldest ones to `../BACKLOG-ARCHIVE.md` under `## Completed Tasks`.
-5. Update the Progress Summary table if the milestone completion % changed.
-6. Save the file.
+2. **Atomic release — writes coupled as one step:**
+   - Change the task from `[~]` to `[x]` in `../BACKLOG.md`, appending today's date: `(2026-04-25)`
+   - Move the completed task line to the `## Completed (Recent)` section at the bottom, prepending today's date
+   - Remove the matching line from your session's manifest under "Claimed Tasks" (no longer claimed)
+   - Save both files.
+3. If the Recent section exceeds 10 items, move the oldest ones to `../BACKLOG-ARCHIVE.md` under `## Completed Tasks`.
+4. Update the Progress Summary table if the milestone completion % changed.
 
 **Format for completed tasks:**
 ```
@@ -96,10 +105,11 @@ During implementation you'll often find tasks that weren't anticipated. Handle t
 
 ## Protocol: Hitting a Blocker
 
-1. Mark the task `[!]`.
+1. Mark the task `[!]` in `../BACKLOG.md`.
 2. Add a note on the next line explaining the blocker.
-3. Pick the next available task and continue working.
-4. Don't sit idle.
+3. Remove the matching line from your session's manifest under "Claimed Tasks" — you are no longer actively claiming it.
+4. Pick the next available task and continue working.
+5. Don't sit idle.
 
 **Format:**
 ```

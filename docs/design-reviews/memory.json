@@ -1,0 +1,51 @@
+{
+  "pages_reviewed": [
+    { "page": "watch", "route": "/watch/:id", "date": "2026-05-16" },
+    { "page": "feed", "route": "/feed", "date": "2026-05-16" }
+  ],
+  "pages_remaining": [
+    { "page": "home", "route": "/", "priority": "high" },
+    { "page": "library", "route": "/library", "priority": "high" },
+    { "page": "search", "route": "/search", "priority": "medium" },
+    { "page": "settings", "route": "/settings", "priority": "low" },
+    { "page": "audio", "route": "/audio", "priority": "medium" }
+  ],
+  "calibration_history": [
+    {
+      "date": "2026-05-16",
+      "page": "watch",
+      "question": "When you're watching a video and the suggestions rail is visible, do you use it to pick your next video, or do you navigate back to home?",
+      "prediction": "Goes back to home most of the time; rail is secondary discovery",
+      "actual": "Hover previews ARE the watch experience — watch page is the commit destination of a preview-dwell. Doesn't really browse the suggestions rail.",
+      "delta": "partial",
+      "insight": "Watch page is an arrival point, not a browse surface. The suggestions rail is low-priority chrome."
+    },
+    {
+      "date": "2026-05-16",
+      "page": "watch",
+      "question": "Do you watch on desktop at your desk or from a distance (couch, standing)?",
+      "prediction": "Primarily at desk on desktop",
+      "actual": "Home = desktop (hover), feed = mobile + TV (touch/remote, no hover). Surface-by-device split is real.",
+      "delta": "close",
+      "insight": "Home page is designed for hover/desktop. Feed is for mobile and TV. Different affordance requirements per surface."
+    },
+    {
+      "date": "2026-05-16",
+      "page": "feed",
+      "question": "Do you use the Remix mode in the feed, or is it dead weight?",
+      "prediction": "Probably doesn't use it much",
+      "actual": "Remix is dead weight — For You only; Remix can be deprecated.",
+      "delta": "close",
+      "insight": "Remix is unused. For You is the only feed mode that matters."
+    }
+  ],
+  "review_count": 2,
+  "last_reviewed": "2026-05-16",
+  "taste_notes": [
+    "Preview-first watching: hover previews ARE the watch experience. The watch page is the commit destination of a preview-dwell transition — not a browse surface.",
+    "Surface-by-device split: home = desktop (hover/mouse), feed = mobile + TV (touch/remote). Different affordance requirements.",
+    "Remix is dead weight: For You is the only feed mode that matters. Remix can be deprecated.",
+    "Restraint pays: PosterPeekRow removal was a net Pillar 3 win. Subtraction is as valid as addition.",
+    "Titles are secondary to thumbnails on browse surfaces — Torin doesn't read card titles when scanning."
+  ]
+}
