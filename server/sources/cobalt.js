@@ -18,6 +18,7 @@
 // ============================================================
 
 import { SourceAdapter } from './base.js'
+import { boundary } from '../boundary/index.js'
 
 const COBALT_API = process.env.COBALT_API_URL || 'https://api.cobalt.tools'
 const COBALT_API_KEY = process.env.COBALT_API_KEY || ''
@@ -52,36 +53,33 @@ export class CobaltAdapter extends SourceAdapter {
   }
 
   async _request(url) {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
+    const headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    }
+    if (COBALT_API_KEY) {
+      headers['Authorization'] = `Api-Key ${COBALT_API_KEY}`
+    }
+    // Routed through boundary.fetch (M7 Sprint 2). Boundary owns the
+    // timeout via its own AbortController. Throws on non-ok so callers
+    // (extractMetadata, getStreamUrl) still get a thrown error to handle.
+    const { outcome, value: body } = await boundary.fetch(`${COBALT_API}/`, {
+      name: 'cobalt-api',
+      timeoutMs: REQUEST_TIMEOUT,
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        url,
+        videoQuality: '480',
+        filenameStyle: 'pretty',
+      }),
+    })
 
+    if (outcome !== 'ok') throw new Error(`Cobalt API ${outcome}`)
     try {
-      const headers = {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      }
-      if (COBALT_API_KEY) {
-        headers['Authorization'] = `Api-Key ${COBALT_API_KEY}`
-      }
-      const response = await fetch(`${COBALT_API}/`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          url,
-          videoQuality: '480',
-          filenameStyle: 'pretty',
-        }),
-        signal: controller.signal,
-      })
-
-      if (!response.ok) {
-        const text = await response.text()
-        throw new Error(`Cobalt API error ${response.status}: ${text}`)
-      }
-
-      return response.json()
-    } finally {
-      clearTimeout(timeout)
+      return JSON.parse(body)
+    } catch (err) {
+      throw new Error(`Cobalt API ok but body not JSON: ${err.message}`)
     }
   }
 
