@@ -1,5 +1,36 @@
 # FeedDeck Update Log
 
+## 2026-05-17 (Design Review) — Home Page Review + Logo-as-Mode-Toggle
+
+### Completed
+- **Daily design review: home page (`/`).** Audited HomeHeader, HeroSection, HeroCarousel, GalleryShelf, BrowseSection across 6 lenses (Behavioral Impact, Content Hierarchy, Visual Consistency, Aesthetic System, Contrast & Readability, Implementation Scope). Generated current-state HTML preview and annotated proposed mockup at `docs/design-reviews/2026-05-17-home.html` / `2026-05-17-home-proposed.html`.
+- **Shipped: logo-as-mode-toggle.** Removed the amber `SOCIAL MODE / NSFW MODE` pill from the header — it was the most visually prominent element on every page load. Replaced with logo-as-toggle: clicking the `📡FeedDeck` wordmark calls `toggleMode`. A 4px accent-colored dot (`w-1 h-1 rounded-full bg-accent`) sits centered below the wordmark — `opacity-0` in SFW, `opacity-100` in NSFW. Zero extra chrome, completely invisible in the default state. Commit: pending (see next session).
+- **Settings icon: emoji → SVG.** Replaced `⚙` emoji in the header with a proper SVG gear icon, consistent with the existing search/shuffle SVG icons.
+- **Updated `docs/design-reviews/memory.json`:** home marked reviewed, calibration entry recorded (prediction was wrong — gallery rows are active daily usage, not backup discovery), taste notes updated.
+- **Filed 2 new bugs in BACKLOG:** Top10Row missing thumbs ratings UI (P2), UP NEXT carousel spam content (P2).
+
+### In Progress
+- None (HomeHeader.jsx changes are complete but uncommitted — shutdown was interrupted mid-sequence)
+
+### Decisions Made
+- Logo-as-toggle over quiet pill: user wanted the mode indicator to be "lowkey but still easily accessible." Logo repurposes an existing element (zero new chrome), dot indicator is visible only in NSFW mode. See `_memory/decisions/2026-05-17-logo-as-mode-toggle.md`.
+
+### Issues & Blockers
+- `preview_screenshot` continues to time out (10th+ P3 recurrence) when videos are autoplaying. Workaround: pause+clear all video elements via `preview_eval` before each capture. Below-fold captures still timeout due to 255 video elements reinitializing on scroll. Fell back to DOM audit for below-fold structure.
+
+### Key Files Changed
+- `src/components/home/HomeHeader.jsx` — logo-as-toggle button, dot indicator, SVG gear icon, amber pill removed
+- `docs/design-reviews/2026-05-17-home.html` — current-state preview
+- `docs/design-reviews/2026-05-17-home-proposed.html` — annotated proposed mockup (3 changes: mode toggle, scroll cue chevron, row order)
+- `docs/design-reviews/memory.json` — home review recorded, calibration entry added
+
+### Next Session Should
+- Commit HomeHeader.jsx changes: `git commit -m "feat(header): logo-as-mode-toggle, remove amber mode pill, settings svg icon"`
+- Implement proposed change #2: animated chevron scroll cue at hero bottom edge (HeroSection.jsx)
+- Investigate Top10Row thumbs rating gap before it becomes a Beelink-deploy blocker
+
+---
+
 ## 2026-05-17 (Infrastructure) — F3 Active Session Manifest + Skill File Consolidation
 
 ### Completed

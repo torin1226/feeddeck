@@ -1,16 +1,25 @@
 {
   "pages_reviewed": [
     { "page": "watch", "route": "/watch/:id", "date": "2026-05-16" },
-    { "page": "feed", "route": "/feed", "date": "2026-05-16" }
+    { "page": "feed", "route": "/feed", "date": "2026-05-16" },
+    { "page": "home", "route": "/", "date": "2026-05-17" }
   ],
   "pages_remaining": [
-    { "page": "home", "route": "/", "priority": "high" },
     { "page": "library", "route": "/library", "priority": "high" },
     { "page": "search", "route": "/search", "priority": "medium" },
     { "page": "settings", "route": "/settings", "priority": "low" },
     { "page": "audio", "route": "/audio", "priority": "medium" }
   ],
   "calibration_history": [
+    {
+      "date": "2026-05-17",
+      "page": "home",
+      "question": "When you're on the home page, do you scroll down into the gallery rows regularly, or is the hero + UP NEXT the main area you interact with?",
+      "prediction": "Hero + UP NEXT is primary; gallery rows are secondary/backup discovery",
+      "actual": "Scrolls into gallery rows regularly, uses thumbs up/down actively as they pass cards",
+      "delta": "wrong",
+      "insight": "Gallery rows are active daily usage, not backup discovery. Thumbs ratings UI on every row is essential — missing it (e.g. Top10Row) is a real friction point."
+    },
     {
       "date": "2026-05-16",
       "page": "watch",
@@ -39,13 +48,15 @@
       "insight": "Remix is unused. For You is the only feed mode that matters."
     }
   ],
-  "review_count": 2,
-  "last_reviewed": "2026-05-16",
+  "review_count": 3,
+  "last_reviewed": "2026-05-17",
   "taste_notes": [
     "Preview-first watching: hover previews ARE the watch experience. The watch page is the commit destination of a preview-dwell transition — not a browse surface.",
     "Surface-by-device split: home = desktop (hover/mouse), feed = mobile + TV (touch/remote). Different affordance requirements.",
     "Remix is dead weight: For You is the only feed mode that matters. Remix can be deprecated.",
     "Restraint pays: PosterPeekRow removal was a net Pillar 3 win. Subtraction is as valid as addition.",
-    "Titles are secondary to thumbnails on browse surfaces — Torin doesn't read card titles when scanning."
+    "Titles are secondary to thumbnails on browse surfaces — Torin doesn't read card titles when scanning.",
+    "Gallery rows are active daily usage: Torin scrolls into them regularly and uses thumbs up/down as he passes. Ratings UI on every row is essential, not optional chrome.",
+    "UP NEXT spam: recently the UP NEXT carousel has been showing spam/low-quality content — content quality filter needs attention."
   ]
 }
