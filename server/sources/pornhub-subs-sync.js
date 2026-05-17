@@ -25,6 +25,7 @@ import { promisify } from 'util'
 import { randomUUID } from 'crypto'
 import { db } from '../database.js'
 import { getCookieArgs, parseCookieFile } from '../cookies.js'
+import { boundary } from '../boundary/index.js'
 import { logger } from '../logger.js'
 
 const execFileAsync = promisify(execFile)
@@ -245,16 +246,16 @@ async function ytdlpJson(url, { limit = 15, timeout = YTDLP_TIMEOUT } = {}) {
     '--ignore-errors',
     url,
   ]
-  let stdout
-  try {
-    const result = await execFileAsync('yt-dlp', args, {
-      encoding: 'utf8', timeout, maxBuffer: MAX_BUFFER, windowsHide: true,
-    })
-    stdout = result.stdout
-  } catch (err) {
-    if (err.stdout?.trim()) stdout = err.stdout
-    else throw err
-  }
+  // Routed through boundary.exec (M7 Sprint 2). wrappedExec preserves the
+  // prior partial-success semantics (returns stdout on non-zero exit when
+  // --ignore-errors yields usable lines).
+  const { outcome, value: stdout } = await boundary.exec('yt-dlp', args, {
+    name: 'nsfw-pornhub-subs-list',
+    timeoutMs: timeout,
+    maxBuffer: MAX_BUFFER,
+  })
+  if (outcome !== 'ok') throw new Error(`pornhub-subs list ${outcome}`)
+
   const videos = []
   for (const line of stdout.split('\n')) {
     if (!line.trim()) continue
@@ -262,6 +263,8 @@ async function ytdlpJson(url, { limit = 15, timeout = YTDLP_TIMEOUT } = {}) {
   }
   return videos
 }
+// Test seam — see pornhub-personal.js for rationale.
+export { ytdlpJson as _ytdlpJsonForTest }
 
 function normalize(raw, { displayUploader, forceUploader = false } = {}) {
   // forceUploader=true: use displayUploader regardless (good for channel

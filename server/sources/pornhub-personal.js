@@ -14,6 +14,7 @@ import { promisify } from 'util'
 import { randomUUID } from 'crypto'
 import { db } from '../database.js'
 import { getCookieArgs, parseCookieFile } from '../cookies.js'
+import { boundary } from '../boundary/index.js'
 import { logger } from '../logger.js'
 
 const execFileAsync = promisify(execFile)
@@ -72,19 +73,16 @@ async function ytdlpJson(url, { limit = 30, timeout = YTDLP_TIMEOUT } = {}) {
     '--ignore-errors',
     url,
   ]
-  let stdout
-  try {
-    const result = await execFileAsync('yt-dlp', args, {
-      encoding: 'utf8',
-      timeout,
-      maxBuffer: MAX_BUFFER,
-      windowsHide: true,
-    })
-    stdout = result.stdout
-  } catch (err) {
-    if (err.stdout?.trim()) stdout = err.stdout
-    else throw err
-  }
+  // Routed through boundary.exec (M7 Sprint 2). wrappedExec preserves the
+  // prior partial-success semantics (returns stdout even when yt-dlp exits
+  // non-zero), so the --ignore-errors flag still flows through cleanly.
+  const { outcome, value: stdout } = await boundary.exec('yt-dlp', args, {
+    name: 'nsfw-pornhub-personal-list',
+    timeoutMs: timeout,
+    maxBuffer: MAX_BUFFER,
+  })
+  if (outcome !== 'ok') throw new Error(`pornhub-personal list ${outcome}`)
+
   const videos = []
   for (const line of stdout.split('\n')) {
     if (!line.trim()) continue
@@ -94,6 +92,9 @@ async function ytdlpJson(url, { limit = 30, timeout = YTDLP_TIMEOUT } = {}) {
   }
   return videos
 }
+// Test seam — keeps `ytdlpJson` private to production while letting the
+// boundary contract test drive it directly without booting Puppeteer.
+export { ytdlpJson as _ytdlpJsonForTest }
 
 function normalize(raw) {
   return {
@@ -289,13 +290,15 @@ async function fetchUploadDate(url) {
     '--no-warnings',
     url,
   ]
+  // Routed through boundary.exec (M7 Sprint 2). Best-effort enrichment —
+  // any non-ok outcome returns null so the caller can keep going.
+  const { outcome, value: stdout } = await boundary.exec('yt-dlp', args, {
+    name: 'nsfw-pornhub-personal-date',
+    timeoutMs: 30_000,
+    maxBuffer: MAX_BUFFER,
+  })
+  if (outcome !== 'ok' || !stdout) return null
   try {
-    const { stdout } = await execFileAsync('yt-dlp', args, {
-      encoding: 'utf8',
-      timeout: 30_000,
-      maxBuffer: MAX_BUFFER,
-      windowsHide: true,
-    })
     const line = stdout.split('\n').find(l => l.trim().startsWith('{'))
     if (!line) return null
     const raw = JSON.parse(line)
@@ -306,6 +309,8 @@ async function fetchUploadDate(url) {
     return null
   }
 }
+// Test seam — see _ytdlpJsonForTest above.
+export { fetchUploadDate as _fetchUploadDateForTest }
 
 // Pool-based enrichment: fetch upload_date for each item with bounded
 // concurrency. Skips items that already have a non-null upload_date.
