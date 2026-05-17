@@ -1,5 +1,64 @@
 # FeedDeck Update Log
 
+## 2026-05-17 (Mobile) — Phase C: Hard-coded widths, dvh sweep, input zoom, touch-action
+
+### Completed
+- **Phase C.1 — Hard-coded widths fixed (5 targets)**
+  - `NextUpDialog.jsx` — both toast cards (`w-[280px]`) capped to `w-[min(280px,calc(100vw-2rem))]`
+  - `HeroCarousel.jsx` — search row padding `px-10` → `px-4 md:px-10` (frees up 48px on a 375px phone)
+  - `HeroSection.jsx` — hero text overlay `left-12 max-w-[550px]` → `left-4 md:left-12 max-w-[calc(100%-2rem)] md:max-w-[550px]` (was 598px reach on a 375px phone, now 359px)
+  - `GalleryRow.jsx` — `getCardWidth()` now caps landscape cards at `vw * 0.75`; landscape 16:9 was computing to 640px (wider than the phone), now ~292px on a 390px screen
+  - `GlobalToast.jsx` — action toast `maxWidth: 420px` now capped to viewport: `min(420px, calc(100vw - 2rem))`
+- **Phase C.2 — 100dvh sweep (14 files)**
+  - `HeroSection.jsx` hero: inline `height: 100vh` style → `h-dvh` Tailwind class (iOS address bar was cutting off the bottom of the hero)
+  - `Skeletons.jsx` hero skeleton: `h-screen` → `h-dvh` to match HeroSection
+  - All page wrappers (`HomePage`, `LibraryPage`, `VideoDetailPage`, `AudioPage`, `SettingsPage`, `DebugBoundaryPage`): `min-h-screen` → `min-h-dvh`
+  - `AppShell.jsx` loading + Suspense fallback, `ErrorBoundary.jsx` all three error screens: `h-screen` → `h-dvh`
+- **Phase C.3 — iOS input zoom prevention**
+  - `FeedFilterSheet.jsx` search input: `text-sm` → `text-base md:text-sm` (14px → 16px on mobile; iOS auto-zooms on inputs <16px)
+  - `HomeHeader.jsx` expandable search input: same fix
+- **Phase C.4 — Touch-action: manipulation**
+  - `index.css`: added `touch-action: manipulation` for all `button`, `a`, `[role="button"]` — removes 300ms double-tap-to-zoom delay on legacy WebKit
+- **Dead code removed**
+  - `index.css`: deleted `.mobile-frame .h-dvh` and `.mobile-frame .snap-y` rules (phone-frame was removed last session)
+- **Also completed in this session (mobile nav, Phase 0+B):**
+  - Bug #1 fix: `FeedFilterSheet` was always rendered regardless of `filterOpen` — now gated with `{filterOpen && ...}`
+  - Bug #2 fix: Homepage video element count reduced from 254 to 0 on initial load (three-layer gate: `hasInteracted`/dist cap/`isFocusedByPreview` in GalleryRow + PosterCard; `isHovered` gate in Top10Row)
+  - Mobile nav: `mobileNavStore`, `HamburgerButton`, `MobileNavSheet` — right-side slide-in sheet with focus trap, body scroll lock, ESC, Android back button, route auto-close, safe-area insets
+  - `HomeHeader` + `Header`: nav links hidden on mobile, hamburger + sheet wired in
+  - Phone-frame dev toggle (Ctrl+M) removed from `AppShell`, `useKeyboard`, `HomeHeader`
+
+### In Progress
+- None
+
+### Decisions Made
+- `h-dvh` used directly without `h-screen` fallback — consistent with existing codebase usage in FeedPage/ForYouFeed; dvh support is ~99%+ on 2026 browsers
+- GalleryRow landscape cap at `vw * 0.75` (shows ~1.3 cards on mobile) rather than a fixed pixel value, so it scales correctly across phone sizes
+
+### Issues & Blockers
+- None
+
+### Key Files Changed
+- `src/components/feed/NextUpDialog.jsx`
+- `src/components/home/HeroCarousel.jsx`
+- `src/components/home/HeroSection.jsx`
+- `src/components/home/GalleryRow.jsx`
+- `src/components/GlobalToast.jsx`
+- `src/components/Skeletons.jsx`
+- `src/components/AppShell.jsx`
+- `src/components/ErrorBoundary.jsx`
+- `src/pages/HomePage.jsx`, `LibraryPage.jsx`, `VideoDetailPage.jsx`, `AudioPage.jsx`, `SettingsPage.jsx`, `DebugBoundaryPage.jsx`
+- `src/components/feed/FeedFilterSheet.jsx`
+- `src/components/home/HomeHeader.jsx`
+- `src/index.css`
+
+### Next Session Should
+- Phase D: Touch parity for cards — first tap = focus/preview, second tap = activate on touch devices (`PosterCard.jsx`)
+- Commit `server/sources/twitter-trends.js` `acceptHtml: true` fix (carried from cleanup session)
+- Implement animated chevron scroll cue at hero bottom edge (carried from design-review session)
+
+---
+
 ## 2026-05-17 (Cleanup) — Dead deviceStore Removal
 
 ### Completed
