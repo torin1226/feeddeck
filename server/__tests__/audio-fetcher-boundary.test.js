@@ -21,7 +21,7 @@ vi.mock('../scoring.js', () => ({ recomputeAudioScores: () => {} }))
 const boundaryMock = { fetch: vi.fn() }
 vi.mock('../boundary/index.js', () => ({ boundary: boundaryMock }))
 
-const { fetchAudioCycle, _fetchRedditAudioCreatorForTest } = await import('../sources/audio-fetcher.js')
+const { _fetchRedditAudioCreatorForTest } = await import('../sources/audio-fetcher.js')
 
 beforeEach(() => {
   boundaryMock.fetch.mockReset()

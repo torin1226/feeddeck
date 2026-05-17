@@ -98,6 +98,7 @@ async function wrappedFetch(url, opts = {}) {
     name,
     timeoutMs = DEFAULT_FETCH_TIMEOUT_MS,
     fetchImpl = globalThis.fetch,
+    acceptHtml = false,
     ...rest
   } = opts
   if (!name) throw new Error('boundary.fetch requires opts.name')
@@ -117,7 +118,7 @@ async function wrappedFetch(url, opts = {}) {
 
   let body = null
   try { body = await response.text() } catch {}
-  const outcome = classifyHttp(response, body)
+  const outcome = classifyHttp(response, body, { acceptHtml })
   record(name, outcome, durationMs)
   // `status` and `finalUrl` are exposed for callers that need response
   // metadata (e.g., cookie-health Instagram probe detects login-redirect

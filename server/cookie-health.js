@@ -4,15 +4,11 @@
 // domains. Runs on server start and via /api/cookies/health.
 // ============================================================
 
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 import { readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { getCookieArgs } from './cookies.js'
 import { boundary } from './boundary/index.js'
-
-const execFileAsync = promisify(execFile)
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 const PROBE_TIMEOUT = 15_000 // 15 seconds max per probe
@@ -190,6 +186,7 @@ async function _probeInstagram() {
   const { outcome, status, finalUrl, error } = await boundary.fetch('https://www.instagram.com/accounts/edit/', {
     name: 'cookie-health-ig-probe',
     timeoutMs: PROBE_TIMEOUT,
+    acceptHtml: true,
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
       'Cookie': pairs.join('; '),

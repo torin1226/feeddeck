@@ -37,7 +37,7 @@ vi.mock('fs', async (importOriginal) => {
   }
 })
 
-const { checkCookieHealth, probeCookieForDomain } = await import('../cookie-health.js')
+const { probeCookieForDomain } = await import('../cookie-health.js')
 
 beforeEach(() => {
   boundaryMock.exec.mockReset()

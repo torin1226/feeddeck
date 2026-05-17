@@ -103,6 +103,7 @@ export class SoundgasmAdapter extends SourceAdapter {
     const { outcome: pageOutcome, value: html } = await boundary.fetch(userUrl, {
       name: 'audio-soundgasm-user',
       timeoutMs: 15_000,
+      acceptHtml: true,
       headers: { 'User-Agent': UA },
     })
     if (pageOutcome !== 'ok' || !html) {
@@ -148,6 +149,7 @@ export class SoundgasmAdapter extends SourceAdapter {
     const { outcome, value: html } = await boundary.fetch(post.url, {
       name: 'audio-soundgasm-post',
       timeoutMs: 15_000,
+      acceptHtml: true,
       headers: { 'User-Agent': UA },
     })
     if (outcome !== 'ok' || !html) {
@@ -204,6 +206,7 @@ export class SoundgasmAdapter extends SourceAdapter {
     const { outcome, value: html } = await boundary.fetch(url, {
       name: 'audio-soundgasm-resolve',
       timeoutMs: 15_000,
+      acceptHtml: true,
       headers: { 'User-Agent': UA },
     })
     if (outcome !== 'ok' || !html) throw new Error(`soundgasm ${outcome}`)
@@ -216,6 +219,7 @@ export class SoundgasmAdapter extends SourceAdapter {
     const { outcome, value: html } = await boundary.fetch(url, {
       name: 'audio-soundgasm-resolve',
       timeoutMs: 15_000,
+      acceptHtml: true,
       headers: { 'User-Agent': UA },
     })
     if (outcome !== 'ok' || !html) throw new Error(`soundgasm ${outcome}`)

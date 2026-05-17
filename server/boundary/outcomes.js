@@ -35,7 +35,7 @@ function bodyLooksLikeHtml(body) {
   return head.includes('<!doctype html') || head.includes('<html')
 }
 
-export function classifyHttp(response, body) {
+export function classifyHttp(response, body, { acceptHtml = false } = {}) {
   const status = response?.status ?? 0
   const bodyText = typeof body === 'string' ? body.toLowerCase() : ''
 
@@ -48,7 +48,7 @@ export function classifyHttp(response, body) {
 
   if (status >= 200 && status < 300) {
     if (isEmpty(body)) return OUTCOMES.EMPTY
-    if (bodyLooksLikeHtml(body)) return OUTCOMES.WRONG_SHAPE
+    if (!acceptHtml && bodyLooksLikeHtml(body)) return OUTCOMES.WRONG_SHAPE
     return OUTCOMES.OK
   }
 

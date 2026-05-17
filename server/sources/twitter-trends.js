@@ -68,6 +68,7 @@ async function _pathGraphQL(headers) {
   const { outcome: pageOutcome, value: html } = await boundary.fetch('https://x.com/explore', {
     name: 'twitter-trends-explore-page',
     timeoutMs: 15_000,
+    acceptHtml: true,
     headers: { cookie: headers.cookie, 'user-agent': headers['user-agent'] },
   })
   if (pageOutcome !== 'ok' || !html) throw new Error(`explore page ${pageOutcome}`)

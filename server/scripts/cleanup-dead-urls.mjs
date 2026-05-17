@@ -101,7 +101,7 @@ async function main() {
   const { registry } = await import('../sources/index.js')
   const { preResolveStreamUrls } = await import('../pre-resolve-stream-urls.js')
   const { _isCookieExpired, _extractDomain } = await import('../sources/ytdlp.js')
-  const { logger } = await import('../logger.js')
+  await import('../logger.js')
 
   // Ctrl-C clean exit. processBatch is async; AbortController stops
   // the runner from starting new batches once we've finished the
@@ -128,7 +128,7 @@ async function main() {
     delayPerDomainMs: DELAY_MS,
     perBatch: 1,
     signal: ctrl.signal,
-    processBatch: async (batch, domain) => {
+    processBatch: async (batch, _domain) => {
       const counts = await preResolveStreamUrls(batch, {
         registry,
         db,

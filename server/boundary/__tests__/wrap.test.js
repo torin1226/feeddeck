@@ -88,6 +88,32 @@ describe('boundary.fetch(url, opts)', () => {
     })
     expect(fakeFetch).toHaveBeenCalledOnce()
   })
+
+  it('classifies 2xx HTML body as wrong_shape by default', async () => {
+    const fakeFetch = vi.fn(async () => ({
+      status: 200,
+      text: async () => '<!doctype html><html><body>Hello</body></html>',
+    }))
+    const r = await boundary.fetch('https://example.test/x', {
+      name: 'test-fetch',
+      fetchImpl: fakeFetch,
+    })
+    expect(r.outcome).toBe('wrong_shape')
+  })
+
+  it('classifies 2xx HTML body as ok when acceptHtml is true', async () => {
+    const fakeFetch = vi.fn(async () => ({
+      status: 200,
+      text: async () => '<!doctype html><html><body>Hello</body></html>',
+    }))
+    const r = await boundary.fetch('https://example.test/x', {
+      name: 'test-fetch',
+      acceptHtml: true,
+      fetchImpl: fakeFetch,
+    })
+    expect(r.outcome).toBe('ok')
+    expect(r.value).toContain('<!doctype html>')
+  })
 })
 
 describe('boundary.streamingFetch(url, opts)', () => {
