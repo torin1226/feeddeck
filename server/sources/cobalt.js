@@ -79,7 +79,7 @@ export class CobaltAdapter extends SourceAdapter {
     try {
       return JSON.parse(body)
     } catch (err) {
-      throw new Error(`Cobalt API ok but body not JSON: ${err.message}`)
+      throw new Error(`Cobalt API ok but body not JSON: ${err.message}`, { cause: err })
     }
   }
 

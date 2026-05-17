@@ -595,7 +595,7 @@ export class ScraperAdapter extends SourceAdapter {
     if (outcome !== 'ok') throw new Error(`RedGifs auth ${outcome}`)
     let data
     try { data = JSON.parse(body) } catch (err) {
-      throw new Error(`RedGifs auth ok but body not JSON: ${err.message}`)
+      throw new Error(`RedGifs auth ok but body not JSON: ${err.message}`, { cause: err })
     }
     this._redGifsToken = data.token
     this._redGifsTokenExpiry = Date.now() + 60 * 60 * 1000
@@ -646,7 +646,7 @@ export class ScraperAdapter extends SourceAdapter {
 
     let data
     try { data = JSON.parse(body) } catch (err) {
-      throw new Error(`RedGifs search ok but body not JSON: ${err.message}`)
+      throw new Error(`RedGifs search ok but body not JSON: ${err.message}`, { cause: err })
     }
     const gifs = data.gifs || []
 
@@ -703,7 +703,7 @@ export class ScraperAdapter extends SourceAdapter {
 
     let posts
     try { posts = JSON.parse(body) } catch (err) {
-      throw new Error(`FikFap API ok but body not JSON: ${err.message}`)
+      throw new Error(`FikFap API ok but body not JSON: ${err.message}`, { cause: err })
     }
     if (!Array.isArray(posts)) throw new Error('FikFap API returned unexpected format')
 
