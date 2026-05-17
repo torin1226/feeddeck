@@ -1,5 +1,33 @@
 # FeedDeck Update Log
 
+## 2026-05-17 (Infrastructure) — F3 Active Session Manifest + Skill File Consolidation
+
+### Completed
+- **Shipped F3 — Active Session Manifest system.** Each running session now writes a live manifest at `../_memory/sessions/active/<session_id>.md` (format: `YYYY-MM-DD-<short-context>-<random4>`) declaring claimed tasks, claimed resources (dev-server, DB, etc.), active decisions, and current focus. Other sessions read these at three checkpoints: startup awareness check, before editing shared zones (`server/`, config, `BACKLOG.md`, `_PROJECT.md`), and at shutdown Step 7 for tree hygiene. Replaces F2's mtime-only heuristic with a primary manifest signal + mtime as backstop. Full decision at [`../_memory/decisions/2026-05-16-f3-active-session-manifest.md`](../_memory/decisions/2026-05-16-f3-active-session-manifest.md).
+- **Coupled `[~]` claims structurally.** The backlog skill's "claim a task" step now writes BOTH `[~]` in `BACKLOG.md` AND a line in the active manifest as one combined step — you cannot do one without the other. Same F2 lesson: prevention by structure, not by discipline.
+- **Consolidated 8 skill files in 4 places → 3 files in 1 place + 3 Windows directory junctions.** Canonical: `area 51/.claude/skills/{startup,shutdown,backlog}/SKILL.md`. Project-level paths under `feeddeck/.claude/skills/` are junctions to vault-level. Deleted: orphan `area 51/SKILL.md`, drafts in `_memory/skill-updates/*-SKILL.md` (replaced with a `README.md` breadcrumb).
+- **Fixed latent F2 drift bug** uncovered during consolidation: `feeddeck/.claude/skills/shutdown/SKILL.md` was missing F2's working-tree hygiene step entirely (F2 had only been applied to the vault-level copy in 2026-05-07 and never propagated). Junction sync fixed it in the same pass.
+
+### Decisions Made
+- Adopted `YYYY-MM-DD-<short-context>-<random4>` manifest naming pattern after observing a concurrent session already using it in the wild — far more scannable than the originally-specced `HH-MM-<random4>`. Updated template, README, MEMORY_PROTOCOL, startup skill, and F3 decision note to match.
+
+### Issues & Blockers
+- **Spec drift discovered between shutdown skill and actual practice:** the skill says "Save as `YYYY-MM-DD-HH.md`" but the wild convention in `_memory/sessions/` uses context-based slugs (e.g. `2026-05-17-m7.6-proxy-wrap.md`, `2026-05-17-director.md`). Followed wild convention this session; should update the shutdown skill spec to match in a future pass.
+
+### Key Files Changed
+- New: `_memory/sessions/active/` directory + `_TEMPLATE.md`, `README.md`, `_stale/README.md`
+- New: `_memory/decisions/2026-05-16-f3-active-session-manifest.md`
+- Modified: `.claude/skills/startup/SKILL.md`, `.claude/skills/shutdown/SKILL.md`, `.claude/skills/backlog/SKILL.md` (all vault-level)
+- Modified: `_memory/MEMORY_PROTOCOL.md` (new "Active Sessions" section)
+- Deleted: `SKILL.md` at vault root, `_memory/skill-updates/*-SKILL.md`
+- New junctions: `feeddeck/.claude/skills/{startup,shutdown,backlog}` → vault-level
+
+### Next Session Should
+- Update shutdown skill Step 6b to match the actual session-log naming convention (`<context>` slug instead of `<HH>`)
+- First real two-window test of F3 in practice — see verification recipe in [`../.claude/plans/let-s-plan-a-system-giggly-backus.md`](../.claude/plans/let-s-plan-a-system-giggly-backus.md)
+
+---
+
 ## 2026-05-16 (Removal — PERMANENT) — Killed PosterPeekRow ("Picked for You" peek strip)
 
 ### Why
