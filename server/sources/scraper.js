@@ -15,6 +15,7 @@ import { readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { SourceAdapter } from './base.js'
+import { boundary } from '../boundary/index.js'
 import { logger } from '../logger.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -584,11 +585,18 @@ export class ScraperAdapter extends SourceAdapter {
     if (this._redGifsToken && Date.now() < this._redGifsTokenExpiry) {
       return this._redGifsToken
     }
-    const res = await fetch('https://api.redgifs.com/v2/auth/temporary', {
+    // Routed through boundary.fetch (M7 Sprint 2). Throws on non-ok so
+    // callers (searchAll's Promise.allSettled) still see a rejection.
+    const { outcome, value: body } = await boundary.fetch('https://api.redgifs.com/v2/auth/temporary', {
+      name: 'nsfw-redgifs-auth',
+      timeoutMs: 15_000,
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36' },
     })
-    if (!res.ok) throw new Error(`RedGifs auth error: ${res.status}`)
-    const data = await res.json()
+    if (outcome !== 'ok') throw new Error(`RedGifs auth ${outcome}`)
+    let data
+    try { data = JSON.parse(body) } catch (err) {
+      throw new Error(`RedGifs auth ok but body not JSON: ${err.message}`)
+    }
     this._redGifsToken = data.token
     this._redGifsTokenExpiry = Date.now() + 60 * 60 * 1000
     return this._redGifsToken
@@ -625,16 +633,21 @@ export class ScraperAdapter extends SourceAdapter {
       apiUrl = `https://api.redgifs.com/v2/gifs/search?search_text=${encodeURIComponent(query)}&count=${limit}`
     }
 
-    const res = await fetch(apiUrl, {
+    const { outcome, value: body } = await boundary.fetch(apiUrl, {
+      name: 'nsfw-redgifs-search',
+      timeoutMs: 15_000,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
         'Accept': 'application/json',
         'Authorization': `Bearer ${token}`,
       },
     })
-    if (!res.ok) throw new Error(`RedGifs API error: ${res.status}`)
+    if (outcome !== 'ok') throw new Error(`RedGifs search ${outcome}`)
 
-    const data = await res.json()
+    let data
+    try { data = JSON.parse(body) } catch (err) {
+      throw new Error(`RedGifs search ok but body not JSON: ${err.message}`)
+    }
     const gifs = data.gifs || []
 
     return gifs.slice(0, limit).map(g => ({
@@ -673,7 +686,9 @@ export class ScraperAdapter extends SourceAdapter {
     const anonToken = crypto.randomUUID()
     const url = `https://api.fikfap.com/posts?amount=${limit}&sort=${sort}&useDistinctUserIds=true&minimumScore=-20`
 
-    const res = await fetch(url, {
+    const { outcome, value: body } = await boundary.fetch(url, {
+      name: 'nsfw-fikfap-api',
+      timeoutMs: 15_000,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
         'Accept': '*/*',
@@ -684,9 +699,12 @@ export class ScraperAdapter extends SourceAdapter {
         'ispwa': 'false',
       },
     })
-    if (!res.ok) throw new Error(`FikFap API error: ${res.status}`)
+    if (outcome !== 'ok') throw new Error(`FikFap API ${outcome}`)
 
-    const posts = await res.json()
+    let posts
+    try { posts = JSON.parse(body) } catch (err) {
+      throw new Error(`FikFap API ok but body not JSON: ${err.message}`)
+    }
     if (!Array.isArray(posts)) throw new Error('FikFap API returned unexpected format')
 
     return posts.slice(0, limit).map(p => {
@@ -799,18 +817,20 @@ export class ScraperAdapter extends SourceAdapter {
       const batch = enriched.slice(i, i + BATCH)
       await Promise.all(batch.map(async (video, batchIdx) => {
         try {
-          const res = await fetch(video.url, {
+          // Routed through boundary.fetch (M7 Sprint 2). OG enrichment is
+          // optional augmentation — any non-ok outcome silently skips this
+          // video (base scrape data is already present and valid).
+          const { outcome, value: html } = await boundary.fetch(video.url, {
+            name: 'nsfw-og-enrich',
+            timeoutMs: 10_000,
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
               'Cookie': cookieHeader,
               'Accept': 'text/html,application/xhtml+xml',
             },
             redirect: 'follow',
-            signal: AbortSignal.timeout(10_000),
           })
-          if (!res.ok) return
-
-          const html = await res.text()
+          if (outcome !== 'ok' || !html) return
 
           // Extract OG tags — handle both attribute orderings
           const ogMeta = (prop) => {
