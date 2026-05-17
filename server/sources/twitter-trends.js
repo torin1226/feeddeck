@@ -23,6 +23,7 @@
 
 import { logger } from '../logger.js'
 import { parseCookieFile } from '../cookies.js'
+import { boundary } from '../boundary/index.js'
 
 const TWITTER_BEARER = 'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA'
 const US_WOEID = 23424977
@@ -48,9 +49,11 @@ function _buildHeaders(cookies) {
 
 async function _pathV11(headers) {
   const url = `https://api.x.com/1.1/trends/place.json?id=${US_WOEID}`
-  const res = await fetch(url, { headers })
-  if (!res.ok) throw new Error(`v1.1 trends HTTP ${res.status}`)
-  const json = await res.json()
+  const { outcome, value: body } = await boundary.fetch(url, {
+    name: 'twitter-trends-v11', timeoutMs: 15_000, headers,
+  })
+  if (outcome !== 'ok') throw new Error(`v1.1 trends ${outcome}`)
+  const json = JSON.parse(body)
   // Response shape: [{ trends: [{ name, query, ... }, ...], ... }]
   const arr = Array.isArray(json) ? json : []
   const trends = arr[0]?.trends || []
@@ -62,11 +65,12 @@ async function _pathV11(headers) {
 
 async function _pathGraphQL(headers) {
   // 1) Fetch the explore page to find the bundle URLs
-  const pageRes = await fetch('https://x.com/explore', {
+  const { outcome: pageOutcome, value: html } = await boundary.fetch('https://x.com/explore', {
+    name: 'twitter-trends-explore-page',
+    timeoutMs: 15_000,
     headers: { cookie: headers.cookie, 'user-agent': headers['user-agent'] },
   })
-  if (!pageRes.ok) throw new Error(`explore page HTTP ${pageRes.status}`)
-  const html = await pageRes.text()
+  if (pageOutcome !== 'ok' || !html) throw new Error(`explore page ${pageOutcome}`)
   const bundleUrls = (html.match(/https:\/\/abs\.twimg\.com\/responsive-web\/client-web[^"]+\.js/g) || []).slice(0, 5)
   if (bundleUrls.length === 0) throw new Error('no Twitter JS bundles found in explore page')
 
@@ -74,13 +78,14 @@ async function _pathGraphQL(headers) {
   let queryId = null
   let operationName = null
   for (const url of bundleUrls) {
-    try {
-      const js = await fetch(url).then(r => r.text())
-      // Match patterns like: queryId:"abcDEF123",operationName:"GenericTimelineByRestId"
-      // or: queryId:"abc",operationName:"ExploreSidebar"
-      const m = js.match(/queryId:\s*"([A-Za-z0-9_-]{8,})"\s*,\s*operationName:\s*"(GenericTimelineByRestId|ExploreSidebar|TopicLandingPage)"/)
-      if (m) { queryId = m[1]; operationName = m[2]; break }
-    } catch { /* continue */ }
+    const { outcome: bundleOutcome, value: js } = await boundary.fetch(url, {
+      name: 'twitter-trends-bundle-js', timeoutMs: 15_000,
+    })
+    if (bundleOutcome !== 'ok' || !js) continue
+    // Match patterns like: queryId:"abcDEF123",operationName:"GenericTimelineByRestId"
+    // or: queryId:"abc",operationName:"ExploreSidebar"
+    const m = js.match(/queryId:\s*"([A-Za-z0-9_-]{8,})"\s*,\s*operationName:\s*"(GenericTimelineByRestId|ExploreSidebar|TopicLandingPage)"/)
+    if (m) { queryId = m[1]; operationName = m[2]; break }
   }
   if (!queryId) throw new Error('could not locate GraphQL queryId in Twitter bundles')
 
@@ -90,9 +95,11 @@ async function _pathGraphQL(headers) {
   const variables = encodeURIComponent(JSON.stringify({ count: 30, withGrokTranslatedBio: false }))
   const features = encodeURIComponent(JSON.stringify({}))
   const gqlUrl = `https://x.com/i/api/graphql/${queryId}/${operationName}?variables=${variables}&features=${features}`
-  const res = await fetch(gqlUrl, { headers })
-  if (!res.ok) throw new Error(`graphql trends HTTP ${res.status}`)
-  const json = await res.json()
+  const { outcome: gqlOutcome, value: gqlBody } = await boundary.fetch(gqlUrl, {
+    name: 'twitter-trends-graphql', timeoutMs: 15_000, headers,
+  })
+  if (gqlOutcome !== 'ok') throw new Error(`graphql trends ${gqlOutcome}`)
+  const json = JSON.parse(gqlBody)
   // Response shape varies; walk it generically pulling .trend or .name strings.
   const trends = []
   function walk(node) {
