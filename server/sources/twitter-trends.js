@@ -81,6 +81,8 @@ async function _pathGraphQL(headers) {
   for (const url of bundleUrls) {
     const { outcome: bundleOutcome, value: js } = await boundary.fetch(url, {
       name: 'twitter-trends-bundle-js', timeoutMs: 15_000,
+      // JS bundles look HTML-shaped to the wrong_shape sniffer; opt out.
+      acceptHtml: true,
     })
     if (bundleOutcome !== 'ok' || !js) continue
     // Match patterns like: queryId:"abcDEF123",operationName:"GenericTimelineByRestId"
