@@ -147,12 +147,24 @@ function fetchStreamUrl(itemId, sourceUrl) {
   return promise
 }
 
+// True when the browser reports an effectively very-slow data connection.
+// navigator.connection is a Chrome-Android-only API; silently returns false
+// everywhere else (iOS Safari, Firefox, desktop Chrome without the flag).
+function isSlowConnection() {
+  const conn = typeof navigator !== 'undefined' ? navigator.connection : null
+  if (!conn) return false
+  return conn.effectiveType === 'slow-2g' || conn.effectiveType === '2g'
+}
+
 // Public: kick off a stream-URL fetch without driving the display pipeline.
 // Used by PosterCard's IntersectionObserver to warm the cache before the
 // user hovers — by the time they do, the preview attaches in <300ms instead
 // of waiting on yt-dlp.
+// Skips eager pre-warming on very-slow connections (2g/slow-2g) to avoid
+// consuming precious bandwidth on metered mobile data.
 export function prefetchStreamUrl(itemId, sourceUrl) {
   if (!itemId || !sourceUrl) return
+  if (isSlowConnection()) return
   fetchStreamUrl(itemId, sourceUrl).catch(() => {})
 }
 
