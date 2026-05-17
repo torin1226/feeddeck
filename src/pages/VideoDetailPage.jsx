@@ -13,6 +13,7 @@ import SuggestedRail from '../components/watch/SuggestedRail'
 import FullscreenOverlay from '../components/watch/FullscreenOverlay'
 import FullscreenSuggestedSheet from '../components/watch/FullscreenSuggestedSheet'
 import EndCard from '../components/watch/EndCard'
+import StandardChrome from '../components/watch/StandardChrome'
 import useVideoEngine from '../hooks/useVideoEngine'
 import useSuggested from '../hooks/useSuggested'
 import useTrail from '../hooks/useTrail'
@@ -370,7 +371,7 @@ export default function VideoDetailPage() {
 
   const wrapClass = isFullscreen
     ? 'fixed inset-0 z-50 bg-black overflow-hidden'
-    : 'max-w-6xl mx-auto px-6'
+    : 'max-w-[1600px] mx-auto px-8'
 
   return (
     <div className="min-h-screen bg-surface text-text-primary font-sans">
@@ -404,12 +405,25 @@ export default function VideoDetailPage() {
           ariaTitle={item.title}
           mode={isFullscreen ? 'fullscreen' : 'standard'}
           pipMode={isFullscreen && panelOpen}
+          onTogglePlay={togglePlay}
         >
           {endCardActive && nextItem && (
             <EndCard
               next={nextItem}
               onAdvance={advanceNow}
               onCancel={cancelAutoAdvance}
+            />
+          )}
+          {!isFullscreen && !streamLoading && !streamError && (
+            <StandardChrome
+              isPlaying={isPlaying}
+              currentTime={currentTime}
+              duration={duration}
+              muted={muted}
+              onTogglePlay={togglePlay}
+              onSeekRel={seekRel}
+              onToggleMute={toggleMute}
+              onScrubTo={scrubTo}
             />
           )}
           {isFullscreen && (

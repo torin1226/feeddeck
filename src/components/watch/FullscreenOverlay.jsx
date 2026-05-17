@@ -128,8 +128,8 @@ export default function FullscreenOverlay({
             </div>
             <div className="text-sm text-white/60 mt-1">
               {item?.uploader ? <span>{item.uploader}</span> : null}
-              {item?.views && <span> &middot; {item.views} views</span>}
-              {item?.duration && <span> &middot; {item.duration}</span>}
+              {item?.views ? <span> &middot; {item.views} views</span> : null}
+              {item?.duration ? <span> &middot; {item.duration}</span> : null}
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">

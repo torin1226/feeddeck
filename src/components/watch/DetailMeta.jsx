@@ -105,18 +105,18 @@ export default function DetailMeta({ item, onAddToQueue, onEnterFullscreen }) {
         {item.title}
       </h1>
       <div className="flex items-center gap-3 text-sm text-text-muted mb-4 flex-wrap">
-        {item.uploader && <span className="font-medium text-text-secondary">{item.uploader}</span>}
-        {item.uploader && <span>&middot;</span>}
-        {item.genre && (
+        {item.uploader ? <span className="font-medium text-text-secondary">{item.uploader}</span> : null}
+        {item.uploader ? <span>&middot;</span> : null}
+        {item.genre ? (
           <span className="px-2 py-0.5 rounded-full text-xs bg-white/5 border border-white/10">
             {item.genre}
           </span>
-        )}
-        {item.views && <span>{item.views} views</span>}
-        {item.daysAgo && <span>&middot;</span>}
-        {item.daysAgo && <span>{item.daysAgo}d ago</span>}
-        {item.duration && <span>&middot;</span>}
-        {item.duration && <span>{item.duration}</span>}
+        ) : null}
+        {item.views ? <span>{item.views} views</span> : null}
+        {item.daysAgo ? <span>&middot;</span> : null}
+        {item.daysAgo ? <span>{item.daysAgo}d ago</span> : null}
+        {item.duration ? <span>&middot;</span> : null}
+        {item.duration ? <span>{item.duration}</span> : null}
       </div>
 
       {/* Action row: thumbs up/down + share + queue */}

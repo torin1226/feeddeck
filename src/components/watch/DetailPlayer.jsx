@@ -32,6 +32,7 @@ const DetailPlayer = forwardRef(function DetailPlayer({
   ariaTitle,
   mode = 'standard',
   pipMode = false,
+  onTogglePlay,
   children,
 }, wrapperRef) {
   const isFullscreen = mode === 'fullscreen'
@@ -46,11 +47,12 @@ const DetailPlayer = forwardRef(function DetailPlayer({
       <video
         ref={videoRef}
         poster={poster || undefined}
-        className="w-full h-full object-contain"
-        controls={!isFullscreen}
+        className="w-full h-full object-contain cursor-pointer"
+        controls={false}
         autoPlay
         muted
         playsInline
+        onClick={onTogglePlay}
         aria-label={ariaTitle || 'Video player'}
       />
 
