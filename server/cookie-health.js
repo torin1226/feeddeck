@@ -10,6 +10,7 @@ import { readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { getCookieArgs } from './cookies.js'
+import { boundary } from './boundary/index.js'
 
 const execFileAsync = promisify(execFile)
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -93,24 +94,27 @@ async function _probeOneDomain(key, probe) {
     return { status: 'missing', message: `No cookie file found for ${probe.label}` }
   }
 
-  try {
-    const args = [
-      '--js-runtimes', 'node',
-      ...cookieArgs,
-      '--dump-json',
-      '--playlist-end', '1',
-      '--no-download',
-      '--no-warnings',
-      probe.testUrl,
-    ]
+  const args = [
+    '--js-runtimes', 'node',
+    ...cookieArgs,
+    '--dump-json',
+    '--playlist-end', '1',
+    '--no-download',
+    '--no-warnings',
+    probe.testUrl,
+  ]
 
-    const { stdout, stderr } = await execFileAsync('yt-dlp', args, {
-      encoding: 'utf8',
-      timeout: PROBE_TIMEOUT,
-      windowsHide: true,
-    })
+  // Routed through boundary.exec (M7 Sprint 2). Static boundary name —
+  // all yt-dlp cookie probes (YouTube, PornHub, others) aggregate under
+  // one tag. Granular per-domain breakdown would inflate the tally Map
+  // without diagnostic value (the result struct already reports per-
+  // domain status to the caller).
+  const { outcome, value: stdout, stderr, error } = await boundary.exec('yt-dlp', args, {
+    name: 'cookie-health-ytdlp',
+    timeoutMs: PROBE_TIMEOUT,
+  })
 
-    // If we got valid JSON back, cookies are working
+  if (outcome === 'ok') {
     try {
       JSON.parse(stdout.trim().split('\n')[0])
       return { status: 'healthy', message: `${probe.label} cookies valid` }
@@ -124,31 +128,35 @@ async function _probeOneDomain(key, probe) {
       }
       return { status: 'error', message: `${probe.label} returned unexpected output` }
     }
-  } catch (err) {
-    const msg = err.message || ''
-    const stderr = err.stderr || ''
-    const combined = msg + ' ' + stderr
-
-    // Check for expired cookie signals in error output
-    for (const pattern of probe.expiredPatterns) {
-      if (pattern.test(combined)) {
-        return { status: 'expired', message: `${probe.label} cookies expired — re-import in Settings` }
-      }
-    }
-
-    // Rate-limit is not a cookie issue
-    if (/rate.?limit|429|try again later/i.test(combined)) {
-      return { status: 'healthy', message: `${probe.label} cookies valid (rate-limited, but auth works)` }
-    }
-
-    // HYDRATION: prefer the first "ERROR: ..." line from stderr (yt-dlp's actual
-    // failure reason) over the verbose Node "Command failed: ..." prefix that
-    // includes the entire command line. The old 100-char cap truncated mid-path
-    // and made stale-URL bugs look like cookie path bugs.
-    const ytErr = stderr.split('\n').find(l => l.startsWith('ERROR:'))
-    const detail = ytErr ? ytErr.replace(/^ERROR:\s*/, '') : msg
-    return { status: 'error', message: `${probe.label} probe failed: ${detail.substring(0, 250)}` }
   }
+
+  // outcome !== 'ok' — classify into the same status taxonomy the caller expects.
+  const errStderr = error?.stderr || stderr || ''
+  const errMsg = error?.message || ''
+  const combined = errMsg + ' ' + errStderr
+
+  // Rate-limit is not a cookie issue — auth works, server just throttled.
+  if (outcome === 'rate_limited' || /rate.?limit|429|try again later/i.test(combined)) {
+    return { status: 'healthy', message: `${probe.label} cookies valid (rate-limited, but auth works)` }
+  }
+
+  // Check for expired-cookie signals in error output
+  for (const pattern of probe.expiredPatterns) {
+    if (pattern.test(combined)) {
+      return { status: 'expired', message: `${probe.label} cookies expired — re-import in Settings` }
+    }
+  }
+  if (outcome === 'auth_failed') {
+    return { status: 'expired', message: `${probe.label} cookies expired — re-import in Settings` }
+  }
+
+  // HYDRATION: prefer the first "ERROR: ..." line from stderr (yt-dlp's actual
+  // failure reason) over the verbose Node "Command failed: ..." prefix that
+  // includes the entire command line. The old 100-char cap truncated mid-path
+  // and made stale-URL bugs look like cookie path bugs.
+  const ytErr = errStderr.split('\n').find(l => l.startsWith('ERROR:'))
+  const detail = ytErr ? ytErr.replace(/^ERROR:\s*/, '') : (errMsg || outcome)
+  return { status: 'error', message: `${probe.label} probe failed: ${detail.substring(0, 250)}` }
 }
 
 // Instagram probe: uses fetch() with parsed cookies because yt-dlp's instagram extractor
@@ -176,25 +184,29 @@ async function _probeInstagram() {
     return { status: 'missing', message: 'Instagram cookie file is empty or malformed' }
   }
 
-  try {
-    const res = await fetch('https://www.instagram.com/accounts/edit/', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-        'Cookie': pairs.join('; '),
-        'Accept': 'text/html,application/xhtml+xml',
-      },
-      redirect: 'follow',
-    })
+  // Routed through boundary.fetch (M7 Sprint 2). Uses the wrap's
+  // `finalUrl` extension because session-expiry detection requires the
+  // URL after redirects (login bounce).
+  const { outcome, status, finalUrl, error } = await boundary.fetch('https://www.instagram.com/accounts/edit/', {
+    name: 'cookie-health-ig-probe',
+    timeoutMs: PROBE_TIMEOUT,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+      'Cookie': pairs.join('; '),
+      'Accept': 'text/html,application/xhtml+xml',
+    },
+    redirect: 'follow',
+  })
 
-    // /accounts/edit/ redirects to /accounts/login/ if session is expired
-    if (res.url.includes('/accounts/login')) {
+  if (outcome === 'ok') {
+    if (finalUrl && finalUrl.includes('/accounts/login')) {
       return { status: 'expired', message: 'Instagram cookies expired — re-export from Arc browser' }
     }
-    if (res.status === 200) {
-      return { status: 'healthy', message: 'Instagram cookies valid' }
-    }
-    return { status: 'error', message: `Instagram probe returned HTTP ${res.status}` }
-  } catch (err) {
-    return { status: 'error', message: `Instagram probe failed: ${err.message.substring(0, 200)}` }
+    return { status: 'healthy', message: 'Instagram cookies valid' }
   }
+  if (outcome === 'auth_failed') {
+    return { status: 'expired', message: 'Instagram cookies expired — re-export from Arc browser' }
+  }
+  const detail = error?.message?.substring(0, 200) || status || outcome
+  return { status: 'error', message: `Instagram probe ${outcome}: ${detail}` }
 }
