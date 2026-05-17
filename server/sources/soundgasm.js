@@ -13,9 +13,10 @@
 import { SourceAdapter } from './base.js'
 import { logger } from '../logger.js'
 import { db } from '../database.js'
+import { boundary } from '../boundary/index.js'
 import { randomUUID } from 'crypto'
 
-const SOUNDGASM_USER_RE = /<a class="sm12 u" href="(https:\/\/soundgasm\.net\/u\/[^"/]+\/[^"]+)">([^<]+)<\/a>/g
+const SOUNDGASM_USER_RE = /<div class="sound-details">\s*<a href="(https:\/\/soundgasm\.net\/u\/[^"/]+\/[^"]+)">([\s\S]*?)<\/a>/g
 const MEDIA_URL_RE = /https:\/\/media\.soundgasm\.net\/sounds\/[a-f0-9]+\.(?:m4a|mp3|wav)/i
 const DESCRIPTION_RE = /<div class="jp-description"[^>]*>\s*<p class="jp-description"[^>]*>([\s\S]*?)<\/p>/
 
@@ -99,14 +100,14 @@ export class SoundgasmAdapter extends SourceAdapter {
   async _fetchCreator(creator) {
     const userUrl = creator.url || `https://soundgasm.net/u/${creator.handle}`
 
-    const pageResp = await fetch(userUrl, {
+    const { outcome: pageOutcome, value: html } = await boundary.fetch(userUrl, {
+      name: 'audio-soundgasm-user',
+      timeoutMs: 15_000,
       headers: { 'User-Agent': UA },
-      signal: AbortSignal.timeout(15_000),
     })
-    if (!pageResp.ok) {
-      throw new Error(`User page HTTP ${pageResp.status}`)
+    if (pageOutcome !== 'ok' || !html) {
+      throw new Error(`User page ${pageOutcome}`)
     }
-    const html = await pageResp.text()
 
     // Regex match the post listing. The listing is in newest-first order on
     // soundgasm so the first POSTS_PER_CREATOR are the most recent.
@@ -144,14 +145,14 @@ export class SoundgasmAdapter extends SourceAdapter {
   }
 
   async _fetchPost(post, creator) {
-    const resp = await fetch(post.url, {
+    const { outcome, value: html } = await boundary.fetch(post.url, {
+      name: 'audio-soundgasm-post',
+      timeoutMs: 15_000,
       headers: { 'User-Agent': UA },
-      signal: AbortSignal.timeout(15_000),
     })
-    if (!resp.ok) {
-      throw new Error(`Post page HTTP ${resp.status}`)
+    if (outcome !== 'ok' || !html) {
+      throw new Error(`Post page ${outcome}`)
     }
-    const html = await resp.text()
 
     const mediaMatch = html.match(MEDIA_URL_RE)
     if (!mediaMatch) return null
@@ -200,24 +201,24 @@ export class SoundgasmAdapter extends SourceAdapter {
   // Resolve a single soundgasm.net/u/{user}/{slug} URL → direct media URL.
   // Used by the PDF backfill script and by metadata fallbacks.
   async getStreamUrl(url) {
-    const resp = await fetch(url, {
+    const { outcome, value: html } = await boundary.fetch(url, {
+      name: 'audio-soundgasm-resolve',
+      timeoutMs: 15_000,
       headers: { 'User-Agent': UA },
-      signal: AbortSignal.timeout(15_000),
     })
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    const html = await resp.text()
+    if (outcome !== 'ok' || !html) throw new Error(`soundgasm ${outcome}`)
     const m = html.match(MEDIA_URL_RE)
     if (!m) throw new Error('No media URL on page')
     return m[0]
   }
 
   async extractMetadata(url) {
-    const resp = await fetch(url, {
+    const { outcome, value: html } = await boundary.fetch(url, {
+      name: 'audio-soundgasm-resolve',
+      timeoutMs: 15_000,
       headers: { 'User-Agent': UA },
-      signal: AbortSignal.timeout(15_000),
     })
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    const html = await resp.text()
+    if (outcome !== 'ok' || !html) throw new Error(`soundgasm ${outcome}`)
     const titleMatch = html.match(/<div class="jp-title"[^>]*>([\s\S]*?)<\/div>/)
     const mediaMatch = html.match(MEDIA_URL_RE)
     if (!mediaMatch) throw new Error('No media URL on page')
