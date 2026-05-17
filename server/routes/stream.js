@@ -1,6 +1,4 @@
 import { Router } from 'express'
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 import { Readable } from 'stream'
 import { db } from '../database.js'
 import { getCookieArgs } from '../cookies.js'
@@ -8,8 +6,6 @@ import { registry, ytdlp as ytdlpAdapter } from '../sources/index.js'
 import { logger } from '../logger.js'
 import { boundary } from '../boundary/index.js'
 import { isAllowedCdnUrl, inferMode, safeParse, getRefererForUrl } from '../utils.js'
-
-const execFileAsync = promisify(execFile)
 
 // Map a boundary outcome from `boundary.exec` to the HTTP status this
 // route should return. Explicit branching replaces the prior message-

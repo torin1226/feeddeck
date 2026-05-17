@@ -9,15 +9,11 @@
 // These power the "persistent_rows" sticky shelves on the NSFW homepage.
 // ============================================================
 
-import { execFile } from 'child_process'
-import { promisify } from 'util'
 import { randomUUID } from 'crypto'
 import { db } from '../database.js'
 import { getCookieArgs, parseCookieFile } from '../cookies.js'
 import { boundary } from '../boundary/index.js'
 import { logger } from '../logger.js'
-
-const execFileAsync = promisify(execFile)
 
 const YTDLP_TIMEOUT = 90_000
 const MAX_BUFFER = 50 * 1024 * 1024
