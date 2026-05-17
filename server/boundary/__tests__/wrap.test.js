@@ -90,6 +90,178 @@ describe('boundary.fetch(url, opts)', () => {
   })
 })
 
+describe('boundary.streamingFetch(url, opts)', () => {
+  it('returns ok + live response on 2xx without reading the body', async () => {
+    const fakeBody = { _label: 'opaque-stream' }
+    const textSpy = vi.fn(async () => 'should not be called')
+    const fakeFetch = vi.fn(async () => ({
+      status: 200,
+      url: 'https://cdn.test/v.mp4',
+      headers: new Map(),
+      body: fakeBody,
+      text: textSpy,
+    }))
+    const r = await boundary.streamingFetch('https://cdn.test/v.mp4', {
+      name: 'proxy-stream',
+      fetchImpl: fakeFetch,
+    })
+    expect(r.outcome).toBe('ok')
+    expect(r.response).toBeTruthy()
+    expect(r.response.body).toBe(fakeBody)
+    expect(textSpy).not.toHaveBeenCalled()
+    expect(sink.snapshot()['proxy-stream'].ok).toBe(1)
+  })
+
+  it('classifies 401 as auth_failed', async () => {
+    const fakeFetch = vi.fn(async () => ({ status: 401, headers: new Map() }))
+    const r = await boundary.streamingFetch('https://cdn.test/v.mp4', {
+      name: 'proxy-stream',
+      fetchImpl: fakeFetch,
+    })
+    expect(r.outcome).toBe('auth_failed')
+    expect(r.response).toBeTruthy()
+    expect(sink.snapshot()['proxy-stream'].auth_failed).toBe(1)
+  })
+
+  it('classifies 403 as auth_failed', async () => {
+    const fakeFetch = vi.fn(async () => ({ status: 403, headers: new Map() }))
+    const r = await boundary.streamingFetch('https://cdn.test/v.mp4', {
+      name: 'proxy-stream',
+      fetchImpl: fakeFetch,
+    })
+    expect(r.outcome).toBe('auth_failed')
+  })
+
+  it('classifies 429 as rate_limited', async () => {
+    const fakeFetch = vi.fn(async () => ({ status: 429, headers: new Map() }))
+    const r = await boundary.streamingFetch('https://cdn.test/v.mp4', {
+      name: 'proxy-stream',
+      fetchImpl: fakeFetch,
+    })
+    expect(r.outcome).toBe('rate_limited')
+  })
+
+  it('classifies 451 as blocked', async () => {
+    const fakeFetch = vi.fn(async () => ({ status: 451, headers: new Map() }))
+    const r = await boundary.streamingFetch('https://cdn.test/v.mp4', {
+      name: 'proxy-stream',
+      fetchImpl: fakeFetch,
+    })
+    expect(r.outcome).toBe('blocked')
+  })
+
+  it('classifies 5xx as unknown_error', async () => {
+    const fakeFetch = vi.fn(async () => ({ status: 503, headers: new Map() }))
+    const r = await boundary.streamingFetch('https://cdn.test/v.mp4', {
+      name: 'proxy-stream',
+      fetchImpl: fakeFetch,
+    })
+    expect(r.outcome).toBe('unknown_error')
+  })
+
+  it('classifies 404 as unknown_error (CDN-gone case)', async () => {
+    const fakeFetch = vi.fn(async () => ({ status: 404, headers: new Map() }))
+    const r = await boundary.streamingFetch('https://cdn.test/v.mp4', {
+      name: 'proxy-stream',
+      fetchImpl: fakeFetch,
+    })
+    expect(r.outcome).toBe('unknown_error')
+  })
+
+  it('classifies AbortError as timeout and returns null response', async () => {
+    const fakeFetch = vi.fn(async () => {
+      const err = new Error('aborted')
+      err.name = 'AbortError'
+      throw err
+    })
+    const r = await boundary.streamingFetch('https://cdn.test/v.mp4', {
+      name: 'proxy-stream',
+      fetchImpl: fakeFetch,
+    })
+    expect(r.outcome).toBe('timeout')
+    expect(r.response).toBeNull()
+    expect(r.status).toBeNull()
+  })
+
+  it('classifies ECONNRESET as timeout', async () => {
+    const fakeFetch = vi.fn(async () => {
+      const err = new Error('socket hang up')
+      err.code = 'ECONNRESET'
+      throw err
+    })
+    const r = await boundary.streamingFetch('https://cdn.test/v.mp4', {
+      name: 'proxy-stream',
+      fetchImpl: fakeFetch,
+    })
+    expect(r.outcome).toBe('timeout')
+  })
+
+  it('forwards caller-provided signal to underlying fetch', async () => {
+    const callerController = new AbortController()
+    const fakeFetch = vi.fn(async (_url, opts) => {
+      expect(opts.signal).toBe(callerController.signal)
+      return { status: 200, headers: new Map(), body: null }
+    })
+    await boundary.streamingFetch('https://x.test', {
+      name: 'proxy-stream',
+      signal: callerController.signal,
+      fetchImpl: fakeFetch,
+    })
+    expect(fakeFetch).toHaveBeenCalledOnce()
+  })
+
+  it('forwards headers to underlying fetch', async () => {
+    const fakeFetch = vi.fn(async (_url, opts) => {
+      expect(opts.headers).toEqual({ Range: 'bytes=0-100', 'User-Agent': 'X' })
+      return { status: 200, headers: new Map(), body: null }
+    })
+    await boundary.streamingFetch('https://x.test', {
+      name: 'proxy-stream',
+      headers: { Range: 'bytes=0-100', 'User-Agent': 'X' },
+      fetchImpl: fakeFetch,
+    })
+  })
+
+  it('requires opts.name', async () => {
+    await expect(
+      boundary.streamingFetch('https://x.test', { fetchImpl: vi.fn() })
+    ).rejects.toThrow(/requires opts\.name/)
+  })
+
+  it('exposes status and finalUrl on success', async () => {
+    const fakeFetch = vi.fn(async () => ({
+      status: 206,
+      url: 'https://cdn.test/v.mp4?token=abc',
+      headers: new Map([['content-range', 'bytes 0-100/1000']]),
+      body: {},
+    }))
+    const r = await boundary.streamingFetch('https://cdn.test/v.mp4', {
+      name: 'proxy-stream',
+      fetchImpl: fakeFetch,
+    })
+    expect(r.outcome).toBe('ok') // 206 is 2xx
+    expect(r.status).toBe(206)
+    expect(r.finalUrl).toBe('https://cdn.test/v.mp4?token=abc')
+  })
+
+  it('does NOT install its own AbortController/timer (caller owns it)', async () => {
+    // If boundary installed a timer it would race with body streaming. The
+    // caller passes its own signal and clears its own timer after headers.
+    let observedSignalOwner = null
+    const callerController = new AbortController()
+    const fakeFetch = vi.fn(async (_url, opts) => {
+      observedSignalOwner = opts.signal === callerController.signal ? 'caller' : 'boundary'
+      return { status: 200, headers: new Map(), body: null }
+    })
+    await boundary.streamingFetch('https://x.test', {
+      name: 'proxy-stream',
+      signal: callerController.signal,
+      fetchImpl: fakeFetch,
+    })
+    expect(observedSignalOwner).toBe('caller')
+  })
+})
+
 describe('boundary.exec(cmd, args, opts)', () => {
   it('returns ok with stdout when the command succeeds', async () => {
     const fakeExec = vi.fn(async () => ({ stdout: 'video-url-here', stderr: '' }))

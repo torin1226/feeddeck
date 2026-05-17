@@ -5,15 +5,21 @@
 //
 // All four entry points accept an optional impl override for
 // dependency injection in tests:
-//   boundary.fetch    fetchImpl
-//   boundary.exec     execImpl
-//   boundary.readCookie readImpl
-//   boundary.scrape   (no override needed — caller passes the fn)
+//   boundary.fetch          fetchImpl
+//   boundary.streamingFetch fetchImpl
+//   boundary.exec           execImpl
+//   boundary.readCookie     readImpl
+//   boundary.scrape         (no override needed — caller passes the fn)
 //
 // NOTE: boundary.exec additionally returns `stderr` on BOTH success and
 // error paths — yt-dlp surfaces "cookies are no longer valid" via stderr
 // on partial-success runs as well as failures. Consumers that don't care
 // about stderr can ignore the field.
+//
+// NOTE: boundary.streamingFetch is the variant for proxy endpoints that
+// pipe upstream bytes to a Node response. It classifies on HTTP status
+// only (no body read), returns the live Response object, and leaves the
+// AbortController to the caller so it can be aborted on client disconnect.
 // ============================================================
 
 import { execFile } from 'child_process'
@@ -34,6 +40,56 @@ async function timed(fn) {
     return { value, durationMs: Date.now() - start, error: null }
   } catch (error) {
     return { value: null, durationMs: Date.now() - start, error }
+  }
+}
+
+// Status-only classifier for the streaming-fetch path. Mirrors the
+// status branches in classifyHttp() but never reads the body — proxy
+// endpoints stream binary bytes and reading via .text() would buffer
+// the whole video in memory AND corrupt the bytes via UTF-8 decode.
+// 2xx with no body inspection → OK (caller streams it).
+function _classifyStreamingStatus(response) {
+  const status = response?.status ?? 0
+  if (status === 451) return OUTCOMES.BLOCKED
+  if (status === 401 || status === 403) return OUTCOMES.AUTH_FAILED
+  if (status === 429) return OUTCOMES.RATE_LIMITED
+  if (status >= 200 && status < 300) return OUTCOMES.OK
+  return OUTCOMES.UNKNOWN_ERROR
+}
+
+// Status-only fetch. Records outcome, returns the live Response so the
+// caller can pipe upstream.body to its own response (proxy-stream,
+// hls-proxy segment branch). Caller passes its own AbortController so
+// the upstream can be aborted on client disconnect — boundary does NOT
+// own the timer here, because proxy bodies can outlast a wallclock
+// timeout (browser back-pressure pauses the readable for tens of
+// seconds at a time and is normal, not stalled).
+async function wrappedStreamingFetch(url, opts = {}) {
+  const {
+    name,
+    fetchImpl = globalThis.fetch,
+    ...rest
+  } = opts
+  if (!name) throw new Error('boundary.streamingFetch requires opts.name')
+
+  const { value: response, durationMs, error } = await timed(() =>
+    fetchImpl(url, rest)
+  )
+
+  if (error) {
+    const outcome = classifyError(error)
+    record(name, outcome, durationMs)
+    return { outcome, response: null, status: null, finalUrl: null, durationMs, error }
+  }
+
+  const outcome = _classifyStreamingStatus(response)
+  record(name, outcome, durationMs)
+  return {
+    outcome,
+    response,
+    status: response?.status ?? null,
+    finalUrl: response?.url ?? null,
+    durationMs,
   }
 }
 
@@ -156,6 +212,7 @@ async function wrappedScrape(fn, opts = {}) {
 
 export const boundary = {
   fetch: wrappedFetch,
+  streamingFetch: wrappedStreamingFetch,
   exec: wrappedExec,
   readCookie: wrappedReadCookie,
   scrape: wrappedScrape,

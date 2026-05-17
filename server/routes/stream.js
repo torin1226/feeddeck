@@ -305,63 +305,80 @@ router.get('/api/proxy-stream', async (req, res) => {
   if (!url) return res.status(400).send('URL required')
   if (!isAllowedCdnUrl(url)) return res.status(403).send('Domain not allowed')
 
-  try {
-    const referer = getRefererForUrl(url)
+  const referer = getRefererForUrl(url)
 
-    const headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-      'Referer': referer,
-      'Origin': referer.replace(/\/$/, ''),
-    }
-
-    // Pass through Range header for seeking support
-    if (req.headers.range) {
-      headers['Range'] = req.headers.range
-    }
-
-    // PLAYBACK: 15s timeout applies to GETTING HEADERS only. Once headers
-    // arrive, clear the timer — the body stream can take much longer than 15s
-    // because the browser buffers ~30-50s ahead, then pauses (backpressure).
-    // AbortSignal.timeout() is wallclock and would terminate the upstream
-    // socket mid-playback, causing video to stop after the buffer drains
-    // (the user-reported "stops around 50s" symptom).
-    const controller = new AbortController()
-    const headersTimeout = setTimeout(() => controller.abort(), 15000)
-    let upstream
-    try {
-      upstream = await fetch(url, { headers, signal: controller.signal })
-    } finally {
-      clearTimeout(headersTimeout)
-    }
-
-    // Forward status and key headers
-    res.status(upstream.status)
-    const fwd = ['content-type', 'content-length', 'content-range', 'accept-ranges']
-    for (const h of fwd) {
-      const val = upstream.headers.get(h)
-      if (val) res.setHeader(h, val)
-    }
-    // PROXY: always declare Range support regardless of what the upstream sent.
-    // CDNs omit Accept-Ranges on 206 responses; without this the browser may
-    // not know seeking is supported after a Range-initiated connection.
-    res.setHeader('Accept-Ranges', 'bytes')
-
-    // Pipe the body using Node streams (more robust than manual reader pump).
-    // FALLBACK: cleanup happens via res.on('close') when client disconnects —
-    // we abort the upstream then so dangling sockets don't leak.
-    // HYDRATION: do NOT add a per-chunk timeout here -- when the browser fills
-    // its media buffer (~30s), it stops draining and pipe() applies backpressure,
-    // pausing the readable. A "no data for N seconds" timer cannot distinguish
-    // backpressure (normal) from upstream stall (bad), so it kills healthy
-    // streams mid-playback. Match the HLS proxy pattern below.
-    const nodeStream = Readable.fromWeb(upstream.body)
-    nodeStream.pipe(res)
-    nodeStream.on('error', () => { if (!res.writableEnded) res.end() })
-    res.on('close', () => { nodeStream.destroy(); controller.abort() })
-  } catch (err) {
-    logger.error('Proxy stream error:', { error: err.message })
-    if (!res.headersSent) res.status(500).send('Stream proxy failed')
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+    'Referer': referer,
+    'Origin': referer.replace(/\/$/, ''),
   }
+
+  // Pass through Range header for seeking support
+  if (req.headers.range) {
+    headers['Range'] = req.headers.range
+  }
+
+  // PLAYBACK: 15s timeout applies to GETTING HEADERS only. Once headers
+  // arrive, clear the timer — the body stream can take much longer than 15s
+  // because the browser buffers ~30-50s ahead, then pauses (backpressure).
+  // AbortSignal.timeout() is wallclock and would terminate the upstream
+  // socket mid-playback, causing video to stop after the buffer drains
+  // (the user-reported "stops around 50s" symptom).
+  //
+  // Routed through boundary.streamingFetch (M7.6). The streaming variant
+  // classifies on HTTP status only and returns the live Response so the
+  // body can pipe through without being buffered or UTF-8 decoded.
+  const controller = new AbortController()
+  const headersTimeout = setTimeout(() => controller.abort(), 15000)
+  let result
+  try {
+    result = await boundary.streamingFetch(url, {
+      name: 'proxy-stream',
+      headers,
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(headersTimeout)
+  }
+
+  const { outcome, response: upstream } = result
+  if (outcome !== 'ok') {
+    logger.error('Proxy stream error', { outcome, status: result.status })
+    if (!res.headersSent) res.status(statusForOutcome(outcome)).send('Stream proxy failed')
+    return
+  }
+
+  // Forward status and key headers
+  res.status(upstream.status)
+  const fwd = ['content-type', 'content-length', 'content-range', 'accept-ranges']
+  for (const h of fwd) {
+    const val = upstream.headers.get(h)
+    if (val) res.setHeader(h, val)
+  }
+  // PROXY: always declare Range support regardless of what the upstream sent.
+  // CDNs omit Accept-Ranges on 206 responses; without this the browser may
+  // not know seeking is supported after a Range-initiated connection.
+  res.setHeader('Accept-Ranges', 'bytes')
+
+  // Defensive: a 2xx with no body (e.g. 204 or upstream HEAD-shaped response)
+  // would throw inside Readable.fromWeb(null). End cleanly instead.
+  if (!upstream.body) {
+    res.end()
+    return
+  }
+
+  // Pipe the body using Node streams (more robust than manual reader pump).
+  // FALLBACK: cleanup happens via res.on('close') when client disconnects —
+  // we abort the upstream then so dangling sockets don't leak.
+  // HYDRATION: do NOT add a per-chunk timeout here -- when the browser fills
+  // its media buffer (~30s), it stops draining and pipe() applies backpressure,
+  // pausing the readable. A "no data for N seconds" timer cannot distinguish
+  // backpressure (normal) from upstream stall (bad), so it kills healthy
+  // streams mid-playback. Match the HLS proxy pattern below.
+  const nodeStream = Readable.fromWeb(upstream.body)
+  nodeStream.pipe(res)
+  nodeStream.on('error', () => { if (!res.writableEnded) res.end() })
+  res.on('close', () => { nodeStream.destroy(); controller.abort() })
 })
 
 // -----------------------------------------------------------
@@ -377,57 +394,75 @@ router.get('/api/hls-proxy', async (req, res) => {
   if (!url) return res.status(400).send('URL required')
   if (!isAllowedCdnUrl(url)) return res.status(403).send('Domain not allowed')
 
+  const referer = getRefererForUrl(url)
+
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    'Referer': referer,
+  }
+  if (req.headers.range) headers['Range'] = req.headers.range
+
+  // PLAYBACK: 15s applies to headers only. See proxy-stream above for rationale —
+  // segment downloads can take longer than 15s under browser backpressure.
+  // Routed through boundary.streamingFetch (M7.6) so HLS failures surface in
+  // /debug/boundary-stats under the names `hls-proxy-playlist` and
+  // `hls-proxy-segment`. Two names so the snitch tally can distinguish a
+  // playlist 403 (whole stream broken) from a single-segment 403 (mid-playback
+  // glitch) — they have very different user impact.
+  const controller = new AbortController()
+  const headersTimeout = setTimeout(() => controller.abort(), 15000)
+  const isPlaylist = url.includes('.m3u8')
+  let result
   try {
-    const referer = getRefererForUrl(url)
+    result = await boundary.streamingFetch(url, {
+      name: isPlaylist ? 'hls-proxy-playlist' : 'hls-proxy-segment',
+      headers,
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(headersTimeout)
+  }
 
-    const headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Referer': referer,
+  const { outcome, response: upstream } = result
+  if (outcome !== 'ok') {
+    logger.error('HLS proxy error', { outcome, status: result.status, kind: isPlaylist ? 'playlist' : 'segment' })
+    if (!res.headersSent) res.status(statusForOutcome(outcome)).send('HLS proxy failed')
+    return
+  }
+
+  if (isPlaylist) {
+    // Rewrite m3u8 playlist: proxy ALL non-comment lines (segments, variant playlists)
+    const text = await upstream.text()
+    const baseUrl = url.substring(0, url.lastIndexOf('/') + 1)
+    const rewritten = text.replace(/^(?!#)(\S+)$/gm, (line) => {
+      const segUrl = line.startsWith('http') ? line : baseUrl + line
+      return `/api/hls-proxy?url=${encodeURIComponent(segUrl)}`
+    })
+    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl')
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    // PROXY: HLS playlists reference CDN URLs that expire in ~2hr; stale
+    // cached playlists cause segment 403s mid-playback. Never cache.
+    res.setHeader('Cache-Control', 'no-store')
+    res.send(rewritten)
+  } else {
+    // Stream segment bytes using Node streams
+    res.status(upstream.status)
+    const ct = upstream.headers.get('content-type')
+    if (ct) res.setHeader('Content-Type', ct)
+    const cl = upstream.headers.get('content-length')
+    if (cl) res.setHeader('Content-Length', cl)
+    res.setHeader('Access-Control-Allow-Origin', '*')
+
+    // Same null-body guard as proxy-stream above.
+    if (!upstream.body) {
+      res.end()
+      return
     }
-    if (req.headers.range) headers['Range'] = req.headers.range
 
-    // PLAYBACK: 15s applies to headers only. See proxy-stream above for rationale —
-    // segment downloads can take longer than 15s under browser backpressure.
-    const controller = new AbortController()
-    const headersTimeout = setTimeout(() => controller.abort(), 15000)
-    let upstream
-    try {
-      upstream = await fetch(url, { headers, signal: controller.signal })
-    } finally {
-      clearTimeout(headersTimeout)
-    }
-
-    if (url.includes('.m3u8')) {
-      // Rewrite m3u8 playlist: proxy ALL non-comment lines (segments, variant playlists)
-      const text = await upstream.text()
-      const baseUrl = url.substring(0, url.lastIndexOf('/') + 1)
-      const rewritten = text.replace(/^(?!#)(\S+)$/gm, (line) => {
-        const segUrl = line.startsWith('http') ? line : baseUrl + line
-        return `/api/hls-proxy?url=${encodeURIComponent(segUrl)}`
-      })
-      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl')
-      res.setHeader('Access-Control-Allow-Origin', '*')
-      // PROXY: HLS playlists reference CDN URLs that expire in ~2hr; stale
-      // cached playlists cause segment 403s mid-playback. Never cache.
-      res.setHeader('Cache-Control', 'no-store')
-      res.send(rewritten)
-    } else {
-      // Stream segment bytes using Node streams
-      res.status(upstream.status)
-      const ct = upstream.headers.get('content-type')
-      if (ct) res.setHeader('Content-Type', ct)
-      const cl = upstream.headers.get('content-length')
-      if (cl) res.setHeader('Content-Length', cl)
-      res.setHeader('Access-Control-Allow-Origin', '*')
-
-      const nodeStream = Readable.fromWeb(upstream.body)
-      nodeStream.pipe(res)
-      nodeStream.on('error', () => { if (!res.writableEnded) res.end() })
-      res.on('close', () => { nodeStream.destroy(); controller.abort() })
-    }
-  } catch (err) {
-    logger.error('HLS proxy error:', { error: err.message })
-    if (!res.headersSent) res.status(500).send('HLS proxy failed')
+    const nodeStream = Readable.fromWeb(upstream.body)
+    nodeStream.pipe(res)
+    nodeStream.on('error', () => { if (!res.writableEnded) res.end() })
+    res.on('close', () => { nodeStream.destroy(); controller.abort() })
   }
 })
 
