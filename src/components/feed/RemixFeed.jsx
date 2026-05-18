@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import useFeedStore from '../../stores/feedStore'
 import RemixHero from './RemixHero'
 import RemixCarousel from './RemixCarousel'
+import FeedStatusOverlay, { getFeedStatus } from './FeedStatusOverlay'
 
 // Seeded shuffle (Fisher-Yates with simple hash seed for stability within session)
 function seededShuffle(arr, seed = 0) {
@@ -116,36 +117,8 @@ export default function RemixFeed() {
     return () => window.removeEventListener('keydown', onKey)
   }, [categories, activeCategoryIdx, activeVideo?.id, handleFocusVideo])
 
-  if (!initialized && loading) {
-    return (
-      <div className="h-dvh w-full bg-black flex items-center justify-center">
-        <div className="w-10 h-10 border-2 border-white/20 border-t-white/70 rounded-full animate-spin" />
-      </div>
-    )
-  }
-
-  if (initialized && feedError && buffer.length === 0) {
-    return (
-      <div className="h-dvh w-full bg-black flex flex-col items-center justify-center gap-3">
-        <div className="text-2xl">⚠</div>
-        <div className="text-white/50 text-sm">{feedError}</div>
-        <button
-          onClick={() => { useFeedStore.getState().resetFeed(); setTimeout(() => initFeed(), 100) }}
-          className="mt-2 px-5 py-2 rounded-full bg-accent text-white text-sm font-medium active:scale-95 transition-transform"
-        >
-          Retry
-        </button>
-      </div>
-    )
-  }
-
-  if (initialized && buffer.length === 0) {
-    return (
-      <div className="h-dvh w-full bg-black flex items-center justify-center">
-        <div className="text-white/50 text-sm">No videos in feed</div>
-      </div>
-    )
-  }
+  const status = getFeedStatus({ initialized, loading, error: feedError, isEmpty: buffer.length === 0 })
+  if (status) return <FeedStatusOverlay status={status} error={feedError} />
 
   return (
     <div className="relative w-full bg-black overflow-hidden select-none" style={{ height: '100dvh' }}>
