@@ -31,8 +31,10 @@ div:has(> .gallery-row-arrows):hover .gallery-row-arrows { opacity: 1 !important
 
 function getCardHeight(variant) {
   const vh = typeof window !== 'undefined' ? window.innerHeight : 800
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1200
   if (variant === 'landscape') return Math.min(vh * 0.5, 360)
-  return vh * 0.5 // portrait/poster rows stay at 50vh
+  if (vw <= 640) return Math.min(vh * 0.35, 220)
+  return vh * 0.5
 }
 
 function getCardWidth(item, variant) {

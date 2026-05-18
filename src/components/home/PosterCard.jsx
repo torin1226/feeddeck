@@ -123,7 +123,9 @@ const PosterCard = memo(
 
     // Landscape rows (e.g. Continue Watching, category rows) get capped height.
     // 16:9 cards at full 50vh would be too wide on 1080p+ monitors, so we cap.
-    const cardHeight = variant === 'landscape' ? 'min(50vh, 420px)' : '50vh'
+    // Portrait rows get a mobile cap so ~2 cards are visible on narrow viewports.
+    const isMobilePortrait = typeof window !== 'undefined' && window.innerWidth <= 640
+    const cardHeight = variant === 'landscape' ? 'min(50vh, 420px)' : isMobilePortrait ? 'min(35vh, 220px)' : '50vh'
 
     const containerStyle = {
       position: 'relative',

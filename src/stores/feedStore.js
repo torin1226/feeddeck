@@ -180,6 +180,7 @@ const useFeedStore = create((set, get) => ({
       initialized: false,
       exhausted: false,
       watchedIds: new Set(),
+      filters: { sources: [], tags: [], searchQuery: '' },
     })
   },
 }))

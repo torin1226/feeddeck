@@ -403,9 +403,11 @@ export default function FeedPage() {
         <div className="text-text-muted text-sm font-medium">
           {noSources
             ? 'Add sources in Settings to start your feed'
-            : 'Nothing matches those filters right now'}
+            : (filters.sources.length > 0 || filters.tags.length > 0 || !!filters.searchQuery)
+              ? 'Nothing matches those filters right now'
+              : 'Your feed is empty — try adding more sources'}
         </div>
-        {!noSources && (
+        {!noSources && (filters.sources.length > 0 || filters.tags.length > 0 || !!filters.searchQuery) && (
           <div className="text-text-muted/60 text-xs max-w-[260px] text-center">
             Loosen a filter or two and try again.
           </div>
@@ -562,7 +564,7 @@ export default function FeedPage() {
 
       {/* Bottom navigation */}
       {(!immersive || overlayVisible) && !theatreMode && (
-        <FeedBottomNav navHidden={navHidden} />
+        <FeedBottomNav navHidden={navHidden} onFilterOpen={() => setFilterOpen(true)} />
       )}
 
       {/* Filter sheet — conditionally rendered so it doesn't cover the feed on mount */}
