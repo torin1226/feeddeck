@@ -19,6 +19,8 @@ const URL_GENERATORS = {
   instagram: (handle) => `https://www.instagram.com/${handle.replace(/^@/, '')}/reels/`,
   twitter:   (handle) => `https://x.com/${handle.replace(/^@/, '')}/media`,
   soundgasm: (handle) => `https://soundgasm.net/u/${handle.replace(/^@/, '')}`,
+  audiochan: (handle) => `https://audiochan.com/${handle.replace(/^@/, '')}`,
+  erocast:   (handle) => `https://erocast.me/${handle.replace(/^@/, '')}`,
 }
 
 const VALID_PLATFORMS = Object.keys(URL_GENERATORS)

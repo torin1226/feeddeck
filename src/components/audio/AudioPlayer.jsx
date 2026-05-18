@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import Hls from 'hls.js'
 import useAudioFeedStore from '../../stores/audioFeedStore'
 
 // ============================================================
@@ -47,13 +48,25 @@ export default function AudioPlayer() {
   }, [setAudioElement])
 
   // When the active item changes, point the element at the new src.
-  // Using src directly (not <source> tag) so React reconciles cleanly.
+  // HLS (.m3u8) sources need hls.js in Chrome/Firefox; Safari handles them natively.
   useEffect(() => {
     const el = audioRef.current
     if (!el || !item) return
-    if (el.src !== item.audio_url) {
-      el.src = item.audio_url
-      el.load()
+    const src = item.audio_url
+    if (!src) return
+
+    if (src.includes('.m3u8')) {
+      if (Hls.isSupported()) {
+        const hls = new Hls({ enableWorker: false })
+        hls.loadSource(src)
+        hls.attachMedia(el)
+        return () => hls.destroy()
+      } else if (el.canPlayType('application/vnd.apple.mpegurl')) {
+        // Safari native HLS
+        if (el.src !== src) { el.src = src; el.load() }
+      }
+    } else {
+      if (el.src !== src) { el.src = src; el.load() }
     }
   }, [item])
 

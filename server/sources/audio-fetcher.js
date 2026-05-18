@@ -57,6 +57,10 @@ export async function fetchAudioCycle(registry) {
         items = await fetchRedditAudioCreator(creator, registry)
       } else if (creator.platform === 'soundgasm') {
         items = await fetchSoundgasmAudioCreator(creator, registry)
+      } else if (creator.platform === 'audiochan') {
+        items = await fetchAudiochanCreator(creator, registry)
+      } else if (creator.platform === 'erocast') {
+        items = await fetchErocastCreator(creator, registry)
       } else {
         logger.warn(`audio-fetcher: unsupported platform ${creator.platform} for creator ${creator.handle}`)
         continue
@@ -81,6 +85,33 @@ export async function fetchAudioCycle(registry) {
       } else {
         logger.warn(`audio-fetcher: ${creator.platform}/${creator.handle} failed (${failures}/${MAX_CREATOR_FAILURES}): ${err.message}`)
       }
+    }
+  }
+
+  // Global discovery passes — not creator-specific, run every cycle.
+  // Audiochan pulls trending audio filtered by tag allowlist.
+  // Erocast rotates through genre pages for variety.
+  const audiochanAdapter = registry?.adapters?.find?.(a => a.name === 'audiochan')
+  if (audiochanAdapter) {
+    try {
+      const items = await audiochanAdapter.fetchTrending()
+      const inserted = persistAudioItems(items)
+      totalInserted += inserted
+      logger.info(`audio-fetcher: audiochan global → ${items.length} extracted, ${inserted} inserted`)
+    } catch (err) {
+      logger.warn(`audio-fetcher: audiochan global failed: ${err.message}`)
+    }
+  }
+
+  const erocastAdapter = registry?.adapters?.find?.(a => a.name === 'erocast')
+  if (erocastAdapter) {
+    try {
+      const items = await erocastAdapter.fetchCategories()
+      const inserted = persistAudioItems(items)
+      totalInserted += inserted
+      logger.info(`audio-fetcher: erocast global → ${items.length} extracted, ${inserted} inserted`)
+    } catch (err) {
+      logger.warn(`audio-fetcher: erocast global failed: ${err.message}`)
     }
   }
 
@@ -179,6 +210,23 @@ async function fetchSoundgasmAudioCreator(creator, registry) {
   // SoundgasmAdapter.search drives round-robin itself; for direct per-creator
   // dispatch we call its private fetcher.
   return await adapter._fetchCreator(creator)
+}
+
+// Per-creator audiochan fetch — used when a creator row has platform='audiochan'.
+// For now this just delegates to the global trending fetch since audiochan doesn't
+// expose a per-user endpoint without auth. The creator row acts as a feature flag.
+async function fetchAudiochanCreator(_creator, registry) {
+  const adapter = registry?.adapters?.find?.(a => a.name === 'audiochan')
+  if (!adapter) throw new Error('AudiochanAdapter not registered')
+  return await adapter.fetchTrending()
+}
+
+// Per-creator erocast fetch — used when a creator row has platform='erocast'.
+// Delegates to genre rotation; the creator row acts as a feature flag.
+async function fetchErocastCreator(_creator, registry) {
+  const adapter = registry?.adapters?.find?.(a => a.name === 'erocast')
+  if (!adapter) throw new Error('ErocastAdapter not registered')
+  return await adapter.fetchCategories()
 }
 
 function persistAudioItems(items) {

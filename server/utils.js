@@ -141,6 +141,8 @@ export const REFERER_RULES = [
   { match: ['youporn'],                       referer: 'https://www.youporn.com/' },
   { match: ['fikfap'],                        referer: 'https://fikfap.com/' },
   { match: ['xnxx'],                          referer: 'https://www.xnxx.com/' },
+  { match: ['audiochan'],                     referer: 'https://audiochan.com/' },
+  { match: ['erocast'],                       referer: 'https://erocast.me/' },
 ]
 
 const DEFAULT_REFERER = 'https://www.youtube.com/'

@@ -53,6 +53,10 @@ const COOKIE_MAP = {
   'fikfap.com':     { file: 'fikfap.txt', mode: 'nsfw' },
   'redgifs.com':    { file: 'redgifs.txt', mode: 'nsfw' },
 
+  // Audio — explicit cookie files
+  'audiochan.com':  { file: 'audiochan.txt', mode: 'nsfw' },
+  'erocast.me':     { file: 'erocast.txt', mode: 'nsfw' },
+
   // NSFW — no per-domain cookies, fall back to mode file
   'xvideos.com':    { mode: 'nsfw' },
   'spankbang.com':  { mode: 'nsfw' },

@@ -22,6 +22,8 @@ import { ScraperAdapter } from './scraper.js'
 import { CobaltAdapter } from './cobalt.js'
 import { CreatorAdapter } from './creator.js'
 import { SoundgasmAdapter } from './soundgasm.js'
+import { AudiochanAdapter } from './audiochan.js'
+import { ErocastAdapter } from './erocast.js'
 
 // Create adapter instances
 const ytdlp = new YtDlpAdapter()
@@ -29,6 +31,8 @@ const scraper = new ScraperAdapter()
 const cobalt = new CobaltAdapter()
 const creator = new CreatorAdapter()
 const soundgasm = new SoundgasmAdapter()
+const audiochan = new AudiochanAdapter()
+const erocast = new ErocastAdapter()
 
 // Register adapters
 // Order matters: first registered with a capability becomes primary for fallback chains
@@ -40,6 +44,14 @@ registry.register(creator, { primary: true })
 // Soundgasm adapter: per-user audio post discovery + media URL resolution.
 // Audio surface only — does not conflict with the video chain.
 registry.register(soundgasm, { primary: true })
+
+// Audiochan adapter: trending adult audio via api.audiochan.com (curl-backed).
+// Audio surface only.
+registry.register(audiochan, { primary: true })
+
+// Erocast adapter: GWA audio via erocast.me genre pages (curl-backed, HLS audio).
+// Audio surface only.
+registry.register(erocast, { primary: true })
 
 // Scraper is primary for NSFW discovery (search, categories, trending)
 registry.register(scraper, { primary: true })
@@ -67,4 +79,4 @@ export async function closeAllSources() {
 }
 
 // Export individual adapters for direct access when needed
-export { registry, ytdlp, scraper, cobalt, soundgasm }
+export { registry, ytdlp, scraper, cobalt, soundgasm, audiochan, erocast }
