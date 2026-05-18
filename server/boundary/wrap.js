@@ -93,6 +93,11 @@ async function wrappedStreamingFetch(url, opts = {}) {
   }
 }
 
+// acceptHtml: opt-in for HTML/JS/binary callers. JSON callers leave it
+// at false so classifyHttp() catches a 2xx-with-HTML-error-page as
+// wrong_shape (real regression signal). Every call site is enforced by
+// server/__tests__/boundary-fetch-acceptHtml-registry.test.js — add new
+// callers to the REGISTRY there.
 async function wrappedFetch(url, opts = {}) {
   const {
     name,
