@@ -1,5 +1,26 @@
 # FeedDeck Update Log
 
+## 2026-05-17 — Phase G: Feed filter tab wired + gallery card height capped on mobile (Torin session)
+
+### Completed
+- **FeedBottomNav Filter tab wired** — `FeedPage.jsx:565` was missing `onFilterOpen` prop since Phase B. Filter tab now opens `FeedFilterSheet`.
+- **feedStore.resetFeed resets filters** — stale filters from prior navigation persisted across sessions, causing 0 videos on re-entry. `resetFeed()` now also zeroes `filters: { sources, tags, searchQuery }`.
+- **Context-aware empty-state message** — "Nothing matches those filters" now only shows when filters are actually active. No-filter empty state shows "Your feed is empty — try adding more sources."
+- **Gallery card height capped at mobile widths** — `getCardHeight()` in `GalleryRow.jsx` returns `min(vh*0.35, 220px)` when `vw ≤ 640`. `PosterCard.jsx` mirrors. Cards at 390×844 now 220px (was 422px); ~2 cards visible without scrolling.
+
+### Key Files Changed
+- `src/pages/FeedPage.jsx` — onFilterOpen wired, filters destructured, empty-state message context-aware
+- `src/stores/feedStore.js` — resetFeed now resets filters
+- `src/components/home/GalleryRow.jsx` — getCardHeight mobile cap
+- `src/components/home/PosterCard.jsx` — cardHeight portrait mobile cap
+
+### Next Session Should
+1. Pop stash `parallel-session-2026-05-17-audiochan-erocast` and commit audiochan/erocast adapter (check for acceptHtml boundary overlap first)
+2. Run `npm run import:audio-pdf` (no `--limit`) to finish Cattt PDF backfill → target ≥3 audio sources, ≥150 items
+3. Torin: refresh `cookies/pornhub.txt` (P1 — 11,543 stale feed_cache entries)
+
+---
+
 ## 2026-05-17 (Mobile) — Phase C: Hard-coded widths, dvh sweep, input zoom, touch-action
 
 ### Completed
