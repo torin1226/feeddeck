@@ -1,5 +1,33 @@
 # FeedDeck Update Log
 
+## 2026-05-17 — Audiochan + Erocast adapters shipped; Cattt PDF backfill completed
+
+### Completed
+- **AudiochanAdapter** (`server/sources/audiochan.js`) — curl-backed REST client for `api.audiochan.com`. Filters trending audio by tag-name allowlist (f4m/f4a/asmr/gfe/etc.) plus bracket-style tags from titles. Boundary name `audio-audiochan-api`. CF TLS-fingerprinted so Node fetch can't be used.
+- **ErocastAdapter** (`server/sources/erocast.js`) — curl-backed scraper for erocast.me genre pages. Parses `var song_data_NN = {...}` JS blobs, rotates through 10 genre slugs (3 per cycle). Dedups against `audio_cache`. Boundary name `audio-erocast-genre`. **New HLS (.m3u8) pipe** for audio surface.
+- **AudioPlayer.jsx HLS branch** — `.m3u8` sources attach via `hls.js` (Chrome/Firefox) or native (Safari). hls.js stayed a separate 523 kB lazy chunk despite static import; AudioPage stayed at 10 kB raw / 3.18 kB gzip.
+- **REFERER_RULES** entries added for both new domains. Source-registry drift-guard test caught the omission immediately.
+- **Boundary tests** — 14 new tests (audiochan 7 + erocast 7) following the `pornhub-personal-boundary.test.js` `boundary.exec` pattern. Suite 681 → 695.
+- **Cattt PDF backfill** — ran `node server/scripts/import-audio-pdf.js` end-to-end (no `--limit`). 131 URLs targeted, **85 inserted**, 31 Reddit 429s on the tail.
+- **/api/audio/stats: 110 → 195 items**, 3 sources (Erocast will surface as the 4th once the 30-min audio scheduler tick fires).
+
+### Key Files Changed
+- `server/sources/audiochan.js` (new)
+- `server/sources/erocast.js` (new)
+- `server/__tests__/audiochan-boundary.test.js` (new, 7 tests)
+- `server/__tests__/erocast-boundary.test.js` (new, 7 tests)
+- `server/sources/index.js`, `audio-fetcher.js`, `cookies.js`, `routes/creators.js`, `utils.js` (modified)
+- `src/components/audio/AudioPlayer.jsx` (modified, HLS branch)
+
+### Next Session Should
+1. Wait for the 30-min audio scheduler to fire an Erocast cycle, then play an erocast `.m3u8` on `/audio` end-to-end to verify the HLS branch
+2. Torin: re-export `cookies/pornhub.txt` after a fresh PH login (still HTTP 410 on probe; likely session-flagged server-side, not file freshness)
+3. Convert `import Hls from 'hls.js'` to `await import('hls.js')` in AudioPlayer.jsx — Vite happens to keep it lazy now, but source-level guarantee is safer for future refactors
+
+Commits: `2c8df91`
+
+---
+
 ## 2026-05-17 — Phase G: Feed filter tab wired + gallery card height capped on mobile (Torin session)
 
 ### Completed
